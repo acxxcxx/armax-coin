@@ -1,7 +1,7 @@
 [center]
 [size=24pt][b]ARMAXCOIN (ARMX)[/b][/size]
 [size=14pt][b]Proof-of-Work Layer-1 Blockchain with Post-Quantum Signatures (NIST FIPS 204, ML-DSA-65)[/b][/size]
-[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.0-testnet)[/b][/size]
+[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.0)[/b][/size]
 [/center]
 
 [hr]

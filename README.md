@@ -103,21 +103,29 @@ Follow these steps to join the public testnet (`ARMX-TESTNET-1`). All binaries d
 
 ### 1. Download & Verify Release Artifacts
 
-Download the pre-compiled binary package and `SHA256SUMS` for your platform from GitHub Releases:
+Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](https://github.com/acxxcxx/armax-coin/releases):
 
 #### On Linux / ARM64:
 ```bash
+# Download package and checksum
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.0/armax-v1.0.0-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.0/SHA256SUMS
+
 # Verify checksum integrity
-sha256sum -c SHA256SUMS
-# Make binaries executable
+sha256sum --check --ignore-missing SHA256SUMS
+
+# Extract and make executable
+tar -xzf armax-v1.0.0-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet
 ```
 
 #### On Windows (PowerShell):
 ```powershell
-# Verify checksum integrity
-Get-FileHash .\armaxcoin-v1.0.0-windows-amd64.zip -Algorithm SHA256
-# Compare against SHA256SUMS entry
+# Compute SHA-256 hash of downloaded zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.0-windows-amd64.zip
+
+# Compare against the published hash in SHA256SUMS
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.0-windows-amd64.zip"
 ```
 
 ### 2. Launch Testnet Node Daemon
