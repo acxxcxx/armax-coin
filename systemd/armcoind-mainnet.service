@@ -1,0 +1,27 @@
+[Unit]
+Description=Armaxcoin (ARMX) Mainnet Full Node Daemon [L4-6]
+After=network.target
+
+# NOTE: Mainnet is locked (MainnetLaunched = false) prior to formal launch.
+# This unit file is pre-configured with canonical Mainnet port profiles (P2P 19334, RPC 19332).
+
+[Service]
+Type=simple
+User=armax
+Group=armax
+WorkingDirectory=/var/armax/mainnet
+ExecStart=/usr/local/bin/armcoind -network mainnet -port 19332 -p2p 19334 -rpcbind 127.0.0.1
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+
+# Environment overrides
+Environment=ARMX_NETWORK=mainnet
+Environment=ARMX_DATA_DIR=/var/armax/mainnet
+
+[Install]
+WantedBy=multi-user.target

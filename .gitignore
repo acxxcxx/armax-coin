@@ -1,0 +1,58 @@
+# Sensitive Wallet Credentials & Keystores (DO NOT COMMIT)
+wallet.json
+*.keystore
+keystore.json
+armax.cookie
+*.cookie
+node/armax.cookie
+peers.json
+
+# Local Blockchain Databases & Backups
+blockchain.db
+blockchain.db.tmp
+blockchain.db.bak
+blockchain.db.old_backup
+blockchain.db.invalid-*
+*.invalid-*
+*.db
+*.bak
+
+# Runtime Logs & PID Files
+*.log
+.armx_pids
+*.zip
+*.tar.gz
+
+# Compiled Binaries & Windows Resources
+/armcoind
+/armminer
+/armsend
+/armwallet
+/armgui
+/armaxd
+*-arm64
+*-amd64
+*_arm64
+*_amd64
+*.exe
+*.exe~
+*.syso
+!gui/rsrc_windows_amd64.syso
+
+# OS / Editor Artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Standalone Server-Side Web Explorer & Wallet binaries
+/armax-web
+/armax-web-*
+server-web/armax-web
+server-web/armax-web-*
+server-web/armax-web.exe
+
+# Temporary scratch directory
+scratch/
+build/
+build-all.ps1

@@ -1,0 +1,289 @@
+name: Armaxcoin Multi-Platform Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (must already exist in repository, e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  validate_release:
+    name: Validate Version & Commit Ref
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit_sha: ${{ steps.validate.outputs.commit_sha }}
+      clean_version: ${{ steps.validate.outputs.clean_version }}
+    steps:
+      - name: Check out source code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Validate Release Version Input
+        id: validate
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # 1. Reject empty or pure whitespace
+          if [ -z "$(echo "${RELEASE_VERSION}" | tr -d '[:space:]')" ]; then
+            echo "Error: Release version input cannot be empty or whitespace" >&2
+            exit 1
+          fi
+
+          # 2. Strict SemVer 2.0.0 allowlist with mandatory 'v' prefix [Phase 1, Follow-up Point 4]
+          # Enforces non-negative integers without leading zeros, valid pre-release identifiers
+          # (prohibiting leading zeros in numeric pre-release identifiers per SemVer 2.0.0 spec 9),
+          # and strictly rejects shell metacharacters, slashes, backticks, leading dashes, semicolons, and spaces
+          if ! echo "${RELEASE_VERSION}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?$'; then
+            echo "Error: Invalid release version format '${RELEASE_VERSION}'. Must match SemVer 2.0.0 with 'v' prefix and no leading zeros in numeric identifiers." >&2
+            exit 1
+          fi
+
+          # 3. Verify that the Git tag ref exists in the repository
+          if ! git rev-parse -q --verify "refs/tags/${RELEASE_VERSION}" >/dev/null; then
+            echo "Error: Git tag '${RELEASE_VERSION}' does not exist in repository references." >&2
+            echo "release.yml is prohibited from creating new Git tags. Create and push the Git tag first." >&2
+            exit 1
+          fi
+
+          TAG_COMMIT=$(git rev-list -n 1 "refs/tags/${RELEASE_VERSION}")
+          if [ -z "${TAG_COMMIT}" ]; then
+            echo "Error: Unable to resolve commit SHA for tag '${RELEASE_VERSION}'" >&2
+            exit 1
+          fi
+
+          # 4. Ensure release does not already exist to preserve immutable audit trail
+          if gh release view "${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Error: A release for tag '${RELEASE_VERSION}' already exists. Overwrites are strictly prohibited." >&2
+            exit 1
+          fi
+
+          echo "commit_sha=${TAG_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "clean_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Validated Release Version: ${RELEASE_VERSION} at commit ${TAG_COMMIT}"
+
+  verify_tests:
+    name: Run Quality Gates & Tests
+    needs: [validate_release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out verified commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate_release.outputs.commit_sha }}
+
+      - name: Verify checked out commit matches target tag
+        env:
+          EXPECTED_SHA: ${{ needs.validate_release.outputs.commit_sha }}
+        run: |
+          CURRENT_SHA=$(git rev-parse HEAD)
+          if [ "${CURRENT_SHA}" != "${EXPECTED_SHA}" ]; then
+            echo "Error: Checked out commit ${CURRENT_SHA} does not match expected tag commit ${EXPECTED_SHA}" >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        with:
+          go-version: '1.27'
+          cache: true
+
+      - name: Go Vet
+        run: go vet -tags testhooks ./...
+
+      - name: Install staticcheck & govulncheck (pinned versions) [L4-10-e]
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      - name: Run staticcheck
+        run: staticcheck -tags testhooks ./...
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+      - name: Run Test Suite with Race Detector
+        run: go test -tags testhooks -v -race -count=1 ./...
+
+      - name: Fuzz untrusted parsers
+        run: |
+          go test ./core -run='^$' -fuzz=FuzzTransactionParser -fuzztime=20s
+          go test ./node -run='^$' -fuzz=FuzzP2PMessageParser -fuzztime=20s
+
+  build:
+    name: Build Multi-Architecture Binaries
+    needs: [validate_release, verify_tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          # Linux 64-bit x86
+          - os: linux
+            arch: amd64
+            artifact_name: armax-linux-amd64
+          # Linux 64-bit ARM (Raspberry Pi 4/5, Armbian, AWS Graviton)
+          - os: linux
+            arch: arm64
+            artifact_name: armax-linux-arm64
+          # Windows 64-bit x86
+          - os: windows
+            arch: amd64
+            artifact_name: armax-windows-amd64
+          # macOS Apple Silicon (ARM64)
+          - os: darwin
+            arch: arm64
+            artifact_name: armax-darwin-arm64
+
+    steps:
+      - name: Check out verified commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate_release.outputs.commit_sha }}
+
+      - name: Verify checked out commit matches target tag
+        env:
+          EXPECTED_SHA: ${{ needs.validate_release.outputs.commit_sha }}
+        run: |
+          CURRENT_SHA=$(git rev-parse HEAD)
+          if [ "${CURRENT_SHA}" != "${EXPECTED_SHA}" ]; then
+            echo "Error: Checked out commit ${CURRENT_SHA} does not match expected tag commit ${EXPECTED_SHA}" >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        with:
+          go-version: '1.27'
+          cache: true
+
+      - name: Compile Binaries (${{ matrix.os }}/${{ matrix.arch }})
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+          RELEASE_VERSION: ${{ needs.validate_release.outputs.clean_version }}
+        run: |
+          mkdir -p release_dist
+          cp README.md armax.conf.example LICENSE release_dist/
+
+          EXT=""
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            EXT=".exe"
+          fi
+
+          # Build core node daemon, miner, sender, and wallet with deterministic trimpath
+          go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armcoind$EXT main.go
+          go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armminer$EXT miner/miner.go
+          go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armsend$EXT ./cli/armsend
+          go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armwallet$EXT ./cli/armwallet
+
+          # armgui desktop wallet is supported on windows/amd64
+          if [ "${{ matrix.os }}" = "windows" ] && [ "${{ matrix.arch }}" = "amd64" ]; then
+            cp gui/armgui.exe.manifest release_dist/ 2>/dev/null || true
+            cp gui/armax_logo.ico release_dist/ 2>/dev/null || true
+            go build -trimpath -ldflags="-s -w -H windowsgui -buildid=" -o release_dist/armgui.exe ./gui
+          fi
+
+          # Verify that required binaries were produced
+          test -f "release_dist/armcoind$EXT" || (echo "Error: armcoind$EXT was not built" && exit 1)
+          test -f "release_dist/armminer$EXT" || (echo "Error: armminer$EXT was not built" && exit 1)
+          test -f "release_dist/armsend$EXT" || (echo "Error: armsend$EXT was not built" && exit 1)
+          test -f "release_dist/armwallet$EXT" || (echo "Error: armwallet$EXT was not built" && exit 1)
+
+          cd release_dist
+          sha256sum * > SHA256SUMS
+          test -s SHA256SUMS || (echo "Error: SHA256SUMS is empty" && exit 1)
+
+          PKG_NAME="armax-${RELEASE_VERSION}-${{ matrix.os }}-${{ matrix.arch }}"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            zip -r ../${PKG_NAME}.zip .
+          else
+            tar -czvf ../${PKG_NAME}.tar.gz .
+          fi
+          cd ..
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            *.tar.gz
+            *.zip
+
+  release:
+    name: Publish GitHub Release
+    needs: [validate_release, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out verified commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate_release.outputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Verify checked out commit matches target tag
+        env:
+          EXPECTED_SHA: ${{ needs.validate_release.outputs.commit_sha }}
+        run: |
+          CURRENT_SHA=$(git rev-parse HEAD)
+          if [ "${CURRENT_SHA}" != "${EXPECTED_SHA}" ]; then
+            echo "Error: Checked out commit ${CURRENT_SHA} does not match expected tag commit ${EXPECTED_SHA}" >&2
+            exit 1
+          fi
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: artifacts
+
+      - name: Aggregate Master SHA256SUMS
+        run: |
+          set -euo pipefail
+          mkdir -p release_assets
+          cp -r artifacts/*/*.tar.gz release_assets/ 2>/dev/null || true
+          cp -r artifacts/*/*.zip release_assets/ 2>/dev/null || true
+
+          # Fail if no archive artifacts were downloaded
+          ARCHIVE_COUNT=$(find release_assets -type f \( -name "*.tar.gz" -o -name "*.zip" \) | wc -l)
+          if [ "${ARCHIVE_COUNT}" -eq 0 ]; then
+            echo "Error: No release archive artifacts found" >&2
+            exit 1
+          fi
+
+          cd release_assets
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          echo "Generated master SHA256SUMS:"
+          cat SHA256SUMS
+          test -s SHA256SUMS || (echo "Error: SHA256SUMS is empty" && exit 1)
+          cd ..
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.validate_release.outputs.clean_version }}
+        run: |
+          set -euo pipefail
+
+          # Create release and upload all assets using official GitHub CLI with --verify-tag
+          gh release create "${RELEASE_VERSION}" release_assets/* \
+            --verify-tag \
+            --title "Armaxcoin ${RELEASE_VERSION} (Public Testnet Release)" \
+            --prerelease \
+            --generate-notes

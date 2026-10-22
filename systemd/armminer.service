@@ -1,0 +1,15 @@
+[Unit]
+Description=Armaxcoin (ARMX) Automated CPU Miner
+After=armcoind.service
+Requires=armcoind.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/armax
+ExecStart=/var/armax/armminer -daemon http://127.0.0.1:19332 -delay 2000
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

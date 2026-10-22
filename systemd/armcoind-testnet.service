@@ -1,0 +1,24 @@
+[Unit]
+Description=Armaxcoin (ARMX) Testnet Full Node Daemon [L4-6]
+After=network.target
+
+[Service]
+Type=simple
+User=armax
+Group=armax
+WorkingDirectory=/var/armax/testnet
+ExecStart=/usr/local/bin/armcoind -network testnet -port 19333 -p2p 19335 -rpcbind 127.0.0.1
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+
+# Environment overrides
+Environment=ARMX_NETWORK=testnet
+Environment=ARMX_DATA_DIR=/var/armax/testnet
+
+[Install]
+WantedBy=multi-user.target

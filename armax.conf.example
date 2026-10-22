@@ -1,0 +1,20 @@
+{
+  "network_id": "ARMX-TESTNET-1",
+  "rpc_bind": "127.0.0.1",
+  "rpc_port": "19333",
+  "p2p_port": "19335",
+  "miner_address": "",
+  "enable_mining": false,
+  "mining_delay_ms": 2000,
+  "seed_peers": [
+    "testnet-seed1.armax-coin.cloud:19335",
+    "testnet-seed2.armax-coin.cloud:19335",
+    "testnet-seed3.armax-coin.cloud:19335"
+  ],
+  "max_peers": 50,
+  "require_tls": true,
+  "p2p_tofu": true,
+  "rpc_tls_cert": "",
+  "rpc_tls_key": "",
+  "disable_subnet_limit": false
+}

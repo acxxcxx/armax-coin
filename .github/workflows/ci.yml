@@ -1,0 +1,70 @@
+name: CI Test Suite
+
+on:
+  push:
+    branches: [ main, pqc-migration ]
+  pull_request:
+    branches: [ main, pqc-migration ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test, Lint & Cross-Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        with:
+          go-version: '1.27'
+          cache: true
+
+      - name: Go Vet
+        run: go vet -tags testhooks ./...
+
+      - name: Shell Scripts Syntax & LF Line Ending Check [Phase 2]
+        run: |
+          # 1. Verify bash syntax
+          bash -n build.sh scripts/*.sh
+
+          # 2. Reject CRLF in shell scripts
+          CRLF_FOUND=0
+          for file in build.sh scripts/*.sh; do
+            if grep -q $'\r' "$file"; then
+              echo "Error: CRLF line ending detected in $file" >&2
+              CRLF_FOUND=1
+            fi
+          done
+          if [ "$CRLF_FOUND" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All shell scripts passed syntax and LF checks."
+
+      - name: Build All (Linux)
+        run: go build ./...
+
+      - name: Build All (Windows Cross-Compile)
+        env:
+          GOOS: windows
+        run: go build ./...
+
+      - name: Run Tests with Race Detector
+        run: go test -tags testhooks -v -race -count=1 ./...
+
+      - name: Personal Data Hygiene Check [L4-10-b]
+        run: go test -v -run TestNoPersonalDataInTree .
+
+      - name: Install staticcheck & govulncheck (pinned versions) [L4-10-e]
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      - name: Run staticcheck
+        run: staticcheck -tags testhooks ./...
+
+      - name: Run govulncheck
+        run: govulncheck ./...
