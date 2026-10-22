@@ -25,6 +25,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **[Security Policy & Disclosures](SECURITY.md)** | Threat model, responsible vulnerability reporting, and known limitations |
 | **[Contribution Guidelines](CONTRIBUTING.md)** | Development workflow, code standards, Conventional Commits, and test gates |
 | **[Code of Conduct](CODE_OF_CONDUCT.md)** | Community pledge and standards of behavior |
+| **[Accessibility Statement](ACCESSIBILITY.md)** | Accessibility policies for GUI, CLI, documentation, and hardware |
 | **[Release Checklist](docs/RELEASE_CHECKLIST.md)** | Publication gates and release verification runbook |
 | **[Changelog](CHANGELOG.md)** | Complete version history adhering to Keep a Changelog |
 

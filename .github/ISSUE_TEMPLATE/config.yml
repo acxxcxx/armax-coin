@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability Reporting
+    url: https://github.com/acxxcxx/armax-coin/security/advisories/new
+    about: Privately report security flaws, consensus bugs, or exploits.
+  - name: Contributor Rewards Program
+    url: https://github.com/acxxcxx/armax-coin/blob/main/docs/CONTRIBUTOR_REWARDS.md
+    about: Read the proposed contributor rewards and bounty structure.
+  - name: Documentation Suite
+    url: https://github.com/acxxcxx/armax-coin#authoritative-documentation-index
+    about: Explore the complete guides for running nodes, mining, and wallet usage.
