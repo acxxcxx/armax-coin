@@ -1,7 +1,7 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.0` (Public Open Testnet)<br>
+**Current Release:** `v1.0.1` (Public Open Testnet)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
@@ -109,24 +109,24 @@ Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](ht
 #### On Linux / ARM64:
 ```bash
 # Download package and checksum
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.0/armax-v1.0.0-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.0/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.1/armax-v1.0.1-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.1/SHA256SUMS
 
 # Verify checksum integrity
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
-tar -xzf armax-v1.0.0-linux-amd64.tar.gz
+tar -xzf armax-v1.0.1-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet
 ```
 
 #### On Windows (PowerShell):
 ```powershell
 # Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.0-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.1-windows-amd64.zip
 
 # Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.0-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.1-windows-amd64.zip"
 ```
 
 ### 2. Launch Testnet Node Daemon
@@ -537,6 +537,18 @@ Armaxcoin is strategically architected across 7 core pillars:
 ---
 
 ## Release History & Changelog
+
+### v1.0.1 (Public Open Testnet -- BIP-35 Mempool Sync & NAT Support) -- 2026-10-23
+
+Maintenance and networking release introducing BIP-35 compliant mempool synchronization, automated mempool rebroadcasting, and outbound NAT synchronization.
+
+#### Network Protocol & Mempool Sync
+- **BIP-35 Mempool Synchronization (`GET_MEMPOOL`):** Nodes, miners, and external wallets joining the network can request the complete unmined transaction pool from connected peers upon connection.
+- **NAT & Private IP Outbound Sync:** Supported full block history and mempool synchronization for private nodes behind NAT or firewalls without open inbound listening ports.
+- **Periodic Mempool Rebroadcasting:** Daemon background loop automatically rebroadcasts pending mempool transactions every 60 seconds across all connected peer sessions to prevent transaction starvation.
+- **Rate-Limiting & Memory Guards:** Protected against mempool amplification attacks by bounding `GET_MEMPOOL` requests (max 10 req/min per peer) and capping responses (max 1,000 transactions per response).
+
+---
 
 ### v1.0.0 (Public Open Testnet -- Experimental) -- 2026-10-22
 

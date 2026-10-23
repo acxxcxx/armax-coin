@@ -44,7 +44,7 @@ fi
 echo "[+] Verifying -version output across binaries..."
 for bin in "${ARMCOIND}" "${ARMMINER}" "${ARMSEND}" "${ARMWALLET}"; do
     out=$("${bin}" -version 2>&1 || true)
-    if [[ ! "${out}" =~ "v1.0.0" ]]; then
+    if [[ ! "${out}" =~ "v1.0.1" ]]; then
         echo "[-] Version check failed for ${bin}: ${out}"
         exit 1
     fi
