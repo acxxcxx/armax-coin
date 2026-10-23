@@ -2506,10 +2506,16 @@ func (p *PeerServer) startSyncWorker(cycle *serverCycle) {
 	syncTicker := time.NewTicker(15 * time.Second)
 	defer syncTicker.Stop()
 
+	syncCycle := 0
 	for {
 		select {
 		case <-syncTicker.C:
 			p.SyncBestPeer()
+			syncCycle++
+			if syncCycle%2 == 0 {
+				p.SyncMempool()
+				p.RebroadcastMempool()
+			}
 		case <-cycle.quitChan:
 			return
 		}
@@ -3091,6 +3097,37 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 				continue
 			}
 			p.ProcessIncomingTx(tx, remoteIP)
+
+		case "GET_MEMPOOL":
+			if p.Blockchain == nil {
+				continue
+			}
+			p.Blockchain.Lock.RLock()
+			totalMp := len(p.Blockchain.Mempool)
+			mempoolTxs := make([]core.Transaction, totalMp)
+			copy(mempoolTxs, p.Blockchain.Mempool)
+			p.Blockchain.Lock.RUnlock()
+
+			if len(mempoolTxs) > 100 {
+				mempoolTxs = mempoolTxs[:100]
+			}
+			respData, err := json.Marshal(Message{
+				NetworkID: p.GetNetworkID(),
+				Type:      "MEMPOOL_RESPONSE",
+				Payload:   mempoolTxs,
+			})
+			if err == nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(SocketTimeoutDuration))
+				_, _ = conn.Write(append(respData, '\n'))
+			}
+
+		case "MEMPOOL_RESPONSE":
+			var txList []core.Transaction
+			if len(msg.Payload) > 0 && json.Unmarshal(msg.Payload, &txList) == nil {
+				for _, tx := range txList {
+					p.ProcessIncomingTx(tx, remoteIP)
+				}
+			}
 
 		case "GET_PEERS":
 			allPeers := p.GetPeers()
@@ -3967,6 +4004,57 @@ func (p *PeerServer) RelayBlock(block core.Block, senderAddr string) {
 	}
 }
 
+// SyncMempool queries connected peers for their unconfirmed transactions to prevent mempool fragmentation [BIP-35]
+func (p *PeerServer) SyncMempool() {
+	if p.Blockchain == nil || p.isShuttingDown() {
+		return
+	}
+	peers := p.GetPeers()
+	if len(peers) == 0 {
+		return
+	}
+
+	for _, peer := range peers {
+		if p.isShuttingDown() {
+			return
+		}
+		resp, err := p.QueryPeer(peer, Message{NetworkID: p.GetNetworkID(), Type: "GET_MEMPOOL"}, 3*time.Second)
+		if err == nil && resp != nil && resp.Type == "MEMPOOL_RESPONSE" {
+			var txList []core.Transaction
+			b, marshalErr := json.Marshal(resp.Payload)
+			if marshalErr == nil && json.Unmarshal(b, &txList) == nil {
+				for _, tx := range txList {
+					p.ProcessIncomingTx(tx, peer)
+				}
+			}
+		}
+	}
+}
+
+// RebroadcastMempool periodically redistributes unmined local mempool transactions to all peers
+func (p *PeerServer) RebroadcastMempool() {
+	if p.Blockchain == nil || p.isShuttingDown() {
+		return
+	}
+	p.Blockchain.Lock.RLock()
+	if len(p.Blockchain.Mempool) == 0 {
+		p.Blockchain.Lock.RUnlock()
+		return
+	}
+	mempoolCopy := make([]core.Transaction, len(p.Blockchain.Mempool))
+	copy(mempoolCopy, p.Blockchain.Mempool)
+	p.Blockchain.Lock.RUnlock()
+
+	peers := p.GetPeers()
+	if len(peers) == 0 {
+		return
+	}
+
+	for _, tx := range mempoolCopy {
+		p.BroadcastTransaction(peers, tx)
+	}
+}
+
 // RelayTransaction relays a transaction asynchronously to eligible peers.
 func (p *PeerServer) RelayTransaction(
 	tx core.Transaction,
@@ -4100,6 +4188,7 @@ func (p *PeerServer) SyncBestPeer() {
 	if bestPeer != "" {
 		p.RequestChainSync(bestPeer)
 	}
+	go p.SyncMempool()
 }
 
 // GenerateBlockLocators builds a sparse list of block hashes (exponential backoff)

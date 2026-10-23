@@ -21,7 +21,7 @@ func NetworkID() string {
 // Message represents a P2P broadcast network message structure with protocol magic
 type Message struct {
 	NetworkID string      `json:"network_id"`
-	Type      string      `json:"type"` // "NEW_BLOCK", "REQUEST_CHAIN", "CHAIN_RESPONSE", "NEW_TX", "GET_PEERS", "PEERS_LIST", "GET_HEIGHT", "HEIGHT_RESPONSE", "GET_BLOCK_RANGE", "BLOCK_RANGE_RESPONSE"
+	Type      string      `json:"type"` // "NEW_BLOCK", "REQUEST_CHAIN", "CHAIN_RESPONSE", "NEW_TX", "GET_PEERS", "PEERS_LIST", "GET_HEIGHT", "HEIGHT_RESPONSE", "GET_BLOCK_RANGE", "BLOCK_RANGE_RESPONSE", "GET_MEMPOOL", "MEMPOOL_RESPONSE"
 	Payload   interface{} `json:"payload"`
 }
 
