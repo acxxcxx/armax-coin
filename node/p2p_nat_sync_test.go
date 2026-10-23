@@ -26,6 +26,10 @@ func TestP2P_NATNode_OutboundSync(t *testing.T) {
 		t.Fatalf("Failed to init bcPublic: %v", err)
 	}
 	defer bcPublic.Close()
+	bcPublic.CoinbaseMaturity = 1
+	if bcPublic.State != nil {
+		bcPublic.State.CoinbaseMaturity = 1
+	}
 
 	// 2. Initialize NAT Private Node (Node B)
 	dbNAT := filepath.Join(tempDirNAT, "chain_nat.db")
@@ -34,6 +38,10 @@ func TestP2P_NATNode_OutboundSync(t *testing.T) {
 		t.Fatalf("Failed to init bcNAT: %v", err)
 	}
 	defer bcNAT.Close()
+	bcNAT.CoinbaseMaturity = 1
+	if bcNAT.State != nil {
+		bcNAT.State.CoinbaseMaturity = 1
+	}
 
 	core.SetTargetOverrideForTesting(core.DifficultyToTarget(1))
 	defer core.SetTargetOverrideForTesting(nil)

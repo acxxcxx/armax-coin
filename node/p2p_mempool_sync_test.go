@@ -24,6 +24,10 @@ func TestP2P_MempoolSync_BIP35(t *testing.T) {
 		t.Fatalf("Failed to init bcA: %v", err)
 	}
 	defer bcA.Close()
+	bcA.CoinbaseMaturity = 1
+	if bcA.State != nil {
+		bcA.State.CoinbaseMaturity = 1
+	}
 
 	dbB := filepath.Join(tempDirB, "chainB.db")
 	bcB, err := core.NewBlockchainWithStoragePath(1, dbB)
@@ -31,6 +35,10 @@ func TestP2P_MempoolSync_BIP35(t *testing.T) {
 		t.Fatalf("Failed to init bcB: %v", err)
 	}
 	defer bcB.Close()
+	bcB.CoinbaseMaturity = 1
+	if bcB.State != nil {
+		bcB.State.CoinbaseMaturity = 1
+	}
 
 	minerWallet, err := wallet.NewWallet()
 	if err != nil {
@@ -137,6 +145,10 @@ func TestP2P_MempoolSync_BIP35(t *testing.T) {
 		t.Fatalf("Failed to init bcC: %v", err)
 	}
 	defer bcC.Close()
+	bcC.CoinbaseMaturity = 1
+	if bcC.State != nil {
+		bcC.State.CoinbaseMaturity = 1
+	}
 
 	// Sync blocks to C
 	bcA.Lock.RLock()
