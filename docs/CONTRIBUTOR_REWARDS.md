@@ -14,7 +14,7 @@ The goal of this proposed program is to encourage open collaboration, testing, a
 By participating, community members help harden the network prior to any future mainnet considerations. Key areas where community participation is most valuable include:
 
 - **Network Reliability:** Testing peer-to-peer connectivity, TLS 1.3 handshakes, and peer discovery across diverse consumer and cloud environments.
-- **Consensus & PoW Testing:** Evaluating the memory-hard ArmaxHash algorithm and LWMA-1 difficulty retargeting under varying hashrate levels.
+- **Consensus & PoW Testing:** Evaluating the ArmaxHash v2 Stream-Fast algorithm and LWMA-1 difficulty retargeting under varying hashrate levels.
 - **Post-Quantum Cryptography:** Benchmarking NIST FIPS 204 (ML-DSA-65) signing and verification performance across multiple hardware architectures, including x86_64 servers and ARM single-board computers (Raspberry Pi).
 - **Security & Stability:** Discovering and responsibly reporting consensus edge cases, state handling bugs, memory leaks, or race conditions.
 - **Documentation & Tooling:** Improving setup guides, deployment scripts, multi-platform build instructions, and developer documentation.

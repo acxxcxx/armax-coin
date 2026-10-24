@@ -357,7 +357,7 @@ The build script generates 5 binaries in the root directory:
 
 #### Testnet Target Specification & Hashrate Dynamics
 - **Testnet Genesis Target (Legacy $H < 520$):** `0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (true 28 leading zero bits, SHA-256d baseline).
-- **ArmaxHash Target (Active $H \ge 520$):** Activated at block `#520` on Testnet (`ARMX-TESTNET-1`). Memory-hard Argon2id (2048 KiB, 1 pass, 1 lane) with bootstrap target `000ffff...` (Difficulty 3 / 4,096 hashes).
+- **ArmaxHash Timeline & Targets:** Blocks 0..519 use bootstrap Double-SHA256 (`0000000ffff...`). Blocks 520..2499 use ArmaxHash v1 (Argon2id 2048 KiB, bootstrap target `000ffff...`). Blocks 2500+ activate **ArmaxHash v2 Stream-Fast** (chained BLAKE2b with zero heap allocation, high-speed execution for commodity CPUs and ARM edge devices).
 - **Target Block Time:** 120 seconds ($T=120\text{s}$).
 - **Coinbase Maturity:** Consensus-enforced queue per profile (Mainnet: 100 blocks, Public Testnet: 10 blocks, Regtest: 1 block). Freshly mined rewards enter an on-chain immature queue and become spendable only after the required block confirmations are appended to the chain.
 - **Dynamic Difficulty Retargeting (LWMA-1):** Continuous 256-bit numerical target adjusted per block across an $N=60$ window ($N+1=61$ blocks evaluated).
@@ -518,7 +518,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 3. **Encrypted P2P Transport:** Fully operational TLS 1.3 socket encryption with TOFU pinning.
 4. **Layer-2 Payment Channels (Planned):** Experimental HTLC primitives in core transactions for future off-chain microtransactions.
 5. **Lightweight Smart Contracts (Future Research):** Sandboxed WebAssembly (WASM) VM executing expressive UTXO smart contracts.
-6. **Small-Device PoW Consensus:** Responsive LWMA-1 difficulty adjustment ($N=60$) coupled with the memory-hard ArmaxHash algorithm (Argon2id + Blake2b + SHA-256) active from block #520 for equitable CPU mining.
+6. **Small-Device PoW Consensus:** Responsive LWMA-1 difficulty adjustment ($N=60$) coupled with **ArmaxHash v2 Stream-Fast** (activated at block #2500) for high-efficiency, zero-alloc CPU mining on commodity desktops, laptops, and ARM mobile/edge devices.
 7. **Democratic On-Chain Governance:** Block header miner/node signaling for smooth protocol upgrades.
 
 ---
@@ -527,7 +527,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 1. **P2P Transport Security:** Wire transport encryption employs self-signed ephemeral X.509 certificates pinned via Trust On First Use (TOFU). While TOFU prevents ongoing passive surveillance and subsequent tampering, the initial contact remains vulnerable to active in-path MITM adversaries unless seeded with out-of-band certificate pins.
 2. **Code Audit Status:** Armaxcoin is an experimental Layer-1 cryptocurrency under active testnet development. Neither the core consensus engine, the ArmaxHash implementation, nor the post-quantum signature integration has undergone a formal third-party cryptographic security audit.
-3. **Dual PoW Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d). Active mining from block #520 onwards enforces the memory-hard ArmaxHash algorithm (Argon2id 2 MB), engineered to facilitate accessible CPU mining across commodity hardware without claiming permanent ASIC immunity.
+3. **PoW Consensus Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d), and blocks 520..2499 used ArmaxHash v1 (Argon2id 2 MB). Active mining from block #2500 onwards enforces **ArmaxHash v2 Stream-Fast** (chained BLAKE2b), engineered to eliminate DRAM memory churn and facilitate high-throughput, energy-efficient CPU mining across commodity hardware and mobile/ARM devices without claiming permanent ASIC immunity.
 4. **Initial Hashrate & 51% Risk:** Early testnet and bootstrap states operate with low aggregate network hashrate, leaving the blockchain temporarily vulnerable to 51% hash power reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
 5. **ARM Verification Overhead:** NIST FIPS 204 ML-DSA-65 signatures require modular polynomial arithmetic, introducing measurable CPU verification latency on constrained ARM single-board computers (Raspberry Pi, Orange Pi).
 6. **Minimum Go Version:** Compiling Armaxcoin requires Go 1.27+ due to reliance on the standard library `crypto/mldsa` package and toolchain alignment (`go.mod`).

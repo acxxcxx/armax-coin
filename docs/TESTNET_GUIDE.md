@@ -17,7 +17,7 @@ Welcome to the public open testnet for **Armaxcoin** (`armax-coin`). This guide 
 | **Default RPC Port** | `19333` | Bound strictly to `127.0.0.1` (loopback only) |
 | **Target Block Time** | `120` seconds (2 minutes) | Controlled by LWMA-1 difficulty adjustment ($N=60$) |
 | **Initial Block Reward** | `60.00000000 ARMX` | Halves every 1,050,000 blocks |
-| **PoW Algorithm** | ArmaxHash (active from block #520) | Argon2id + Blake2b + SHA-256 (CPU-oriented, memory-hard) |
+| **PoW Algorithm** | ArmaxHash v2 (active from block #2500) | Chained BLAKE2b Stream-Fast (CPU & ARM optimized). Historical: SHA-256d (0-519), ArmaxHash v1 (520-2499) |
 | **Signature Scheme** | NIST FIPS 204 ML-DSA-65 | Post-quantum lattice-based digital signatures |
 | **Data Directory** | Linux: `~/.armax/testnet`<br>Windows: `%APPDATA%\Armax\testnet` | Default database and keystore location |
 

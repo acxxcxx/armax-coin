@@ -18,7 +18,7 @@
 [b][size=14pt]1. Testnet Purpose & Scope[/size][/b]
 The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open, decentralized testing network for node operators, miners, developers, and security researchers to test and validate:
 [*] Quantum-resistant digital signatures ([b]NIST FIPS 204 ML-DSA-65[/b]) in Layer-1 consensus transactions.
-[*] Memory-hard CPU Proof-of-Work mining ([b]ArmaxHash[/b]: Argon2id 2 MB + Blake2b + SHA-256) activated from block #520.
+[*] High-efficiency CPU Proof-of-Work mining ([b]ArmaxHash v2 Stream-Fast[/b]) activated at block #2500 (historical v1 Argon2id active blocks 520..2499).
 [*] Responsive difficulty retargeting via [b]LWMA-1[/b] ($N=60$ sliding evaluation window).
 [*] P2P mesh transport encrypted with mandatory [b]TLS 1.3[/b] and [b]TOFU certificate pinning[/b].
 
@@ -38,9 +38,10 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [*] [b]Wire Magic:[/b] [font=monospace]ARMX_TEST[/font]
 [*] [b]P2P Port:[/b] [b]19335[/b] (Public TCP peer gossip mesh)
 [*] [b]RPC Daemon Port:[/b] [b]19333[/b] (Bound strictly to loopback [font=monospace]127.0.0.1[/font] by default)
-[*] [b]Block Header PoW Algorithm:[/b]
+[*] [b]Block Header PoW Algorithm Timeline:[/b]
     - [b]Blocks 0 .. 519:[/b] Double-SHA256 (SHA-256d bootstrap phase)
-    - [b]Blocks 520+ (Active):[/b] [b]ArmaxHash[/b] (Memory-hard Argon2id 2,048 KiB, $t=1, p=1$ chained with Blake2b-512 and SHA-256)
+    - [b]Blocks 520 .. 2499:[/b] ArmaxHash v1 (Argon2id 2,048 KiB + Blake2b-512)
+    - [b]Blocks 2500+ (Active):[/b] [b]ArmaxHash v2 Stream-Fast[/b] (Chained BLAKE2b with zero heap allocation)
 [*] [b]Digital Signatures:[/b] NIST FIPS 204 (ML-DSA-65) Post-Quantum Module-Lattice Signatures (pure, non-hybrid)
 [*] [b]Target Block Time:[/b] 120 seconds (2 minutes)
 [*] [b]Difficulty Retargeting:[/b] Continuous LWMA-1 ($N=60$ sliding evaluation window)
@@ -118,7 +119,7 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 # Launch miner with 4 CPU worker threads
 ./armminer -miner <YOUR_ARMX_ADDRESS> -threads 4
 [/code]
-[i]Active blocks (height >= 520) are evaluated using the memory-hard ArmaxHash algorithm (Argon2id 2 MB/thread). Hashrate is reported in real-time in H/s and kH/s.[/i]
+[i]Active blocks (height >= 2500) are evaluated using the ArmaxHash v2 Stream-Fast algorithm (chained BLAKE2b with zero heap churn). Hashrate is reported in real-time in H/s, kH/s, and MH/s.[/i]
 
 [b]Step 5 -- Check Balance & Transfer Testnet Coins:[/b]
 [code]

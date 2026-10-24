@@ -6,7 +6,7 @@ This guide details how to participate in Proof-of-Work (PoW) mining on the Armax
 
 ## 1. Mining Algorithm Architecture
 
-Armaxcoin employs a dual-phase Proof-of-Work consensus timeline designed to transition from initial bootstrap hashing to accessible, memory-hard CPU mining:
+Armaxcoin employs an evolutionary Proof-of-Work consensus timeline designed to transition from initial bootstrap hashing to accessible, high-performance CPU mining:
 
 | Block Range | Algorithm | Characteristics | Target Hashrate |
 |---|---|---|---|

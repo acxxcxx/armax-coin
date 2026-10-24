@@ -1,6 +1,6 @@
 # Contributing to Armaxcoin (`armax-coin`)
 
-Thank you for your interest in contributing to Armaxcoin. Armaxcoin is an experimental Layer-1 Proof-of-Work blockchain incorporating NIST FIPS 204 post-quantum digital signatures (ML-DSA-65) and the memory-hard ArmaxHash algorithm.
+Thank you for your interest in contributing to Armaxcoin. Armaxcoin is an experimental Layer-1 Proof-of-Work blockchain incorporating NIST FIPS 204 post-quantum digital signatures (ML-DSA-65) and the ArmaxHash v2 Stream-Fast algorithm.
 
 Because consensus-critical systems require meticulous attention to correctness, determinism, and security, all contributions must adhere to the engineering standards and quality gates described in this guide.
 

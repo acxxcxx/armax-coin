@@ -281,8 +281,8 @@ graph TD
 ### 5. Lightweight Smart Contracts & WebAssembly VM (Future Research)
 - Exploratory design for a sandboxed WebAssembly (WASM) runtime executing expressive UTXO-based contracts (similar to ErgoScript) without EVM state bloat.
 
-### 6. Small-Hardware PoW Optimization (LWMA-1 & Active ArmaxHash)
-- Memory-hard CPU mining via ArmaxHash v1 (Argon2id 2 MB + BLAKE2b) active from block #520, optimized for consumer CPUs and ARM single-board computers. No absolute ASIC resistance is claimed; rather, the algorithm prioritizes accessible multi-core commodity hardware hashing.
+### 6. Small-Hardware PoW Optimization (LWMA-1 & ArmaxHash v2 Stream-Fast)
+- CPU mining via ArmaxHash v2 Stream-Fast (chained BLAKE2b with zero heap allocation) active from block #2500, engineered for energy-efficient multi-core commodity CPUs, mobile devices, and ARM edge computers. Historical pre-fork blocks (0..519 SHA-256d and 520..2499 ArmaxHash v1 Argon2id) remain fully verified on-chain.
 
 ### 7. Democratic On-Chain Governance & Signaling
 - Miner and node signaling bits in block headers for seamless, non-contentious soft forks and protocol upgrades.
