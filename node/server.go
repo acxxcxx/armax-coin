@@ -135,7 +135,11 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":   msg,
+		"message": msg,
+		"status":  "error",
+	})
 }
 
 // isAllowedHost checks if an HTTP Host header is loopback or an explicitly configured host (DNS rebinding guard) [T10]
