@@ -41,7 +41,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Max Block Transactions** | 1,000 Txs / Block | Hard consensus ceiling preventing block bloat and memory exhaustion attacks |
 | **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
 | **Block Transactions** | Binary Merkle Tree Root | Canonical 32-byte Merkle root in header enabling SPV Light Wallet proofs |
-| **Hashing Algorithm** | ArmaxHash (Argon2id 2MB, $H \ge 520$) / Legacy SHA-256d ($H < 520$) | Memory-hard ASIC-resistant Argon2id (2048 KiB, 1 pass, 1 lane) activated at height 520; historical blocks 0..519 preserved under SHA-256d |
+| **Hashing Algorithm** | ArmaxHash (Argon2id 2MB, $H \ge 520$) / Legacy SHA-256d ($H < 520$) | Memory-hard Argon2id (2048 KiB, 1 pass, 1 lane) activated at height 520; historical blocks 0..519 preserved under SHA-256d; no absolute ASIC resistance is claimed |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Derivation** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |
@@ -528,7 +528,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 1. **P2P Transport Security:** Wire transport encryption employs self-signed ephemeral X.509 certificates pinned via Trust On First Use (TOFU). While TOFU prevents ongoing passive surveillance and subsequent tampering, the initial contact remains vulnerable to active in-path MITM adversaries unless seeded with out-of-band certificate pins.
 2. **Code Audit Status:** Armaxcoin is an experimental Layer-1 cryptocurrency under active testnet development. Neither the core consensus engine, the ArmaxHash implementation, nor the post-quantum signature integration has undergone a formal third-party cryptographic security audit.
-3. **Dual PoW Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d). Active mining from block #520 onwards enforces the memory-hard ArmaxHash algorithm (Argon2id 2 MB), specifically designed to resist specialized SHA-256 ASIC domination and facilitate CPU mining.
+3. **Dual PoW Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d). Active mining from block #520 onwards enforces the memory-hard ArmaxHash algorithm (Argon2id 2 MB), engineered to facilitate accessible CPU mining across commodity hardware without claiming permanent ASIC immunity.
 4. **Initial Hashrate & 51% Risk:** Early testnet and bootstrap states operate with low aggregate network hashrate, leaving the blockchain temporarily vulnerable to 51% hash power reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
 5. **ARM Verification Overhead:** NIST FIPS 204 ML-DSA-65 signatures require modular polynomial arithmetic, introducing measurable CPU verification latency on constrained ARM single-board computers (Raspberry Pi, Orange Pi).
 6. **Minimum Go Version:** Compiling Armaxcoin requires Go 1.27+ due to reliance on the standard library `crypto/mldsa` package and toolchain alignment (`go.mod`).

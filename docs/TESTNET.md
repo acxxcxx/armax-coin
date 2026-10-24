@@ -110,7 +110,7 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 - **Local Multi-Threaded Engine:** `armminer` queries `/getblocktemplate` from `armcoind`, constructs the candidate block with coinbase reward, and runs parallel worker threads across `-threads N` local CPU workers.
 - **Proof-of-Work Algorithm Migration:**
   - **Height $0 \le H < 520$:** Legacy SHA-256d PoW. All historical blocks remain valid and preserved.
-  - **Height $H \ge 520$:** Memory-Hard **ArmaxHash** (Argon2id 2048 KiB memory footprint + Blake2b + SHA-256, 1 lane, 1 iteration). CPU-oriented, ASIC/FPGA-resistant.
+  - **Height $H \ge 520$:** Memory-Hard **ArmaxHash** (Argon2id 2048 KiB memory footprint + BLAKE2b, 1 lane, 1 iteration). CPU-oriented, commodity hardware focused (no absolute ASIC immunity claimed).
 - **Console Telemetry:** Prints real-time hashrate metrics (`H/s`, `kH/s`, `MH/s`) and solve timestamps every 4 seconds. On single-board computers (e.g. Allwinner H3/H616, Armbian Linux), expected throughput is ~15-30 H/s per core due to 2 MB L2/L3 cache memory bounds.
 - **Dynamic Tip Adaptation:** Automatically queries daemon tip height and aborts stale rounds if a competing peer mines a block first (`HTTP 409 Conflict`).
 - **Coinbase Maturity (10 Confirmations on Testnet, 100 on Mainnet):** Freshly mined block rewards enter an on-chain immature queue and cannot be spent until 10 blocks (testnet) or 100 blocks (mainnet) have been confirmed on top of them (consensus-enforced, storage schema v3).

@@ -6,15 +6,15 @@ This guide details how to participate in Proof-of-Work (PoW) mining on the Armax
 
 ## 1. Mining Algorithm Architecture
 
-Armaxcoin employs a dual-phase Proof-of-Work consensus timeline designed to transition from initial bootstrap hashing to ASIC-resistant, memory-hard CPU mining:
+Armaxcoin employs a dual-phase Proof-of-Work consensus timeline designed to transition from initial bootstrap hashing to accessible, memory-hard CPU mining:
 
 | Block Range | Algorithm | Characteristics | Target Hashrate |
 |---|---|---|---|
 | **Blocks 0 .. 519** | **SHA-256d** | Double SHA-256 block header hashing | Legacy bootstrap phase |
-| **Blocks 520+ (Active)** | **ArmaxHash** | Memory-hard hybrid: **Argon2id** (2 MB memory cost, 1 time iteration) chained with **Blake2b-512** and **SHA-256** | CPU-oriented, ASIC/FPGA-resistant |
+| **Blocks 520+ (Active)** | **ArmaxHash** | Memory-hard hybrid: **Argon2id** (2 MB memory cost, 1 time iteration) chained with **BLAKE2b** | CPU-oriented, consumer hardware accessible |
 
 ### Why ArmaxHash?
-ArmaxHash was specifically engineered and activated on testnet at block #520 to prevent specialized SHA-256 ASIC domination and encourage equitable community CPU mining. Each hash evaluation requires 2 MB of fast memory access, keeping hashrates bound to CPU/RAM bandwidth rather than brute-force ASIC logic gates.
+ArmaxHash was specifically engineered and activated on testnet at block #520 to transition away from pure SHA-256 and encourage community CPU mining. Each hash evaluation requires 2 MB of memory access, keeping hashrates bound to CPU/RAM bandwidth without asserting unprovable permanent ASIC immunity.
 
 ---
 

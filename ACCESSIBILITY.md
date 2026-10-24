@@ -44,7 +44,7 @@ For users utilizing terminal screen readers (such as Orca on Linux or NVDA/JAWS 
 
 True decentralization requires accessibility across economic and physical hardware boundaries:
 
-- **Consumer CPU & SBC Optimization:** The consensus mining algorithm (ArmaxHash: Argon2id 2 MB) is specifically parameterized to run efficiently on commodity multicore CPUs and single-board computers (ARM64, Raspberry Pi 4/5, Orange Pi), preventing centralization in proprietary ASIC clusters.
+- **Consumer CPU & SBC Optimization:** The consensus mining algorithm (ArmaxHash: Argon2id 2 MB) is specifically parameterized to run efficiently on commodity multicore CPUs and single-board computers (ARM64, Raspberry Pi 4/5, Orange Pi), prioritizing accessible multi-core hardware participation.
 - **Lightweight Memory Footprint:** Node daemons and CLI tools maintain modest RAM footprints (under 500 MB under normal testnet operation), allowing operation on entry-level machines.
 
 ---

@@ -269,7 +269,7 @@ graph TD
 - Exploratory design for a sandboxed WebAssembly (WASM) runtime executing expressive UTXO-based contracts (similar to ErgoScript) without EVM state bloat.
 
 ### 6. Small-Hardware PoW Optimization (LWMA-1 & Active ArmaxHash)
-- Memory-hard CPU mining via ArmaxHash (Argon2id 2 MB + Blake2b + SHA-256) active from block #520, keeping PoW accessible on consumer CPUs and ARM single-board computers without requiring specialized ASIC hardware.
+- Memory-hard CPU mining via ArmaxHash v1 (Argon2id 2 MB + BLAKE2b) active from block #520, optimized for consumer CPUs and ARM single-board computers. No absolute ASIC resistance is claimed; rather, the algorithm prioritizes accessible multi-core commodity hardware hashing.
 
 ### 7. Democratic On-Chain Governance & Signaling
 - Miner and node signaling bits in block headers for seamless, non-contentious soft forks and protocol upgrades.

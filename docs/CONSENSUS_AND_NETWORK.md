@@ -32,12 +32,12 @@ Armaxcoin is built from the ground up for the post-quantum era. All user transac
 
 ## 2. Proof-of-Work: The ArmaxHash Algorithm
 
-ArmaxHash is an ASIC-resistant, memory-hard hashing algorithm activated at block **#520** on the testnet. It chains Argon2id with cryptographic digest algorithms to neutralize specialized hashing hardware:
+ArmaxHash is a memory-hard Proof-of-Work hashing algorithm activated at block **#520** on the testnet. It chains Argon2id with cryptographic digest algorithms to provide accessible CPU mining across multi-core systems without claiming absolute ASIC immunity:
 
 $$\text{ArmaxHash}(H) = \text{SHA256}\Big(\text{Blake2b-512}\big(\text{Argon2id}(H, \text{salt}=H[:16], t=1, m=2048, p=1)\big)\Big)$$
 
 ### Algorithm Invariants:
-1. **Memory Hardness ($m=2048\text{ KiB}$):** Requires 2 megabytes of scratchpad memory per hash calculation, preventing efficient implementation on traditional SHA-256 ASIC chipsets.
+1. **Memory Hardness ($m=2048\text{ KiB}$):** Requires 2 megabytes of scratchpad memory per hash calculation, establishing a balanced memory-bandwidth footprint for multi-core systems.
 2. **Time Cost ($t=1$):** Single iteration ensures rapid validation by relay nodes (~0.3 ms on standard CPU) while imposing substantial memory-bandwidth bottlenecks on brute-force searchers.
 3. **Parallelism ($p=1$):** Single lane per hash enables linear multi-core scaling for CPU miners.
 
