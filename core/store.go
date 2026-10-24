@@ -325,66 +325,70 @@ func decodeTxLocation(buf []byte) (uint64, uint64, error) {
 	return h, idx, nil
 }
 
-// GetBlockByHash retrieves a block by its block hash using bktHashIndex in O(1) [N-21, C-25]
+// GetBlockByHash retrieves a block by its block hash using bktHashIndex in O(1) [N-21, C-25, T9]
 func (bc *Blockchain) GetBlockByHash(hash string) (*Block, error) {
 	cleanHash := strings.ToLower(strings.TrimSpace(hash))
+	if len(cleanHash) != 64 || !isHex(cleanHash) {
+		return nil, fmt.Errorf("invalid block hash format: %s", hash)
+	}
 
-	// 1. Check in-memory chain under RLock
+	// 1. Query persistent store bktHashIndex in O(1)
+	db, err := bc.getStoreDB()
+	if err == nil {
+		var found *Block
+		_ = db.View(func(tx *bolt.Tx) error {
+			bktH := tx.Bucket(bktHashIndex)
+			if bktH == nil {
+				return nil
+			}
+			hBytes := bktH.Get([]byte(cleanHash))
+			if hBytes == nil {
+				return nil
+			}
+			bktB := tx.Bucket(bktBlocks)
+			if bktB == nil {
+				return nil
+			}
+			bData := bktB.Get(hBytes)
+			if bData == nil {
+				return nil
+			}
+			var b Block
+			if err := json.Unmarshal(bData, &b); err == nil {
+				found = &b
+			}
+			return nil
+		})
+		if found != nil {
+			return found, nil
+		}
+	}
+
+	// 2. Fallback: Check recent in-memory chain under RLock (bounded to last 200 blocks) [T9]
 	bc.Lock.RLock()
-	for i := len(bc.Chain) - 1; i >= 0; i-- {
+	defer bc.Lock.RUnlock()
+	chainLen := len(bc.Chain)
+	start := chainLen - 1
+	bound := start - 200
+	if bound < 0 {
+		bound = 0
+	}
+	for i := start; i >= bound; i-- {
 		if strings.EqualFold(bc.Chain[i].Hash, cleanHash) {
 			b := bc.Chain[i]
-			bc.Lock.RUnlock()
 			return &b, nil
 		}
 	}
-	bc.Lock.RUnlock()
 
-	// 2. Query persistent store bktHashIndex
-	db, err := bc.getStoreDB()
-	if err != nil {
-		return nil, fmt.Errorf("block with hash %s not found", hash)
-	}
-
-	var found *Block
-	err = db.View(func(tx *bolt.Tx) error {
-		bktH := tx.Bucket(bktHashIndex)
-		if bktH == nil {
-			return fmt.Errorf("hash index bucket missing")
-		}
-		hBytes := bktH.Get([]byte(cleanHash))
-		if hBytes == nil {
-			hBytes = bktH.Get([]byte(hash))
-		}
-		if hBytes == nil {
-			return fmt.Errorf("block hash not found")
-		}
-
-		bktB := tx.Bucket(bktBlocks)
-		if bktB == nil {
-			return fmt.Errorf("blocks bucket missing")
-		}
-		bData := bktB.Get(hBytes)
-		if bData == nil {
-			return fmt.Errorf("block data missing for height")
-		}
-		var b Block
-		if err := json.Unmarshal(bData, &b); err != nil {
-			return err
-		}
-		found = &b
-		return nil
-	})
-
-	if err == nil && found != nil {
-		return found, nil
-	}
 	return nil, fmt.Errorf("block with hash %s not found", hash)
 }
 
-// GetTransactionByHash retrieves a transaction, its block index, timestamp, and block hash in O(1) using bktTxIndex [N-21, C-25]
+// GetTransactionByHash retrieves a transaction, its block index, timestamp, and block hash in O(1) using bktTxIndex [N-21, C-25, T9]
 func (bc *Blockchain) GetTransactionByHash(txHash string) (*Transaction, int, int64, string, error) {
 	cleanHash := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(txHash), "0x"))
+	if len(cleanHash) != 64 || !isHex(cleanHash) {
+		return nil, -1, 0, "", fmt.Errorf("invalid transaction hash format: %s", txHash)
+	}
 
 	// 1. Check mempool first under RLock
 	bc.Lock.RLock()
@@ -397,7 +401,7 @@ func (bc *Blockchain) GetTransactionByHash(txHash string) (*Transaction, int, in
 	}
 	bc.Lock.RUnlock()
 
-	// 2. Query persistent store bktTxIndex
+	// 2. Query persistent store bktTxIndex in O(1)
 	db, err := bc.getStoreDB()
 	if err == nil {
 		var foundTx *Transaction
@@ -447,10 +451,16 @@ func (bc *Blockchain) GetTransactionByHash(txHash string) (*Transaction, int, in
 		}
 	}
 
-	// 3. Fallback: Search in-memory chain under RLock
+	// 3. Fallback: Search recent in-memory chain under RLock bounded to last 50 blocks [T9]
 	bc.Lock.RLock()
 	defer bc.Lock.RUnlock()
-	for i := len(bc.Chain) - 1; i >= 0; i-- {
+	chainLen := len(bc.Chain)
+	start := chainLen - 1
+	bound := start - 50
+	if bound < 0 {
+		bound = 0
+	}
+	for i := start; i >= bound; i-- {
 		b := bc.Chain[i]
 		for _, t := range b.Transactions {
 			if strings.EqualFold(t.HashHex(), cleanHash) {

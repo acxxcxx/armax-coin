@@ -249,10 +249,11 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 				totalBlocks = len(bc.Chain)
 				bc.Lock.RUnlock()
 			} else {
-				// Fallback search by miner address (bounded to 25)
+				// Fallback search by miner address (bounded to 25 matches, scanning at most 1000 blocks) [T9]
 				bc.Lock.RLock()
 				totalBlocks = len(bc.Chain)
-				for i := totalBlocks - 1; i >= 0; i-- {
+				scanLimit := 1000
+				for i := totalBlocks - 1; i >= 0 && (totalBlocks-1-i) < scanLimit; i-- {
 					b := bc.Chain[i]
 					if strings.EqualFold(b.Miner, query) {
 						matches = append(matches, b)
@@ -415,18 +416,26 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			}
 		}
 
-		limit := 0
+		limit := 100 // default limit [T9]
 		if lStr := strings.TrimSpace(r.URL.Query().Get("limit")); lStr != "" {
 			if lVal, err := strconv.Atoi(lStr); err == nil && lVal > 0 {
 				limit = lVal
 			}
 		}
+		if limit > 1000 {
+			limit = 1000 // max cap [T9]
+		}
 
-		// 2. Search through blockchain in reverse chronological order
+		// 2. Search through blockchain in reverse chronological order (bounded to at most 2000 blocks) [T9]
 		chainLen := len(bc.Chain)
 		if chainLen > 0 {
+			maxBlocksToScan := 2000
 			scanStart := chainLen - 1
-			for i := scanStart; i >= 0; i-- {
+			scanEnd := scanStart - maxBlocksToScan
+			if scanEnd < 0 {
+				scanEnd = 0
+			}
+			for i := scanStart; i >= scanEnd; i-- {
 				b := bc.Chain[i]
 				for _, tx := range b.Transactions {
 					if core.MatchAddress(tx.Sender, address) || core.MatchAddress(tx.Recipient, address) {
@@ -436,12 +445,12 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 							Status:     "confirmed",
 							Tx:         tx,
 						})
-						if limit > 0 && len(history) >= limit {
+						if len(history) >= limit {
 							break
 						}
 					}
 				}
-				if limit > 0 && len(history) >= limit {
+				if len(history) >= limit {
 					break
 				}
 			}
