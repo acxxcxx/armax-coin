@@ -3187,7 +3187,7 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 		case "GET_HEIGHT":
 			p.Blockchain.Lock.RLock()
 			latest := p.Blockchain.GetLatestBlockUnsafe()
-			cw := core.CalculateChainwork(p.Blockchain.Chain).String()
+			cw := p.Blockchain.GetTotalChainworkUnsafe().String()
 			p.Blockchain.Lock.RUnlock()
 
 			respData, err := json.Marshal(Message{
@@ -3245,21 +3245,27 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 		case "GET_FORKPOINT":
 			var req ForkpointRequest
 			if err := json.Unmarshal(msg.Payload, &req); err == nil && len(req.Locators) > 0 {
+				// Bound max evaluated locators to 64 [T6]
+				if len(req.Locators) > 64 {
+					req.Locators = req.Locators[:64]
+				}
+
 				p.Blockchain.Lock.RLock()
 				ancestorHeight := -1
 				var ancestorHash string
 
-				// Find highest matching locator in local chain
+				// Find highest matching locator in local chain using O(1) store index lookup [T6]
 				for _, loc := range req.Locators {
-					for i := len(p.Blockchain.Chain) - 1; i >= 0; i-- {
-						if p.Blockchain.Chain[i].Hash == loc {
-							ancestorHeight = p.Blockchain.Chain[i].Index
-							ancestorHash = loc
+					cleanLoc := strings.ToLower(strings.TrimSpace(loc))
+					if len(cleanLoc) != 64 {
+						continue
+					}
+					if b, err := p.Blockchain.GetBlockByHash(cleanLoc); err == nil && b != nil {
+						if b.Index < len(p.Blockchain.Chain) && p.Blockchain.Chain[b.Index].Hash == b.Hash {
+							ancestorHeight = b.Index
+							ancestorHash = b.Hash
 							break
 						}
-					}
-					if ancestorHeight != -1 {
-						break
 					}
 				}
 				if ancestorHeight == -1 {
@@ -4313,7 +4319,7 @@ func (p *PeerServer) SyncBestPeer() {
 
 	p.Blockchain.Lock.RLock()
 	localLatest := p.Blockchain.GetLatestBlockUnsafe()
-	localChainwork := core.CalculateChainwork(p.Blockchain.Chain)
+	localChainwork := p.Blockchain.GetTotalChainworkUnsafe()
 	p.Blockchain.Lock.RUnlock()
 
 	var mu sync.Mutex
@@ -4476,9 +4482,6 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 	p.Blockchain.Lock.RLock()
 	localLatest := p.Blockchain.GetLatestBlockUnsafe()
 	localChainwork := p.Blockchain.GetTotalChainworkUnsafe()
-	if calcCW := core.CalculateChainwork(p.Blockchain.Chain); calcCW != nil && calcCW.Cmp(localChainwork) > 0 {
-		localChainwork = calcCW
-	}
 	p.Blockchain.Lock.RUnlock()
 
 	peerChainwork, ok := new(big.Int).SetString(hr.Chainwork, 10)
