@@ -21,7 +21,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
 | **[Node Operations Guide](docs/NODE_OPERATIONS.md)** | Running full nodes, seed nodes, systemd units, TLS 1.3, and TOFU certificate security |
 | **[Consensus & Network Specification](docs/CONSENSUS_AND_NETWORK.md)** | Mathematical specifications for LWMA-1, ArmaxHash, ML-DSA-65, and reorg limits |
-| **[Contributor Reward Program (Proposal)](docs/CONTRIBUTOR_REWARDS.md)** | Proposed community incentive framework (marked `PROPOSED -- REQUIRES MAINTAINER APPROVAL`) |
+| **[Contributors](CONTRIBUTORS.md)** | List of project contributors derived from Git history |
 | **[Security Policy & Disclosures](SECURITY.md)** | Threat model, responsible vulnerability reporting, and known limitations |
 | **[Contribution Guidelines](CONTRIBUTING.md)** | Development workflow, code standards, Conventional Commits, and test gates |
 | **[Code of Conduct](CODE_OF_CONDUCT.md)** | Community pledge and standards of behavior |
@@ -36,15 +36,15 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | Parameter | Specification | Details / Rules |
 |---|---|---|
 | **Consensus Mechanism** | Proof-of-Work (PoW) | Dynamic 256-bit numerical target difficulty adjustment via LWMA-1 ($N=60$) |
-| **Fork Choice Rule** | Heaviest Chain (Satoshi Chainwork) | Cumulative Proof-of-Work ($\sum \frac{2^{256}}{\text{Target} + 1}$) strictly beats low-difficulty chains |
+| **Fork Choice Rule** | Heaviest Chain (Cumulative Chainwork) | Cumulative Proof-of-Work ($\sum \frac{2^{256}}{\text{Target} + 1}$) strictly beats low-difficulty chains |
 | **Max Reorg Depth** | 720 Blocks (~24 hours) | Finality boundary preventing deep history overwrites while accommodating natural network splits |
 | **Max Block Transactions** | 1,000 Txs / Block | Hard consensus ceiling preventing block bloat and memory exhaustion attacks |
 | **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
-| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b, $H \ge 2500$) / ArmaxHash v1 ($520 \le H < 2500$) / Legacy SHA-256d ($H < 520$) | High-throughput, 0-heap allocation Stream-Fast PoW ($H \ge 2500$); historical blocks preserved under 100% backward-compatible consensus rules |
+| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b, $H \ge 2500$) / ArmaxHash v1 ($520 \le H < 2500$) / Legacy SHA-256d ($H < 520$) | High-throughput, 0-heap allocation Stream-Fast PoW ($H \ge 2500$); see canonical spec in docs/CONSENSUS_AND_NETWORK.md |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Derivation** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |
-| **P2P Transport** | JSON over TCP with TLS 1.3 | Wire protocol is newline-delimited JSON over TCP; TLS 1.3 and TOFU pinning are enabled by default; plaintext is legacy-testnet-only |
+| **P2P Transport** | JSON over TCP with TLS 1.3 | Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band |
 | **P2P Synchronization** | Chunked Range & Chainwork Sync | Range-based block streaming (`GET_BLOCK_RANGE`) with cumulative chainwork reorg and parallel sync workers |
 | **P2P Address Book** | 1,000 Addrs (`tried` & `new`) | Separate address book from active connections (MaxPeers=50), dead peer eviction after 3 failures |
 | **P2P Eclipse Defense** | Subnet Connection Limiter | Maximum 3 concurrent peers/connections per IPv4 `/24` (or IPv6 `/48`) subnet (`disable_subnet_limit` available) |
@@ -127,6 +127,12 @@ Get-FileHash -Algorithm SHA256 .\armax-v1.0.3-windows-amd64.zip
 # Compare against the published hash in SHA256SUMS
 Get-Content .\SHA256SUMS | Select-String "armax-v1.0.3-windows-amd64.zip"
 ```
+
+#### Release Verification
+To verify the authenticity and integrity of a release:
+1. **Commit & Tag Matching:** Confirm that the release tag matches the official commit history (`git tag -v v1.0.3` or verifying commit `11bed60`).
+2. **Checksum Integrity:** Verify downloaded archive hashes against the published `SHA256SUMS` manifest using `sha256sum --check --ignore-missing SHA256SUMS`.
+3. **Security Scope of Unsigned Checksums:** Note that checksums hosted directly alongside binaries protect against accidental network corruption, but do not provide cryptographic defense if the hosting infrastructure itself is compromised. Reproducible source compilation (`go build -trimpath ...`) matching the tagged commit provides independent binary verification.
 
 ### 2. Launch Testnet Node Daemon
 
@@ -423,11 +429,8 @@ The Armax Desktop GUI (`armgui`) enforces strict cryptographic hygiene:
 - **Exact Decimal Accounting:** Balance, amounts, and fees are parsed and displayed using exact string-to-integer conversion down to 1 Armoid ($10^{-8}$) without floating-point inaccuracies.
 - **Automatic Minimum Mempool Fee:** Outgoing transactions validate that fees meet or exceed `core.CalculateMinMempoolFee(signedTxSize)`. If a lower fee is entered, the GUI automatically prompts and upgrades to the minimum network relay fee to ensure the transaction is accepted by mempools.
 
-### Web Wallet Security Considerations
-- **Client-Side Signing Enforced:** Transaction signing is performed exclusively client-side via `window.crypto.subtle`. Private keys are NEVER sent to the daemon.
-- **Secure Context Requirement:** Web Crypto API requires a **Secure Context** (`https://` or `http://localhost`). Accessing over unencrypted public IP will prevent signing.
-- **Deployment Recommendation:** If hosting the Web Wallet publicly, always terminate TLS using a reverse proxy (such as Caddy or Nginx with Let's Encrypt) and bind the RPC daemon port 19332 (testnet 19333) and local services (19340-19343) strictly to `127.0.0.1`.
-- **Storage Warning:** The browser wallet stores active keys in browser `localStorage`. Do not store high-value keys in browser storage on untrusted or shared machines.
+### Key Management & Transaction Signing Architecture
+Key generation, keystore management, and post-quantum transaction signing are performed exclusively by the local client tools (`armwallet`, `armsend`, `armgui`). No private keys are generated, stored, or processed in web browsers; public web interfaces and explorers are read-only and broadcast-only.
 
 ---
 
@@ -525,7 +528,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 ## Known Limitations & Security Disclosures
 
-1. **P2P Transport Security:** Wire transport encryption employs self-signed ephemeral X.509 certificates pinned via Trust On First Use (TOFU). While TOFU prevents ongoing passive surveillance and subsequent tampering, the initial contact remains vulnerable to active in-path MITM adversaries unless seeded with out-of-band certificate pins.
+1. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 2. **Code Audit Status:** Armaxcoin is an experimental Layer-1 cryptocurrency under active testnet development. Neither the core consensus engine, the ArmaxHash implementation, nor the post-quantum signature integration has undergone a formal third-party cryptographic security audit.
 3. **PoW Consensus Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d), and blocks 520..2499 used ArmaxHash v1 (Argon2id 2 MB). Active mining from block #2500 onwards enforces **ArmaxHash v2 Stream-Fast** (chained BLAKE2b), engineered to eliminate DRAM memory churn and facilitate high-throughput, energy-efficient CPU mining across commodity hardware and mobile/ARM devices without claiming permanent ASIC immunity.
 4. **Initial Hashrate & 51% Risk:** Early testnet and bootstrap states operate with low aggregate network hashrate, leaving the blockchain temporarily vulnerable to 51% hash power reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
@@ -578,7 +581,7 @@ Initial official public testnet release of the ARMAXcoin Proof-of-Work Layer-1 b
 - **Passphrase Encryption:** BIP-39 24-word recovery mnemonics with PBKDF2/Argon2id keystore protection.
 
 #### Consensus & PoW Hardening
-- **Memory-Hard Hybrid PoW (ArmaxHash):** Dual-phase PoW migration enforcing memory-hard Argon2id (2 MB scratchpad, $t=1, p=1$), Blake2b-512, and SHA-256 at block height $\ge 520$ for decentralized CPU mining.
+- **Memory-Hard Hybrid PoW (ArmaxHash):** Dual-phase PoW migration enforcing Argon2id (2048 KiB scratchpad, $t=2, p=1$), Blake2b-512, and SHA-256 at block height $\ge 520$ for CPU mining (see `docs/CONSENSUS_AND_NETWORK.md` for the canonical specification across all eras).
 - **Continuous LWMA-1 Difficulty Adjustment:** Responsive sliding-window retargeting ($N=60$) with safety dampening bounds preventing oscillation, timewarp attacks, and hashrate collapse.
 - **Chainwork & Fork Resolution:** Satoshi cumulative chainwork fork choice rule with a strict `MaxReorganizationDepth = 720` blocks (~24h finality limit).
 - **Consensus Ceilings:** `MaxBlockTransactions = 1,000` block transaction cap and continuous circulating supply tracking.

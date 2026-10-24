@@ -23,35 +23,64 @@ Armaxcoin is built from the ground up for the post-quantum era. All user transac
   - Network profile separation prevents cross-network transaction replay.
 
 ### 1.2 Hashing Functions
-- **Block Hashing (Historical, Blocks 0..519):** Double-SHA256 (`SHA-256d`).
-- **Block Hashing (Historical, Blocks 520..2499):** **ArmaxHash v1** memory-hard Proof-of-Work (Argon2id 2 MB + BLAKE2b).
-- **Block Hashing (Active, Blocks 2500+):** **ArmaxHash v2** Stream-Fast Proof-of-Work (Chained BLAKE2b-512 + BLAKE2b-256 with domain separation).
+- **Block Hashing (Testnet, Blocks 0..519):** Double-SHA256 (`SHA-256d`).
+- **Block Hashing (Testnet, Blocks 520..2499):** **ArmaxHash v1** (Argon2id 2048 KiB, time cost 2, 1 lane + BLAKE2b-512 + SHA-256).
+- **Block Hashing (Testnet, Blocks 2500+):** **ArmaxHash v2 Stream-Fast** (chained BLAKE2b-512 + BLAKE2b-256 with domain separation).
+- **Block Hashing (Mainnet Profile - Locked):** Double-SHA256 (`SHA-256d`).
 - **Transaction ID & Merkle Trees:** SHA-256 hashing.
 - **Address Derivation:** SHA-256(SigAlg || PublicKey) followed by BIP-173 Bech32 encoding.
 
 ---
 
-## 2. Proof-of-Work: The ArmaxHash Consensus Timeline
+## 2. Canonical Proof-of-Work Specification
 
-Armaxcoin maintains full historical backward compatibility while evolving its PoW consensus across three distinct eras:
+Armaxcoin Proof-of-Work (PoW) consensus logic is implemented in `core/blockchain.go`, `core/target.go`, `core/network.go`, and the `armaxhash/` package. The algorithm in effect is strictly determined by the active network profile and current block height.
 
-### 2.1 Era 1: SHA-256d (Blocks 0 .. 519)
-The initial bootstrap phase used standard Bitcoin-style double SHA-256 hashing. All historical blocks remain permanently valid.
+### 2.1 Public Testnet Profile (`ARMX-TESTNET-1`)
 
-### 2.2 Era 2: ArmaxHash v1 (Blocks 520 .. 2499)
-Activated on testnet at block #520 to introduce commodity CPU mining:
-$$\text{ArmaxHash}_{v1}(H) = \text{SHA256}\Big(\text{Blake2b-512}\big(\text{Argon2id}(H, \text{salt}=H[:16], t=1, m=2048, p=1)\big)\Big)$$
+On the public testnet, PoW consensus evolves across three distinct height eras to preserve 100% backward compatibility:
 
-### 2.3 Era 3: ArmaxHash v2 Stream-Fast (Blocks 2500+)
-Activated at block #2500 via scheduled hard fork to eliminate GC memory bus churn and optimize throughput across edge ARM SBCs and multi-core desktops:
-$$\text{Prehash} = \text{Blake2b-512}\Big(\text{"ARMX-BLAKE2B-V2:"} \,||\, \text{NetworkID} \,||\, \text{":"} \,||\, H\Big)$$
-$$\text{ArmaxHash}_{v2}(H) = \text{Blake2b-256}\Big(\text{Prehash} \,||\, H\Big)$$
+#### Era 1: Legacy Double-SHA256 (Blocks 0 .. 519)
+- **Algorithm:** Standard Bitcoin-style double-SHA256 (`SHA-256d`).
+- **Parameters:** Two iterations of SHA-256 over serialized block header.
+- **Status:** Historical bootstrap era. All historical blocks remain permanently valid.
 
-**Key Technical Properties:**
-1. **0 Heap Allocations:** Executed within fixed stack buffers, zero GC pauses.
-2. **Microsecond Verification:** Blocks are verified instantaneously by light and full relay nodes.
-3. **Cross-Network Isolation:** Strict domain separation prevents replay between mainnet and testnet.
-4. **Cache & ARM Friendly:** Eliminates memory bus bottlenecking on devices with limited L2/L3 cache.
+#### Era 2: ArmaxHash v1 (Blocks 520 .. 2,499)
+- **Algorithm:** Memory-oriented hybrid using Argon2id (`armaxhash.VersionV1 = 1`).
+- **Code Parameters (`armaxhash/armaxhash.go`):**
+  - Memory cost: `MemoryKiB = 2048` (2 MiB / 2,048 KiB)
+  - Time cost: `TimeCost = 2` iterations
+  - Parallelism: `Threads = 1` lane
+  - Salt: First 16 bytes of block header (`SaltSize = 16`)
+  - Key length: 32 bytes (`OutputSize = 32`)
+- **Formula:**
+  $$\text{D}_1 = \text{Argon2id}(H, \text{salt}=H[:16], \text{time}=2, \text{memory}=2048\text{ KiB}, \text{threads}=1)$$
+  $$\text{ArmaxHash}_{v1}(H) = \text{SHA-256}\Big(\text{BLAKE2b-512}(\text{D}_1)\Big)$$
+- **Hardware Profile & Limitations:** 2 MiB memory cost provides CPU cache affinity (fitting within L3 cache), but 2 MiB is modest by modern memory-hardness standards. Resistance to specialized hardware has not been evaluated; it serves as an architectural deterrent rather than permanent ASIC immunity.
+
+#### Era 3: ArmaxHash v2 Stream-Fast (Blocks 2,500+)
+- **Algorithm:** Dual-stage chained BLAKE2b (`armaxhash.VersionV2 = 2`), activated at block #2500 via scheduled hard fork (`core.TestnetParams.ArmaxHashV2ActivationHeight = 2500`).
+- **Code Specification (`armaxhash/armaxhash.go:87-118`):**
+  - **Stage 1 (BLAKE2b-512):**
+    $$\text{D}_1 = \text{BLAKE2b-512}\Big(\text{"ARMX-POW-V2\x00"} \parallel \text{byte}(2) \parallel \text{byte}(\text{len}(\text{NetID})) \parallel \text{NetID} \parallel H\Big)$$
+  - **Stage 2 (BLAKE2b-256):**
+    $$\text{ArmaxHash}_{v2}(H) = \text{BLAKE2b-256}\Big(\text{D}_1\Big)$$
+- **Technical Properties:**
+  - **Zero Heap Allocations:** Mining loops execute with $0\text{ B/op}$ heap allocation, eliminating garbage collector pauses.
+  - **Microsecond Verification:** Blocks verify in microseconds on commodity processors.
+  - **Memory Hardness:** **ArmaxHash v2 is NOT memory-hard.** It is computationally intensive and designed for commodity CPU execution, but does not saturate DRAM. Resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated.
+
+### 2.2 Mainnet Profile (`ARMX-MAINNET-1` - Unreleased / Locked)
+
+In `core/network.go`:
+- `MainnetParams.ArmaxHashActivationHeight = -1`
+- `MainnetParams.ArmaxHashV2ActivationHeight = -1`
+
+Unless changed by a future consensus hard-fork proposal, the mainnet profile in code specifies standard **Double-SHA256 (`SHA-256d`)** for all blocks. 
+- *Hardware Profile:* SHA-256d can be implemented in specialized hardware (ASIC/GPU). It is custom-serialized and not compatible with standard Bitcoin mining firmware without modifications, but is **not claimed to be CPU-friendly, memory-hard, or ASIC-resistant**.
+
+### 2.3 Regtest & Devnet Profiles
+Both `regtest` and `devnet` profiles have activation heights set to `-1`, operating under standard Double-SHA256 (`SHA-256d`).
 
 ---
 
@@ -150,10 +179,10 @@ Instead of private mining, the following transparent launch procedure is strongl
 
 ## 7. P2P Wire Protocol & Handshake Flow
 
-1. **Transport Layer:** TCP with mandatory TLS 1.3 encryption.
+1. **Transport Layer:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 2. **Handshake:**
    - Initiator connects and performs TLS handshake.
-   - Remote peer certificate public-key fingerprint is checked against `peers.json` (TOFU pinning).
+   - Remote peer certificate public-key fingerprint is checked against `peers.json` (TOFU pinning). If fingerprint changed, connection terminates immediately.
    - Nodes exchange `VERSION` payload containing:
      - Software version (`1.0.0`)
      - Network ID (`ARMX-TESTNET-1`)

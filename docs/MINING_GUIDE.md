@@ -11,13 +11,16 @@ Armaxcoin employs an evolutionary Proof-of-Work consensus timeline designed to t
 | Block Range | Algorithm | Characteristics | Target Hashrate |
 |---|---|---|---|
 | **Blocks 0 .. 519** | **SHA-256d** | Double SHA-256 block header hashing | Legacy bootstrap phase |
-| **Blocks 520 .. 2499** | **ArmaxHash v1** | Memory-hard hybrid: **Argon2id** (2 MB memory cost, 1 time iteration) chained with **BLAKE2b** | CPU-oriented, consumer hardware accessible (~50-300 H/s per thread) |
+| **Blocks 520 .. 2499** | **ArmaxHash v1** | Argon2id ($m=2048$ KiB, $t=2$ iterations, $p=1$ lane) chained with BLAKE2b and SHA-256 | CPU-oriented (~50-300 H/s per thread) |
 | **Blocks 2500+ (Active)** | **ArmaxHash v2** | Stream-Fast chained **BLAKE2b-512 + BLAKE2b-256** PoW with domain separation | High-throughput, 0-heap allocation, ARM & commodity CPU friendly (~1-5 MH/s per thread) |
 
-### Why ArmaxHash v2?
-ArmaxHash v1 utilized Argon2id (2 MB RAM per hash), which provided an accessible transition from SHA-256d. However, repeated 2 MB memory allocations per hash caused memory bus saturation and thermal throttling on cache-constrained edge devices (such as ARM SBCs with small L2/L3 caches).
+> [!NOTE]
+> For the complete canonical Proof-of-Work specification across all networks (Testnet and Mainnet profiles), see [docs/CONSENSUS_AND_NETWORK.md](CONSENSUS_AND_NETWORK.md). The unreleased Mainnet profile in code operates under standard Double-SHA256 (`SHA-256d`).
 
-ArmaxHash v2 (activated at block #2500 on testnet via scheduled hard fork) replaces memory-churning allocations with high-speed, zero-allocation chained BLAKE2b cryptographic hashing with strict network-domain separation (`ARMX-BLAKE2B-V2`). This achieves:
+### Why ArmaxHash v2?
+ArmaxHash v1 utilized Argon2id (2048 KiB RAM per hash, 2 iterations), which provided an accessible transition from SHA-256d. However, repeated memory allocations per hash caused memory bus saturation and thermal throttling on cache-constrained edge devices (such as ARM SBCs with small L2/L3 caches).
+
+ArmaxHash v2 (activated at block #2500 on testnet via scheduled hard fork) replaces memory-churning allocations with high-speed, zero-allocation chained BLAKE2b cryptographic hashing with strict network-domain separation (`ARMX-BLAKE2B-V2`). ArmaxHash v2 is computation-bound rather than memory-hard; resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated. This achieves:
 - **Zero GC Memory Overhead:** 0 B/op heap allocation in mining tight loops.
 - **Microsecond Verification:** Instantaneous consensus validation across node networks.
 - **ARM & Commodity CPU Friendly:** Runs smoothly on laptops, desktop CPUs, and low-power ARM devices without thermal throttling or RAM bus exhaustion.

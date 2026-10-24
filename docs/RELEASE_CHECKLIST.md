@@ -60,7 +60,7 @@ This checklist defines the formal verification gates and operational procedures 
   - `docs/MINING_GUIDE.md`
   - `docs/NODE_OPERATIONS.md`
   - `docs/CONSENSUS_AND_NETWORK.md`
-  - `docs/CONTRIBUTOR_REWARDS.md` (clearly marked `PROPOSED -- REQUIRES MAINTAINER APPROVAL`)
+  - `CONTRIBUTORS.md`
 - [ ] **Experimental Disclaimers:** Visible warnings that testnet coins have no economic value and software has not undergone an independent third-party audit.
 
 ---

@@ -95,11 +95,10 @@ A production-grade systemd unit file is provided in `systemd/armcoind-testnet.se
 
 ## 5. Peer-to-Peer Security & TOFU Pinning
 
-Armaxcoin implements zero-trust transport security for node-to-node communication:
+Armaxcoin implements transport encryption for node-to-node communication:
 
-- **Mandatory TLS 1.3:** All P2P traffic is encrypted using TLS 1.3 cipher suites. Plaintext TCP connections are strictly rejected.
-- **Trust On First Use (TOFU):** On first contact, the node pins the remote peer's public key certificate fingerprint in `peers.json`. If a peer later presents a changed certificate fingerprint, the connection is instantly severed to prevent in-path Man-in-the-Middle (MITM) attacks.
-- **Persistent Peer Store:** Known and validated peers are saved atomically to `peers.json` with versioning and checksum verification.
+- **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
+- **Persistent Peer Store:** Known and validated peers are saved atomically to `peers.json` with versioning and checksum verification. Plaintext TCP fallback is strictly rejected.
 
 ---
 

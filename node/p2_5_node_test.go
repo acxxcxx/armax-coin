@@ -86,6 +86,7 @@ func TestP2_5_LargeBlockOverNewBlockAndGetBlockRange(t *testing.T) {
 
 	port := getFreePort(t)
 	ps := NewPeerServer(port, bc)
+	defer ps.Stop()
 	go ps.StartServer()
 
 	time.Sleep(100 * time.Millisecond)

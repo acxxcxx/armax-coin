@@ -53,15 +53,15 @@ We take the security of the Armaxcoin network and its users seriously. If you di
 - Users are solely responsible for securing their 24-word recovery mnemonic and preventing physical/malware access to keystore files.
 
 ### 4. Consensus & Cryptographic Status
-- Armaxcoin Layer-1 consensus actively enforces quantum-resistant digital signatures adhering strictly to the NIST FIPS 204 standard (ML-DSA-65) for all user transactions.
+- Armaxcoin Layer-1 consensus implements the NIST FIPS 204 ML-DSA-65 digital signature algorithm for all user transactions; the implementation has not been independently audited or validated (no CMVP validation).
 - PoW SHA-256 mining remains bounded by ~128 bits of post-quantum security against Grover's algorithm.
 - Advanced experimental extensions such as Hash Time-Locked Contracts (`HTLC`) remain in forward-compatible library status.
 - **Audit Status:** The core implementation and PQC consensus code have not yet been evaluated by an external third-party cryptographic security audit.
 
 ### 5. Known Limitations & Threat Model Disclosures
-- **P2P TLS & First-Contact MITM:** Wire encryption uses self-signed ephemeral X.509 certificates pinned via Trust On First Use (TOFU). While TOFU prevents ongoing passive surveillance and subsequent tampering, initial contact remains vulnerable to active in-path MITM adversaries without out-of-band seed pins.
+- **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 - **Code Audit Status:** The cryptographic implementations and consensus engine are in active testnet development and have not yet undergone a formal external security audit.
-- **PoW Algorithm Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d), and blocks 520..2499 used ArmaxHash v1 (Argon2id 2 MB). Active mining from block #2500 onwards enforces **ArmaxHash v2 Stream-Fast** (chained BLAKE2b), engineered to eliminate DRAM memory churn and facilitate high-throughput, energy-efficient CPU mining across commodity hardware and mobile/ARM devices without claiming permanent ASIC immunity.
+- **PoW Algorithm Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d), and blocks 520..2499 used ArmaxHash v1 (Argon2id 2048 KiB, $t=2, p=1$; see `docs/CONSENSUS_AND_NETWORK.md`). Active mining from block #2500 onwards enforces **ArmaxHash v2 Stream-Fast** (chained BLAKE2b), engineered to eliminate DRAM memory churn and facilitate high-throughput CPU mining across commodity hardware and mobile/ARM devices without claiming permanent ASIC immunity.
 - **Early 51% Hashrate Vulnerability:** Low initial network hashrate during early testnet and launch phases leaves the blockchain vulnerable to 51% deep reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
 - **ARM Verification Performance:** ML-DSA-65 verification involves matrix-vector polynomial multiplication that imposes measurable CPU latency on constrained ARM single-board computers (Raspberry Pi / Orange Pi).
 - **Minimum Go Version:** Building from source strictly requires Go 1.27 or higher due to the standard library `crypto/mldsa` implementation and toolchain alignment (`go.mod`).
