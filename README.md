@@ -128,6 +128,12 @@ Get-FileHash -Algorithm SHA256 .\armax-v1.0.3-windows-amd64.zip
 Get-Content .\SHA256SUMS | Select-String "armax-v1.0.3-windows-amd64.zip"
 ```
 
+#### Release Verification
+To verify the authenticity and integrity of a release:
+1. **Commit & Tag Matching:** Confirm that the release tag matches the official commit history (`git tag -v v1.0.3` or verifying commit `11bed60`).
+2. **Checksum Integrity:** Verify downloaded archive hashes against the published `SHA256SUMS` manifest using `sha256sum --check --ignore-missing SHA256SUMS`.
+3. **Security Scope of Unsigned Checksums:** Note that checksums hosted directly alongside binaries protect against accidental network corruption, but do not provide cryptographic defense if the hosting infrastructure itself is compromised. Reproducible source compilation (`go build -trimpath ...`) matching the tagged commit provides independent binary verification.
+
 ### 2. Launch Testnet Node Daemon
 
 Start the node daemon. By default, it connects to testnet seed nodes, binds P2P gossip to port `19335`, and restricts RPC to loopback `127.0.0.1:19333`:
