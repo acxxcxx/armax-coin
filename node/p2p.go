@@ -1632,6 +1632,9 @@ func NewPeerServer(port string, bc *core.Blockchain, opts ...string) *PeerServer
 		path, initErr = derivePeerStorePath(dataDir, canonicalNetID)
 	}
 
+	// Ensure persistent TLS identity is loaded or created for this data directory [T11]
+	_, _ = EnsureNodeTLSConfig(dataDir)
+
 	ps := &PeerServer{
 		Port:               port,
 		DataDir:            dataDir,

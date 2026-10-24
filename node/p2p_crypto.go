@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -43,11 +44,20 @@ func IsStrictTLS() bool {
 	return atomic.LoadInt32(&strictTLS) == 1
 }
 
-// GetNodeTLSCertPath returns the persistent PEM file path for P2P TLS in data dir [F1-BLOCKER]
-func GetNodeTLSCertPath() string {
+// GetNodeTLSCertPath returns the persistent PEM file path for P2P TLS in data dir [F1-BLOCKER, T11]
+func GetNodeTLSCertPath(dataDir ...string) string {
 	subDir := ""
 	if netName := core.GetActiveNetwork().Name; netName == "testnet" || netName == "regtest" || netName == "soak" {
 		subDir = netName
+	}
+
+	if len(dataDir) > 0 && dataDir[0] != "" {
+		targetDir := dataDir[0]
+		if subDir != "" && filepath.Base(dataDir[0]) != subDir {
+			targetDir = filepath.Join(dataDir[0], subDir)
+		}
+		_ = os.MkdirAll(targetDir, 0700)
+		return filepath.Join(targetDir, "p2ptls.pem")
 	}
 
 	if envDir := os.Getenv("ARMX_DATA_DIR"); envDir != "" {
@@ -55,7 +65,7 @@ func GetNodeTLSCertPath() string {
 		if subDir != "" && filepath.Base(envDir) != subDir {
 			targetDir = filepath.Join(envDir, subDir)
 		}
-		_ = os.MkdirAll(targetDir, 0755)
+		_ = os.MkdirAll(targetDir, 0700)
 		return filepath.Join(targetDir, "p2ptls.pem")
 	}
 
@@ -65,22 +75,22 @@ func GetNodeTLSCertPath() string {
 		if subDir != "" {
 			targetDir = filepath.Join(targetDir, subDir)
 		}
-		_ = os.MkdirAll(targetDir, 0755)
+		_ = os.MkdirAll(targetDir, 0700)
 		return filepath.Join(targetDir, "p2ptls.pem")
 	}
 
 	baseDir := "."
 	if subDir != "" {
 		baseDir = subDir
-		_ = os.MkdirAll(baseDir, 0755)
+		_ = os.MkdirAll(baseDir, 0700)
 	}
 	return filepath.Join(baseDir, "p2ptls.pem")
 }
 
 // loadOrGenerateNodeTLSCertificate loads persistent P2P TLS keypair from p2ptls.pem,
-// or generates a new one with 10-year validity if none exists, persisting it with 0600 permissions [F1-BLOCKER].
-func loadOrGenerateNodeTLSCertificate() (tls.Certificate, error) {
-	tlsPath := GetNodeTLSCertPath()
+// or generates a new one with 10-year validity if none exists, persisting it with 0600 permissions [F1-BLOCKER, T11].
+func loadOrGenerateNodeTLSCertificate(dataDir ...string) (tls.Certificate, error) {
+	tlsPath := GetNodeTLSCertPath(dataDir...)
 	if data, err := os.ReadFile(tlsPath); err == nil {
 		if len(data) == 0 {
 			return tls.Certificate{}, fmt.Errorf("existing P2P TLS identity %s is empty; refusing to replace it automatically", tlsPath)
@@ -173,24 +183,34 @@ func loadOrGenerateNodeTLSCertificate() (tls.Certificate, error) {
 	}, nil
 }
 
-// EnsureNodeTLSConfig initializes or reloads nodeTLSConfig for the active network profile [F1-BLOCKER]
-func EnsureNodeTLSConfig() (*tls.Config, error) {
+// InitNodeIdentity initializes or loads the persistent P2P TLS identity and returns its TLS config and SHA-256 fingerprint [T11]
+func InitNodeIdentity(dataDir ...string) (*tls.Config, [32]byte, error) {
 	nodeTLSMu.Lock()
 	defer nodeTLSMu.Unlock()
 
-	cert, err := loadOrGenerateNodeTLSCertificate()
+	cert, err := loadOrGenerateNodeTLSCertificate(dataDir...)
 	if err != nil {
-		return nil, err
+		return nil, [32]byte{}, err
 	}
 	nodeTLSConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
 	}
-	return nodeTLSConfig, nil
+
+	var fp [32]byte
+	if len(cert.Certificate) > 0 {
+		fp = sha256.Sum256(cert.Certificate[0])
+	}
+	return nodeTLSConfig, fp, nil
+}
+
+// EnsureNodeTLSConfig initializes or reloads nodeTLSConfig for the active network profile [F1-BLOCKER, T11]
+func EnsureNodeTLSConfig(dataDir ...string) (*tls.Config, error) {
+	conf, _, err := InitNodeIdentity(dataDir...)
+	return conf, err
 }
 
 func init() {
-	_, _ = EnsureNodeTLSConfig()
 	clientTLSConf = &tls.Config{
 		InsecureSkipVerify: true, // Opportunistic P2P transport (self-signed, unauthenticated TLS 1.3) [N-08]
 		MinVersion:         tls.VersionTLS13,
