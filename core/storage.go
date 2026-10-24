@@ -428,7 +428,7 @@ func loadBlockchainFromPath(dbPath string) (*Blockchain, bool, error) {
 		curr := &blocks[h]
 		prev := &blocks[h-1]
 
-		if err := validateBlockContext(curr, prev, blocks[:h]); err != nil {
+		if err := validateBlockContext(curr, prev, blocks[:h], true); err != nil {
 			MarkDBInvalid(dbPath)
 			return nil, false, fmt.Errorf("block #%d linkage validation failed: %w", h, err)
 		}

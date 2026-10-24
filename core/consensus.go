@@ -63,8 +63,8 @@ func CalculateMedianTimePast(chain []Block, upToIndex int) int64 {
 }
 
 // validateBlockContext performs comprehensive header, contextual, PoW, MTP-11, and size validation
-// shared identically between ValidateAndAddBlock and ResolveChain [C-04, C-05, C-06, C-18].
-func validateBlockContext(b *Block, prev *Block, chainHistory []Block) error {
+// shared identically between ValidateAndAddBlock and ResolveChain [C-04, C-05, C-06, C-18, T13].
+func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistorical ...bool) error {
 	// 0. Size constraints [C-04]
 	if b.Size() > MaxBlockSize {
 		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", b.Size(), MaxBlockSize)
@@ -138,13 +138,16 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block) error {
 		return fmt.Errorf("hash does not meet target")
 	}
 
-	// 8. Timestamp sanity checks [C-05, C-06, C-22]:
-	// No future blocks > 2h
-	maxFutureTimestamp := time.Now().Add(2 * time.Hour).Unix()
-	if b.Timestamp > maxFutureTimestamp {
-		return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFutureTimestamp)
+	// 8. Timestamp sanity checks [C-05, C-06, C-22, T13]:
+	// Wall-clock check (no future blocks > 2h) strictly enforced for real-time tip blocks, bypassed during historical replay
+	skipWallClock := len(isHistorical) > 0 && isHistorical[0]
+	if !skipWallClock {
+		maxFutureTimestamp := time.Now().Add(2 * time.Hour).Unix()
+		if b.Timestamp > maxFutureTimestamp {
+			return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFutureTimestamp)
+		}
 	}
-	// Median-Time-Past 11 blocks (MTP-11) [C-05, C-06, C-22]
+	// Median-Time-Past 11 blocks (MTP-11) [C-05, C-06, C-22] strictly verified for ALL blocks
 	mtp := CalculateMedianTimePast(chainHistory, b.Index)
 	if b.Timestamp <= mtp {
 		return fmt.Errorf("timestamp %d <= MedianTimePast %d", b.Timestamp, mtp)
