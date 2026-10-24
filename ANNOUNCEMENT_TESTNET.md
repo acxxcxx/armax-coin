@@ -25,7 +25,7 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [color=red][b]CRITICAL EXPERIMENTAL TESTNET DISCLAIMER:[/b][/color]
 [list]
 [*] [b]Zero Economic Value:[/b] Testnet coins ([font=monospace]ARMX[/font]) carry [b]NO monetary value[/b], no investment utility, and no guarantee of exchange listing or token conversion.
-[*] [b]Unaudited Codebase:[/b] The consensus engine, ArmaxHash implementation, and cryptographic integration are experimental and have [b]NOT yet undergone an independent third-party security audit[/b].
+[*] [b]Code Audit Status:[/b] The consensus engine, ArmaxHash implementation, and cryptographic integration are experimental and have [b]NOT yet undergone an independent third-party security audit[/b].
 [*] [b]State Reset Possibility:[/b] As an active development testnet, blockchain state may be reset if critical protocol flaws are discovered.
 [*] [b]Mainnet Status:[/b] Mainnet is [b]locked in source[/b] ([font=monospace]core.MainnetLaunched = false[/font]). Invoking [font=monospace]-network mainnet[/font] is strictly rejected by all binaries.
 [/list]

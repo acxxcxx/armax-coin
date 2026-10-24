@@ -56,11 +56,11 @@ We take the security of the Armaxcoin network and its users seriously. If you di
 - Armaxcoin Layer-1 consensus actively enforces quantum-resistant digital signatures adhering strictly to the NIST FIPS 204 standard (ML-DSA-65) for all user transactions.
 - PoW SHA-256 mining remains bounded by ~128 bits of post-quantum security against Grover's algorithm.
 - Advanced experimental extensions such as Hash Time-Locked Contracts (`HTLC`) remain in forward-compatible library status.
-- **Audit Disclaimer:** The core implementation and PQC consensus code have not yet been evaluated by an external third-party cryptographic security audit.
+- **Audit Status:** The core implementation and PQC consensus code have not yet been evaluated by an external third-party cryptographic security audit.
 
 ### 5. Known Limitations & Threat Model Disclosures
 - **P2P TLS & First-Contact MITM:** Wire encryption uses self-signed ephemeral X.509 certificates pinned via Trust On First Use (TOFU). While TOFU prevents ongoing passive surveillance and subsequent tampering, initial contact remains vulnerable to active in-path MITM adversaries without out-of-band seed pins.
-- **Unaudited Codebase:** The cryptographic implementations and consensus engine are in active testnet development and have not yet undergone a formal external security audit.
+- **Code Audit Status:** The cryptographic implementations and consensus engine are in active testnet development and have not yet undergone a formal external security audit.
 - **Dual PoW Algorithm Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d). Active mining from block #520 onwards enforces the memory-hard ArmaxHash algorithm (Argon2id 2 MB), specifically designed to resist SHA-256 ASIC domination and support CPU mining.
 - **Early 51% Hashrate Vulnerability:** Low initial network hashrate during early testnet and launch phases leaves the blockchain vulnerable to 51% deep reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
 - **ARM Verification Performance:** ML-DSA-65 verification involves matrix-vector polynomial multiplication that imposes measurable CPU latency on constrained ARM single-board computers (Raspberry Pi / Orange Pi).
