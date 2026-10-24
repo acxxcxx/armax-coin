@@ -5,6 +5,33 @@ All notable changes to the **Armaxcoin** (`armax-coin`) project will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.3] - 2026-10-24
+
+### Added
+- **ArmaxHash v2 Stream-Fast PoW Consensus (Hard Fork at Block #2500):**
+  - Activated high-efficiency two-stage Chained BLAKE2b Proof-of-Work:
+    - Stage 1 (Prehash): `BLAKE2b-512("ARMX-BLAKE2B-V2:" || NetworkID || ":" || Header)`
+    - Stage 2 (BlockHash): `BLAKE2b-256(Prehash || Header)`
+  - Achieves zero heap allocations (`0 B/op`) in tight worker loops, eliminating DRAM memory bus saturation on multi-core PCs, ARM single-board computers (Raspberry Pi/Orange Pi), and mobile devices.
+  - Sub-millisecond block verification enabling fast, low-latency block propagation across global peer meshes.
+  - 100% backward verification compatibility preserving historical block eras (Blocks 0..519 on Double-SHA256, Blocks 520..2499 on ArmaxHash v1 Argon2id).
+- **Consensus Improvement Proposals (C1-C5):**
+  - Published formal consensus enhancement specifications (`docs/security/consensus-proposals.md`) addressing reorg finality boundaries, timestamp clamping, and mempool DoS mitigation.
+- **Mainnet Tokenomics & Vesting Architecture Proposal:**
+  - Added comprehensive tokenomics audit and proposal (`docs/TOKENOMICS_MIGRATION_PROPOSAL.md`) detailing the 126,000,000 ARMX hard cap preservation, block-height-indexed vesting schedules, and 10:1 testnet migration formula.
+
+### Fixed
+- **Storage Replay Future Wall-Clock Check [T13]:** Bypassed future drift wall-clock check during historical storage replay and node re-indexing so valid past blocks are never rejected during initial block download.
+- **Production Database Fail-Fast Guard [T12]:** Prevented silent fallback to in-memory database on database open failures; node terminates immediately to protect against state loss.
+- **Keystore Overwrite Protection & Auto-Backup [T15]:** Hardened CLI (`armwallet`) and GUI against accidental keystore overwrites by automatically creating timestamped `.bak` files when new keys are generated.
+- **HTTP RPC Error Schema Standardization:** Standardized `writeJSONError` across node endpoints to consistently return `error`, `message`, and `status` fields for robust GUI, mobile, and explorer client interoperability.
+
+### Changed
+- **Mining Profile Transparency:** Refined documentation and whitepaper to remove unprovable "ASIC-resistant" marketing claims in favor of accurate, scientifically sound "accessible commodity CPU mining profile".
+- **Documentation Alignment:** Synchronized documentation across all guides to reflect active ArmaxHash v2 consensus while maintaining full historical records of v1.
+
+---
+
 ## [v1.0.1] - 2026-10-23
 
 ### Added
