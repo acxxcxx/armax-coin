@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/acxxcxx/armax-coin/core"
 )
@@ -28,6 +29,50 @@ var (
 	GlobalAuth             = &RPCAuthManager{}
 	AllowInsecureLocalhost = false // [N-19] Opt-in flag for unauthenticated localhost requests
 )
+
+type authLockoutTracker struct {
+	sync.Mutex
+	fails    map[string]int
+	lockouts map[string]time.Time
+}
+
+var globalAuthLockout = &authLockoutTracker{
+	fails:    make(map[string]int),
+	lockouts: make(map[string]time.Time),
+}
+
+func (alt *authLockoutTracker) isLocked(ip string) bool {
+	alt.Lock()
+	defer alt.Unlock()
+	if exp, ok := alt.lockouts[ip]; ok {
+		if time.Now().Before(exp) {
+			return true
+		}
+		delete(alt.lockouts, ip)
+		delete(alt.fails, ip)
+	}
+	return false
+}
+
+func (alt *authLockoutTracker) recordFailure(ip string) {
+	alt.Lock()
+	defer alt.Unlock()
+	alt.fails[ip]++
+	count := alt.fails[ip]
+	now := time.Now()
+	if count >= 10 {
+		alt.lockouts[ip] = now.Add(10 * time.Minute)
+	} else if count >= 5 {
+		alt.lockouts[ip] = now.Add(1 * time.Minute)
+	}
+}
+
+func (alt *authLockoutTracker) recordSuccess(ip string) {
+	alt.Lock()
+	defer alt.Unlock()
+	delete(alt.fails, ip)
+	delete(alt.lockouts, ip)
+}
 
 // GetRPCAuthCookiePath returns the network-scoped cookie path shared by the
 // daemon and local clients. It prevents clients from guessing based on their
@@ -79,7 +124,7 @@ func InitRPCAuth(confUser, confPass string) error {
 	cookieFile := GetRPCAuthCookiePath()
 	targetDir := filepath.Dir(cookieFile)
 
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0700); err != nil {
 		return fmt.Errorf("failed to create directory for RPC cookie at %s: %w", targetDir, err)
 	}
 
@@ -126,6 +171,14 @@ func Authenticate(r *http.Request) bool {
 	GlobalAuth.lock.RLock()
 	defer GlobalAuth.lock.RUnlock()
 
+	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+	}
+	if globalAuthLockout.isLocked(clientIP) {
+		return false
+	}
+
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -143,6 +196,7 @@ func Authenticate(r *http.Request) bool {
 		if AllowInsecureLocalhost && isTrustedLocal {
 			return true
 		}
+		globalAuthLockout.recordFailure(clientIP)
 		return false
 	}
 
@@ -165,15 +219,18 @@ func Authenticate(r *http.Request) bool {
 	// 1. Check against explicit armax.conf credentials with constant-time comparison
 	if GlobalAuth.User != "" && GlobalAuth.Password != "" {
 		if constantTimeCompare(user, GlobalAuth.User) && constantTimeCompare(pass, GlobalAuth.Password) {
+			globalAuthLockout.recordSuccess(clientIP)
 			return true
 		}
 	}
 
 	// 2. Check against .cookie token with constant-time comparison
 	if constantTimeCompare(user, "__cookie__") && constantTimeCompare(pass, GlobalAuth.Cookie) {
+		globalAuthLockout.recordSuccess(clientIP)
 		return true
 	}
 
+	globalAuthLockout.recordFailure(clientIP)
 	return false
 }
 

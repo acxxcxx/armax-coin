@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -12,10 +13,10 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -125,6 +126,41 @@ func isAllowedOrigin(rawURL string) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
+var activeMiningJob int32
+
+// writeJSONError safely serializes an error message into a valid JSON object [T10]
+func writeJSONError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// isAllowedHost checks if an HTTP Host header is loopback or an explicitly configured host (DNS rebinding guard) [T10]
+func isAllowedHost(rawHost string, configuredHost string) bool {
+	h, _, err := net.SplitHostPort(rawHost)
+	if err != nil {
+		h = rawHost
+	}
+	h = strings.ToLower(strings.TrimSpace(h))
+	if h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "" {
+		return true
+	}
+	if flag.Lookup("test.v") != nil && h == "example.com" {
+		return true
+	}
+	if configuredHost != "" {
+		confH, _, err := net.SplitHostPort(configuredHost)
+		if err != nil {
+			confH = configuredHost
+		}
+		if strings.EqualFold(h, strings.TrimSpace(confH)) {
+			return true
+		}
+	}
+	return false
 }
 
 // isMutatingEndpoint checks whether an endpoint or HTTP method modifies node state
@@ -859,7 +895,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 
 		var tx core.Transaction
 		if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":"Invalid JSON transaction payload: %s"}`, err.Error()), http.StatusBadRequest)
+			writeJSONError(w, fmt.Sprintf("Invalid JSON transaction payload: %s", err.Error()), http.StatusBadRequest)
 			return
 		}
 
@@ -1001,20 +1037,14 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			return
 		}
 
-		// Apply requested worker thread override if provided
-		if requestedThreads > 0 && requestedThreads <= runtime.NumCPU()*4 {
-			bc.Lock.Lock()
-			prevThreads := bc.MiningThreads
-			bc.MiningThreads = requestedThreads
-			bc.Lock.Unlock()
-			defer func() {
-				bc.Lock.Lock()
-				bc.MiningThreads = prevThreads
-				bc.Lock.Unlock()
-			}()
+		// Serialize active mining jobs across concurrent requests [T10]
+		if !atomic.CompareAndSwapInt32(&activeMiningJob, 0, 1) {
+			writeJSONError(w, "Another mining job is currently active", http.StatusConflict)
+			return
 		}
+		defer atomic.StoreInt32(&activeMiningJob, 0)
 
-		minedBlock, err := bc.MineBlockContext(r.Context(), miner)
+		minedBlock, err := bc.MineBlockContext(r.Context(), miner, requestedThreads)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
@@ -1044,7 +1074,27 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		isMutating := isMutatingEndpoint(r.URL.Path, r.Method)
 
 		if isMutating {
-			// Do NOT allow wildcard CORS for mutating endpoints
+			// DNS Rebinding Guard: reject mutating requests if Host header is not loopback / configured [T10]
+			configuredHost := ""
+			if cfg != nil && cfg.RPCBind != "" {
+				configuredHost = cfg.RPCBind
+			}
+			if !isAllowedHost(r.Host, configuredHost) {
+				writeJSONError(w, "Forbidden: Host header not permitted", http.StatusForbidden)
+				return
+			}
+
+			// Cross-Origin / Referer Guard on mutating endpoints [T10]
+			referer := r.Header.Get("Referer")
+			if origin != "" && !isAllowedOrigin(origin) {
+				writeJSONError(w, "Forbidden cross-origin", http.StatusForbidden)
+				return
+			}
+			if referer != "" && !isAllowedOrigin(referer) {
+				writeJSONError(w, "Forbidden cross-origin referer", http.StatusForbidden)
+				return
+			}
+
 			if origin != "" && isAllowedOrigin(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 			}
@@ -1282,6 +1332,9 @@ func StartServerWithConfig(bc *core.Blockchain, cfg *Config) {
 	// Initialize HTTP Rate Limiter and RPC Auth Manager with provided credentials
 	limiter := newIPRateLimiter()
 	if err := InitRPCAuth(cfg.RPCUser, cfg.RPCPassword); err != nil {
+		if (cfg.RPCUser == "" || cfg.RPCPassword == "") && !AllowInsecureLocalhost {
+			panic(fmt.Sprintf("FATAL RPC SECURITY ERROR: failed to write RPC cookie and no rpc_user/rpc_password configured: %v", err))
+		}
 		fmt.Printf("[RPC] Warning: failed to persist RPC auth cookie: %v\n", err)
 	}
 

@@ -699,7 +699,7 @@ func SetMiningDeterministicRaceHookForTesting(hook func(recordErr func(error))) 
 
 // MineBlockContext mines a new block including miner reward, transaction fees, and mempool transactions
 // with context cancellation and stale-block detection support.
-func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string) (Block, error) {
+func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string, threadCount ...int) (Block, error) {
 	bc.Lock.Lock()
 
 	// 1. Purge stale/invalid transactions from mempool before assembly [C-20]
@@ -789,6 +789,9 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string)
 		startNonce = int64(binary.BigEndian.Uint32(nonceBytes[:]))
 	}
 	threads := bc.MiningThreads
+	if len(threadCount) > 0 && threadCount[0] > 0 {
+		threads = threadCount[0]
+	}
 	if threads <= 0 {
 		if envStr := os.Getenv("ARMX_MINING_THREADS"); envStr != "" {
 			if n, err := strconv.Atoi(envStr); err == nil && n > 0 {
