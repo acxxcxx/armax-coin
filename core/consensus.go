@@ -512,14 +512,9 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 		}
 	}
 
-	// Calculate cumulative chainwork using O(1) cache for active chain [T6]
-	localWork := bc.GetTotalChainworkUnsafe()
-	var candidateWork *big.Int
-	if ancestorIndex == localLen-1 {
-		candidateWork = new(big.Int).Set(localWork)
-	} else {
-		candidateWork = CalculateChainwork(bc.Chain[:ancestorIndex+1])
-	}
+	// Calculate cumulative chainwork
+	localWork := CalculateChainwork(bc.Chain)
+	candidateWork := CalculateChainwork(bc.Chain[:ancestorIndex+1])
 	for _, b := range newBlocks {
 		target := b.GetTarget()
 		if target == nil || target.Sign() <= 0 {
