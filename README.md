@@ -21,7 +21,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
 | **[Node Operations Guide](docs/NODE_OPERATIONS.md)** | Running full nodes, seed nodes, systemd units, TLS 1.3, and TOFU certificate security |
 | **[Consensus & Network Specification](docs/CONSENSUS_AND_NETWORK.md)** | Mathematical specifications for LWMA-1, ArmaxHash, ML-DSA-65, and reorg limits |
-| **[Contributor Reward Program (Proposal)](docs/CONTRIBUTOR_REWARDS.md)** | Proposed community incentive framework (marked `PROPOSED -- REQUIRES MAINTAINER APPROVAL`) |
+| **[Contributors](CONTRIBUTORS.md)** | List of project contributors derived from Git history |
 | **[Security Policy & Disclosures](SECURITY.md)** | Threat model, responsible vulnerability reporting, and known limitations |
 | **[Contribution Guidelines](CONTRIBUTING.md)** | Development workflow, code standards, Conventional Commits, and test gates |
 | **[Code of Conduct](CODE_OF_CONDUCT.md)** | Community pledge and standards of behavior |

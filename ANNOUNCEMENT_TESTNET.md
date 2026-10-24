@@ -145,7 +145,6 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 
 [hr]
 
-[b][size=14pt]Community & Contributor Program[/size][/b]
-We invite node operators, miners, developers, and security researchers to join the testnet.
-[*] [b]Proposed Contributor Incentive Framework:[/b] Read the proposed terms in [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/CONTRIBUTOR_REWARDS.md]docs/CONTRIBUTOR_REWARDS.md[/url] (Marked [font=monospace]PROPOSED -- REQUIRES MAINTAINER APPROVAL[/font]).
+[b][size=14pt]Community & Contributions[/size][/b]
+We invite node operators, miners, developers, and security researchers to join and test the experimental testnet. Contributions are voluntary and credited in [CONTRIBUTORS.md](CONTRIBUTORS.md). Testnet coins have no monetary value, and no airdrops or financial rewards are promised.
 [*] [b]Responsible Security Reporting:[/b] Please report security vulnerabilities responsibly via GitHub Private Vulnerability Reporting on the repository ([b]Security[/b] -> [b]Advisories[/b] -> [b]Report a vulnerability[/b]).
