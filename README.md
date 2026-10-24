@@ -40,8 +40,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Max Reorg Depth** | 720 Blocks (~24 hours) | Finality boundary preventing deep history overwrites while accommodating natural network splits |
 | **Max Block Transactions** | 1,000 Txs / Block | Hard consensus ceiling preventing block bloat and memory exhaustion attacks |
 | **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
-| **Block Transactions** | Binary Merkle Tree Root | Canonical 32-byte Merkle root in header enabling SPV Light Wallet proofs |
-| **Hashing Algorithm** | ArmaxHash (Argon2id 2MB, $H \ge 520$) / Legacy SHA-256d ($H < 520$) | Memory-hard Argon2id (2048 KiB, 1 pass, 1 lane) activated at height 520; historical blocks 0..519 preserved under SHA-256d; no absolute ASIC resistance is claimed |
+| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b, $H \ge 2500$) / ArmaxHash v1 ($520 \le H < 2500$) / Legacy SHA-256d ($H < 520$) | High-throughput, 0-heap allocation Stream-Fast PoW ($H \ge 2500$); historical blocks preserved under 100% backward-compatible consensus rules |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Derivation** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |

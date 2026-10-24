@@ -34,7 +34,7 @@ func TestValidation(t *testing.T) {
 	if _, err := HashVersion(header, netID, 0); !errors.Is(err, ErrInvalidVer) {
 		t.Fatalf("version 0: expected ErrInvalidVer, got %v", err)
 	}
-	if _, err := HashVersion(header, netID, Version+1); !errors.Is(err, ErrInvalidVer) {
+	if _, err := HashVersion(header, netID, VersionV2+1); !errors.Is(err, ErrInvalidVer) {
 		t.Fatalf("unsupported version: expected ErrInvalidVer, got %v", err)
 	}
 	if _, err := Hash(bytes.Repeat([]byte{0}, MaxHeaderSize+1), netID); !errors.Is(err, ErrHeaderTooLarge) {
@@ -297,6 +297,56 @@ func BenchmarkHashParallel(b *testing.B) {
 			counter++
 			binary.LittleEndian.PutUint64(header[72:], counter)
 			if _, err := Hash(header, "armax-mainnet"); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func TestHashV2Deterministic(t *testing.T) {
+	header := []byte("armax-v2-test-block-header-data-12345")
+	h1, err := HashV2(header, "ARMX-TESTNET-1")
+	if err != nil {
+		t.Fatalf("HashV2 failed: %v", err)
+	}
+	h2, err := HashV2(header, "ARMX-TESTNET-1")
+	if err != nil {
+		t.Fatalf("HashV2 repeat failed: %v", err)
+	}
+	if h1 != h2 {
+		t.Fatalf("HashV2 non-deterministic: %x != %x", h1, h2)
+	}
+
+	// Domain separation test: different network ID must produce different hash
+	hMain, err := HashV2(header, "ARMX-MAINNET-1")
+	if err != nil {
+		t.Fatalf("HashV2 mainnet failed: %v", err)
+	}
+	if h1 == hMain {
+		t.Fatalf("HashV2 domain separation failed between testnet and mainnet")
+	}
+
+	// Verify HashVersion with VersionV2 matches HashV2
+	hVer, err := HashVersion(header, "ARMX-TESTNET-1", VersionV2)
+	if err != nil {
+		t.Fatalf("HashVersion(VersionV2) failed: %v", err)
+	}
+	if h1 != hVer {
+		t.Fatalf("HashVersion mismatch: %x != %x", h1, hVer)
+	}
+}
+
+func BenchmarkHashV2Parallel(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		header := make([]byte, 80)
+		copy(header, []byte("armax-benchmark-v2-parallel-header"))
+		var counter uint64
+		for pb.Next() {
+			counter++
+			binary.LittleEndian.PutUint64(header[72:], counter)
+			if _, err := HashV2(header, "ARMX-TESTNET-1"); err != nil {
 				b.Fatal(err)
 			}
 		}

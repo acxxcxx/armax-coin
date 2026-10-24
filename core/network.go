@@ -43,26 +43,28 @@ type NetworkProfile struct {
 	PowLimitHex               string   `json:"pow_limit_hex"`           // Minimum difficulty ceiling / maximum allowed target [L3-4]
 	ArmaxHashPowLimitHex      string   `json:"armaxhash_pow_limit_hex"` // Initial bootstrap target ceiling when ArmaxHash activates
 	DefaultSeeds              []string `json:"default_seeds"`
-	CoinbaseMaturity          int      `json:"coinbase_maturity"`
-	IsMainnet                 bool     `json:"is_mainnet"`                  // [F3] Stable immutable network identity: strictly true only for Mainnet
-	ArmaxHashActivationHeight int64    `json:"armaxhash_activation_height"` // Block height where PoW switches to ArmaxHash (-1 = disabled / SHA-256d)
+	CoinbaseMaturity            int      `json:"coinbase_maturity"`
+	IsMainnet                   bool     `json:"is_mainnet"`                      // [F3] Stable immutable network identity: strictly true only for Mainnet
+	ArmaxHashActivationHeight   int64    `json:"armaxhash_activation_height"`    // Block height where PoW switches to ArmaxHash v1 (-1 = disabled / SHA-256d)
+	ArmaxHashV2ActivationHeight int64    `json:"armaxhash_v2_activation_height"` // Block height where PoW switches to ArmaxHash v2 Stream-Fast (-1 = disabled)
 }
 
 var (
 	// MainnetProfile defines production network settings (requiring >= 3 independent seed operators) [N-20, TASK P1]
 	MainnetProfile = NetworkProfile{
-		Name:                      "mainnet",
-		NetworkID:                 "ARMX-MAINNET-1",
-		IsMainnet:                 true, // [F3]
-		P2PPort:                   MainnetP2PPort,
-		RPCPort:                   MainnetRPCPort,
-		ZMQPort:                   MainnetZMQPort,
-		StratumPort:               MainnetStratumPort,
-		P2PMagic:                  "ARMX_MAIN",
-		PowLimitHex:               GenesisTargetHex,
-		ArmaxHashPowLimitHex:      "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 5 bootstrap
-		CoinbaseMaturity:          100,
-		ArmaxHashActivationHeight: -1,
+		Name:                        "mainnet",
+		NetworkID:                   "ARMX-MAINNET-1",
+		IsMainnet:                   true, // [F3]
+		P2PPort:                     MainnetP2PPort,
+		RPCPort:                     MainnetRPCPort,
+		ZMQPort:                     MainnetZMQPort,
+		StratumPort:                 MainnetStratumPort,
+		P2PMagic:                    "ARMX_MAIN",
+		PowLimitHex:                 GenesisTargetHex,
+		ArmaxHashPowLimitHex:        "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 5 bootstrap
+		CoinbaseMaturity:            100,
+		ArmaxHashActivationHeight:   -1,
+		ArmaxHashV2ActivationHeight: -1,
 		DefaultSeeds: []string{
 			"id.armax-coin.cloud:" + MainnetP2PPort,
 			"armax-coin.cloud:" + MainnetP2PPort,
@@ -72,17 +74,18 @@ var (
 
 	// TestnetProfile defines public test network settings (requiring >= 3 independent seed operators) [N-20, TASK P1]
 	TestnetProfile = NetworkProfile{
-		Name:                      "testnet",
-		NetworkID:                 "ARMX-TESTNET-1",
-		P2PPort:                   TestnetP2PPort,
-		RPCPort:                   TestnetRPCPort,
-		ZMQPort:                   TestnetZMQPort,
-		StratumPort:               TestnetStratumPort,
-		P2PMagic:                  "ARMX_TEST",
-		PowLimitHex:               TestnetGenesisTargetHex,
-		ArmaxHashPowLimitHex:      "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 3 bootstrap (4,096 hashes)
-		CoinbaseMaturity:          10,
-		ArmaxHashActivationHeight: 520, // Activated at block #520 on testnet
+		Name:                        "testnet",
+		NetworkID:                   "ARMX-TESTNET-1",
+		P2PPort:                     TestnetP2PPort,
+		RPCPort:                     TestnetRPCPort,
+		ZMQPort:                     TestnetZMQPort,
+		StratumPort:                 TestnetStratumPort,
+		P2PMagic:                    "ARMX_TEST",
+		PowLimitHex:                 TestnetGenesisTargetHex,
+		ArmaxHashPowLimitHex:        "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 3 bootstrap (4,096 hashes)
+		CoinbaseMaturity:            10,
+		ArmaxHashActivationHeight:   520,  // Activated at block #520 on testnet
+		ArmaxHashV2ActivationHeight: 2500, // Hard fork activation at block #2500 on testnet
 		DefaultSeeds: []string{
 			"testnet-seed1.armax-coin.cloud:" + TestnetP2PPort,
 			"testnet-seed2.armax-coin.cloud:" + TestnetP2PPort,
@@ -99,25 +102,27 @@ var (
 		P2PMagic:                  "ARMX_SOAK",
 		PowLimitHex:               "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 		ArmaxHashPowLimitHex:      "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 4 bootstrap
-		CoinbaseMaturity:          100,
-		ArmaxHashActivationHeight: -1,
-		DefaultSeeds:              []string{},
+		CoinbaseMaturity:            100,
+		ArmaxHashActivationHeight:   -1,
+		ArmaxHashV2ActivationHeight: -1,
+		DefaultSeeds:                []string{},
 	}
 
 	// RegtestProfile defines private local regression testing profile [L4-8]
 	RegtestProfile = NetworkProfile{
-		Name:                      "regtest",
-		NetworkID:                 "ARMX-REGTEST-1",
-		P2PPort:                   "29334",
-		RPCPort:                   "29332",
-		ZMQPort:                   "29333",
-		StratumPort:               "29335",
-		P2PMagic:                  "ARMX_REGT",
-		PowLimitHex:               "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // 8-bit low target [L4-8]
-		ArmaxHashPowLimitHex:      "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 2 bootstrap
-		CoinbaseMaturity:          1,
-		ArmaxHashActivationHeight: -1,
-		DefaultSeeds:              []string{},
+		Name:                        "regtest",
+		NetworkID:                   "ARMX-REGTEST-1",
+		P2PPort:                     "29334",
+		RPCPort:                     "29332",
+		ZMQPort:                     "29333",
+		StratumPort:                 "29335",
+		P2PMagic:                    "ARMX_REGT",
+		PowLimitHex:                 "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // 8-bit low target [L4-8]
+		ArmaxHashPowLimitHex:        "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 2 bootstrap
+		CoinbaseMaturity:            1,
+		ArmaxHashActivationHeight:   -1,
+		ArmaxHashV2ActivationHeight: -1,
+		DefaultSeeds:                []string{},
 	}
 )
 
@@ -126,14 +131,15 @@ var (
 const MainnetLaunched = false
 
 var (
-	netMu                             sync.RWMutex
-	ActiveNetwork                     = TestnetProfile // [L4-1] Testnet is default network profile
-	networkInitialized                bool
-	allowNetworkResetHook             func() bool
-	allowMainnetInTestsHook           func() bool
-	networkIDOverrideHook             func() string
-	armaxHashActivationHeightOverride *int64 // nil means use network profile or env
-	testGlobalNetworkLock             sync.Mutex
+	netMu                               sync.RWMutex
+	ActiveNetwork                       = TestnetProfile // [L4-1] Testnet is default network profile
+	networkInitialized                  bool
+	allowNetworkResetHook               func() bool
+	allowMainnetInTestsHook             func() bool
+	networkIDOverrideHook               func() string
+	armaxHashActivationHeightOverride   *int64 // nil means use network profile or env
+	armaxHashV2ActivationHeightOverride *int64 // nil means use network profile or env
+	testGlobalNetworkLock               sync.Mutex
 )
 
 // NetworkID returns the active network profile's NetworkID dynamically [L1-2].
@@ -215,6 +221,50 @@ func ResetArmaxHashActivationHeightOverride() {
 // Genesis block (index 0) is permanently locked to SHA-256d.
 func IsArmaxHashActive(blockIndex int) bool {
 	act := GetArmaxHashActivationHeight()
+	if act <= 0 {
+		return false
+	}
+	if blockIndex < 0 {
+		return false
+	}
+	return int64(blockIndex) >= act
+}
+
+// GetArmaxHashV2ActivationHeight returns the block height where ArmaxHash v2 (Stream-Fast) activates.
+// An activation height <= 0 indicates ArmaxHash v2 is disabled.
+func GetArmaxHashV2ActivationHeight() int64 {
+	netMu.RLock()
+	defer netMu.RUnlock()
+	if armaxHashV2ActivationHeightOverride != nil {
+		return *armaxHashV2ActivationHeightOverride
+	}
+	if val := os.Getenv("ARMX_ARMAXHASH_V2_HEIGHT"); val != "" {
+		if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+			return h
+		}
+	}
+	return ActiveNetwork.ArmaxHashV2ActivationHeight
+}
+
+// SetArmaxHashV2ActivationHeight dynamically sets or overrides the ArmaxHash v2 activation height.
+// Passing -1 disables ArmaxHash v2.
+func SetArmaxHashV2ActivationHeight(height int64) {
+	netMu.Lock()
+	defer netMu.Unlock()
+	armaxHashV2ActivationHeightOverride = &height
+}
+
+// ResetArmaxHashV2ActivationHeightOverride clears any dynamic override, reverting to network profile defaults.
+func ResetArmaxHashV2ActivationHeightOverride() {
+	netMu.Lock()
+	defer netMu.Unlock()
+	armaxHashV2ActivationHeightOverride = nil
+}
+
+// IsArmaxHashV2Active returns true if the block at the specified index must be evaluated with ArmaxHash v2.
+// ArmaxHash v2 is strictly disabled when activation height <= 0 (e.g. default -1).
+func IsArmaxHashV2Active(blockIndex int) bool {
+	act := GetArmaxHashV2ActivationHeight()
 	if act <= 0 {
 		return false
 	}

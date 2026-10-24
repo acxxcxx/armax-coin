@@ -18,8 +18,14 @@ import (
 )
 
 const (
-	// Version is the ArmaxHash consensus algorithm version.
+	// Version is the default ArmaxHash algorithm version.
 	Version byte = 1
+
+	// VersionV1 is the memory-hard ArmaxHash v1 consensus algorithm version (Argon2id 2 MB).
+	VersionV1 byte = 1
+
+	// VersionV2 is the stream-fast ArmaxHash v2 consensus algorithm version (BLAKE2b Chained).
+	VersionV2 byte = 2
 
 	OutputSize = 32
 	SaltSize   = 16
@@ -55,7 +61,15 @@ func NewContext() *Context { return &Context{} }
 // Hash computes an ArmaxHash v1 digest. header must be the canonical serialized
 // block header, including the nonce. networkID is part of domain separation.
 func Hash(header []byte, networkID string) ([OutputSize]byte, error) {
-	return HashVersion(header, networkID, Version)
+	return HashVersion(header, networkID, VersionV1)
+}
+
+// HashV2 computes an ArmaxHash v2 digest using high-throughput chained BLAKE2b.
+// Construction:
+//  1. D1 = BLAKE2b-512("ARMX-POW-V2\x00" || VersionV2 || len(networkID) || networkID || header)
+//  2. Digest = BLAKE2b-256(D1)
+func HashV2(header []byte, networkID string) ([OutputSize]byte, error) {
+	return NewContext().HashV2(header, networkID)
 }
 
 // HashVersion computes the digest for an explicitly requested algorithm version.
@@ -66,26 +80,11 @@ func HashVersion(header []byte, networkID string, version byte) ([OutputSize]byt
 
 // Hash computes an ArmaxHash v1 digest.
 func (ctx *Context) Hash(header []byte, networkID string) ([OutputSize]byte, error) {
-	return ctx.HashVersion(header, networkID, Version)
+	return ctx.HashVersion(header, networkID, VersionV1)
 }
 
-// HashVersion computes ArmaxHash using BLAKE2b-512 domain-separated input,
-// Argon2id v1.3, and BLAKE2b-256 finalization.
-//
-// Construction for this Go candidate:
-//  1. D = BLAKE2b-512("ARMX-POW\x00" || version || len(networkID) || networkID || header)
-//  2. password = D[0:32], salt = D[32:48]
-//  3. A = Argon2id(password, salt, time=2, memory=2048 KiB, lanes=1, out=32)
-//  4. digest = BLAKE2b-256(password || A)
-//
-// This specification differs from the earlier Python reference script that used
-// a static network-derived salt and a separate BLAKE2b-256 prehash. Do not mix
-// those two definitions in a network: select one specification and freeze it.
-func (ctx *Context) HashVersion(
-	header []byte,
-	networkID string,
-	version byte,
-) ([OutputSize]byte, error) {
+// HashV2 computes ArmaxHash v2 using domain-separated BLAKE2b-512 followed by BLAKE2b-256.
+func (ctx *Context) HashV2(header []byte, networkID string) ([OutputSize]byte, error) {
 	var result [OutputSize]byte
 
 	if len(header) == 0 {
@@ -97,8 +96,56 @@ func (ctx *Context) HashVersion(
 	if len(networkID) == 0 || len(networkID) > 255 {
 		return result, ErrInvalidNet
 	}
-	if version != Version {
-		return result, ErrInvalidVer
+
+	const domainV2 = "ARMX-POW-V2\x00"
+	netLen := len(networkID)
+	if netLen > 255 {
+		netLen = 255
+	}
+
+	needed := len(domainV2) + 2 + netLen + len(header)
+	var stackBuf [512]byte
+	var input []byte
+	if needed <= len(stackBuf) {
+		input = stackBuf[:0]
+	} else {
+		input = make([]byte, 0, needed)
+	}
+	input = append(input, domainV2...)
+	input = append(input, VersionV2, byte(netLen))
+	input = append(input, networkID[:netLen]...)
+	input = append(input, header...)
+
+	d1 := blake2b.Sum512(input)
+	d2 := blake2b.Sum256(d1[:])
+	copy(result[:], d2[:])
+	return result, nil
+}
+
+// HashVersion computes ArmaxHash using BLAKE2b-512 domain-separated input,
+// Argon2id v1.3, and BLAKE2b-256 finalization for v1, or Stream-Fast for v2.
+func (ctx *Context) HashVersion(
+	header []byte,
+	networkID string,
+	version byte,
+) ([OutputSize]byte, error) {
+	if version == VersionV2 {
+		return ctx.HashV2(header, networkID)
+	}
+	if version != VersionV1 {
+		return [OutputSize]byte{}, ErrInvalidVer
+	}
+
+	var result [OutputSize]byte
+
+	if len(header) == 0 {
+		return result, ErrEmptyHeader
+	}
+	if len(header) > MaxHeaderSize {
+		return result, ErrHeaderTooLarge
+	}
+	if len(networkID) == 0 || len(networkID) > 255 {
+		return result, ErrInvalidNet
 	}
 
 	prehash, salt := derivePrehashAndSalt(header, networkID, version)
@@ -122,8 +169,7 @@ func (ctx *Context) HashVersion(
 }
 
 // derivePrehashAndSalt binds both the Argon2id password and salt to the network,
-// algorithm version, and complete header. The changing salt is not a guarantee
-// of ASIC resistance; it is simply part of this hash construction.
+// algorithm version, and complete header.
 func derivePrehashAndSalt(
 	header []byte,
 	networkID string,
@@ -136,7 +182,14 @@ func derivePrehashAndSalt(
 		netLen = 255
 	}
 
-	input := make([]byte, 0, len(domain)+2+netLen+len(header))
+	needed := len(domain) + 2 + netLen + len(header)
+	var stackBuf [512]byte
+	var input []byte
+	if needed <= len(stackBuf) {
+		input = stackBuf[:0]
+	} else {
+		input = make([]byte, 0, needed)
+	}
 	input = append(input, domain...)
 	input = append(input, version, byte(netLen))
 	input = append(input, networkID[:netLen]...)

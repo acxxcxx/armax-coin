@@ -884,10 +884,11 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 			prefixBytes := []byte(prefix)
 			buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
 
+			useArmaxHashV2 := IsArmaxHashV2Active(b.Index)
 			useArmaxHash := IsArmaxHashActive(b.Index)
 			netID := NetworkID()
 			batchLimit := int64(10000)
-			if useArmaxHash {
+			if !useArmaxHashV2 && useArmaxHash {
 				batchLimit = 20
 			}
 
@@ -906,7 +907,14 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 				buf = append(buf, suffixBytes...)
 
 				var hashBytes [32]byte
-				if useArmaxHash {
+				if useArmaxHashV2 {
+					digest, err := armaxhash.HashV2(buf, netID)
+					if err != nil {
+						recordError(fmt.Errorf("mining hash computation failed: %w", err))
+						return
+					}
+					hashBytes = digest
+				} else if useArmaxHash {
 					digest, err := armaxhash.Hash(buf, netID)
 					if err != nil {
 						recordError(fmt.Errorf("mining hash computation failed: %w", err))

@@ -761,7 +761,9 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		coinbaseValue := blockReward + totalFees
 		merkleRoot := core.CalculateMerkleRoot(candidateTxs)
 		powAlgo := "sha256d"
-		if core.IsArmaxHashActive(latest.Index + 1) {
+		if core.IsArmaxHashV2Active(latest.Index + 1) {
+			powAlgo = "armaxhash-v2"
+		} else if core.IsArmaxHashActive(latest.Index + 1) {
 			powAlgo = "armaxhash"
 		}
 

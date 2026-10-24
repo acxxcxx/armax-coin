@@ -497,13 +497,23 @@ func main() {
 				b := candidateBlock
 				b.Nonce = startNonce + int64(workerID)
 				stride := int64(numThreads)
+				var localBatch int64
+				batchLimit := int64(4096)
+				if algo == "armaxhash" { // ArmaxHash v1 memory-hard
+					batchLimit = 1
+				}
+
 				for {
-					select {
-					case <-roundCtx.Done():
-						return
-					case <-stopChan:
-						return
-					default:
+					if localBatch >= batchLimit {
+						atomic.AddInt64(&roundHashes, localBatch)
+						localBatch = 0
+						select {
+						case <-roundCtx.Done():
+							return
+						case <-stopChan:
+							return
+						default:
+						}
 					}
 					var err error
 					b.Hash, err = b.CalculateHashWithError()
@@ -515,8 +525,9 @@ func main() {
 						cancelRound()
 						return
 					}
-					atomic.AddInt64(&roundHashes, 1)
+					localBatch++
 					if core.HashMeetsTarget(b.Hash, targetInt) {
+						atomic.AddInt64(&roundHashes, localBatch)
 						select {
 						case solutionChan <- b:
 						default:
@@ -550,7 +561,9 @@ func main() {
 						h := atomic.LoadInt64(&roundHashes)
 						hps := float64(h) / elapsed
 						rateStr := fmt.Sprintf("%.2f kH/s", hps/1000.0)
-						if hps < 1000.0 {
+						if hps >= 1_000_000.0 {
+							rateStr = fmt.Sprintf("%.2f MH/s", hps/1_000_000.0)
+						} else if hps < 1000.0 {
 							rateStr = fmt.Sprintf("%.2f H/s", hps)
 						}
 						fmt.Printf("[%s] [ Mining] Block #%d | %d threads | %s (Total: %d hashes, %ds)\n",

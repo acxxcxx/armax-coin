@@ -24,22 +24,34 @@ Armaxcoin is built from the ground up for the post-quantum era. All user transac
 
 ### 1.2 Hashing Functions
 - **Block Hashing (Historical, Blocks 0..519):** Double-SHA256 (`SHA-256d`).
-- **Block Hashing (Active, Blocks 520+):** **ArmaxHash** memory-hard Proof-of-Work.
+- **Block Hashing (Historical, Blocks 520..2499):** **ArmaxHash v1** memory-hard Proof-of-Work (Argon2id 2 MB + BLAKE2b).
+- **Block Hashing (Active, Blocks 2500+):** **ArmaxHash v2** Stream-Fast Proof-of-Work (Chained BLAKE2b-512 + BLAKE2b-256 with domain separation).
 - **Transaction ID & Merkle Trees:** SHA-256 hashing.
 - **Address Derivation:** SHA-256(SigAlg || PublicKey) followed by BIP-173 Bech32 encoding.
 
 ---
 
-## 2. Proof-of-Work: The ArmaxHash Algorithm
+## 2. Proof-of-Work: The ArmaxHash Consensus Timeline
 
-ArmaxHash is a memory-hard Proof-of-Work hashing algorithm activated at block **#520** on the testnet. It chains Argon2id with cryptographic digest algorithms to provide accessible CPU mining across multi-core systems without claiming absolute ASIC immunity:
+Armaxcoin maintains full historical backward compatibility while evolving its PoW consensus across three distinct eras:
 
-$$\text{ArmaxHash}(H) = \text{SHA256}\Big(\text{Blake2b-512}\big(\text{Argon2id}(H, \text{salt}=H[:16], t=1, m=2048, p=1)\big)\Big)$$
+### 2.1 Era 1: SHA-256d (Blocks 0 .. 519)
+The initial bootstrap phase used standard Bitcoin-style double SHA-256 hashing. All historical blocks remain permanently valid.
 
-### Algorithm Invariants:
-1. **Memory Hardness ($m=2048\text{ KiB}$):** Requires 2 megabytes of scratchpad memory per hash calculation, establishing a balanced memory-bandwidth footprint for multi-core systems.
-2. **Time Cost ($t=1$):** Single iteration ensures rapid validation by relay nodes (~0.3 ms on standard CPU) while imposing substantial memory-bandwidth bottlenecks on brute-force searchers.
-3. **Parallelism ($p=1$):** Single lane per hash enables linear multi-core scaling for CPU miners.
+### 2.2 Era 2: ArmaxHash v1 (Blocks 520 .. 2499)
+Activated on testnet at block #520 to introduce commodity CPU mining:
+$$\text{ArmaxHash}_{v1}(H) = \text{SHA256}\Big(\text{Blake2b-512}\big(\text{Argon2id}(H, \text{salt}=H[:16], t=1, m=2048, p=1)\big)\Big)$$
+
+### 2.3 Era 3: ArmaxHash v2 Stream-Fast (Blocks 2500+)
+Activated at block #2500 via scheduled hard fork to eliminate GC memory bus churn and optimize throughput across edge ARM SBCs and multi-core desktops:
+$$\text{Prehash} = \text{Blake2b-512}\Big(\text{"ARMX-BLAKE2B-V2:"} \,||\, \text{NetworkID} \,||\, \text{":"} \,||\, H\Big)$$
+$$\text{ArmaxHash}_{v2}(H) = \text{Blake2b-256}\Big(\text{Prehash} \,||\, H\Big)$$
+
+**Key Technical Properties:**
+1. **0 Heap Allocations:** Executed within fixed stack buffers, zero GC pauses.
+2. **Microsecond Verification:** Blocks are verified instantaneously by light and full relay nodes.
+3. **Cross-Network Isolation:** Strict domain separation prevents replay between mainnet and testnet.
+4. **Cache & ARM Friendly:** Eliminates memory bus bottlenecking on devices with limited L2/L3 cache.
 
 ---
 

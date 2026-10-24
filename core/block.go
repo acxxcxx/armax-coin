@@ -67,10 +67,24 @@ func (b *Block) CalculateArmaxHash() (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+// CalculateArmaxHashV2 computes the ArmaxHash v2 (Stream-Fast Chained BLAKE2b) block header digest.
+func (b *Block) CalculateArmaxHashV2() (string, error) {
+	digest, err := armaxhash.HashV2(b.HeaderBytes(), NetworkID())
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest[:]), nil
+}
+
 // CalculateHashWithError computes the canonical block header hash according to active consensus rules.
-// When ArmaxHash is active, if CalculateArmaxHash fails, the error is returned immediately.
+// When ArmaxHash v2 is active, CalculateArmaxHashV2 is evaluated.
+// When ArmaxHash v1 is active, CalculateArmaxHash is evaluated.
+// If hashing fails, the error is returned immediately.
 // It NEVER falls back to SHA-256d or returns an empty hash under failure.
 func (b *Block) CalculateHashWithError() (string, error) {
+	if IsArmaxHashV2Active(b.Index) {
+		return b.CalculateArmaxHashV2()
+	}
 	if IsArmaxHashActive(b.Index) {
 		return b.CalculateArmaxHash()
 	}
@@ -96,8 +110,11 @@ func (b *Block) CalculateHash() string {
 	return hash
 }
 
-// PoWAlgorithm returns the PoW algorithm name used for this block ("sha256d" or "armaxhash").
+// PoWAlgorithm returns the PoW algorithm name used for this block ("sha256d", "armaxhash", or "armaxhash-v2").
 func (b *Block) PoWAlgorithm() string {
+	if IsArmaxHashV2Active(b.Index) {
+		return "armaxhash-v2"
+	}
 	if IsArmaxHashActive(b.Index) {
 		return "armaxhash"
 	}

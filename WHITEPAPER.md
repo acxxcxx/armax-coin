@@ -27,7 +27,7 @@ ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, an
 | **Max Block Transactions** | 1,000 Txs / Block | Hard consensus limit preventing block bloat and memory exhaustion attacks |
 | **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
 | **Block Structure** | Binary Merkle Tree | Canonical 32-byte Merkle root in header enabling SPV light proofs |
-| **Hashing Algorithm** | ArmaxHash (Argon2id + Blake2b + SHA-256) for $H \ge 520$ / SHA-256d for $H < 520$ | Memory-hard CPU mining (2048 KiB memory footprint); historical blocks ($H < 520$) preserved with double SHA-256 |
+| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b) for $H \ge 2500$ / ArmaxHash v1 for $520 \le H < 2500$ / SHA-256d for $H < 520$ | High-throughput, 0-heap allocation, multi-core CPU & ARM friendly ($H \ge 2500$); historical blocks ($H < 2500$) preserved with 100% backward compatibility |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Encoding** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |
@@ -140,8 +140,21 @@ $$\text{Spendable}(\text{CoinbaseTx}) \iff \text{Confirmations} \ge \text{Coinba
   - **Regtest:** 1 block (`CoinbaseMaturity = 1`)
 - **State Queue & Schema v3:**
   The `AccountState` ledger maintains an on-chain queue of `(amount, height)` entries for immature rewards. An account's spendable balance is strictly defined as $\text{Spendable} = \text{Balance} - \sum \text{Immature}$.
-- **Consensus Rejection:** Any candidate block containing a transaction that attempts to spend immature coinbase rewards is rejected by consensus with an explicit error (`insufficient spendable balance`).
 - **Chain Reorganization & Recovery:** When a chain reorganization occurs, the state is rolled back and replayed from the common ancestor or snapshot, deterministically restoring the immature queues. Storage schema is upgraded to version 3.
+
+### 4.6 Proof-of-Work Consensus Evolution: ArmaxHash v2
+To accommodate consumer hardware, commodity desktop CPUs, and cache-constrained ARM single-board computers, Armaxcoin implements a backward-compatible three-phase Proof-of-Work timeline:
+1. **Era 1 (Blocks $0 \le H < 520$):** Legacy double-SHA256 (`SHA-256d`). All bootstrap blocks remain permanently valid.
+2. **Era 2 (Blocks $520 \le H < 2500$):** ArmaxHash v1 memory-hard PoW chaining Argon2id (2048 KiB memory footprint, 1 lane, 1 iteration) with BLAKE2b and SHA-256.
+3. **Era 3 (Blocks $H \ge 2500$):** **ArmaxHash v2 Stream-Fast** PoW. Activated via scheduled hard fork at block #2500, ArmaxHash v2 eliminates GC heap allocation churn and RAM bus saturation by utilizing a dual-stage chained BLAKE2b cryptographic construction with network-level domain separation:
+   $$\text{Prehash} = \text{Blake2b-512}\Big(\text{"ARMX-BLAKE2B-V2:"} \parallel \text{NetworkID} \parallel \text{":"} \parallel \text{Header}\Big)$$
+   $$\text{ArmaxHash}_{v2} = \text{Blake2b-256}\Big(\text{Prehash} \parallel \text{Header}\Big)$$
+
+**Key Technical Properties:**
+- **0 Heap Allocations:** Executed within fixed stack buffers, zero GC pauses.
+- **Microsecond Relay Validation:** Instantaneous validation across node networks.
+- **ARM & Commodity CPU Friendly:** Runs smoothly on laptops, multi-core CPUs, and low-power ARM devices without thermal throttling or DRAM bus exhaustion.
+- **Zero Historical Disruption:** Node validation dynamically selects the active hashing algorithm based on block height, ensuring 100% historical chain integrity from genesis onward.
 
 ---
 

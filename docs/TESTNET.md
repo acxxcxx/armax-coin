@@ -110,8 +110,9 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 - **Local Multi-Threaded Engine:** `armminer` queries `/getblocktemplate` from `armcoind`, constructs the candidate block with coinbase reward, and runs parallel worker threads across `-threads N` local CPU workers.
 - **Proof-of-Work Algorithm Migration:**
   - **Height $0 \le H < 520$:** Legacy SHA-256d PoW. All historical blocks remain valid and preserved.
-  - **Height $H \ge 520$:** Memory-Hard **ArmaxHash** (Argon2id 2048 KiB memory footprint + BLAKE2b, 1 lane, 1 iteration). CPU-oriented, commodity hardware focused (no absolute ASIC immunity claimed).
-- **Console Telemetry:** Prints real-time hashrate metrics (`H/s`, `kH/s`, `MH/s`) and solve timestamps every 4 seconds. On single-board computers (e.g. Allwinner H3/H616, Armbian Linux), expected throughput is ~15-30 H/s per core due to 2 MB L2/L3 cache memory bounds.
+  - **Height $520 \le H < 2500$:** Memory-Hard **ArmaxHash v1** (Argon2id 2048 KiB memory footprint + BLAKE2b, 1 lane, 1 iteration). CPU-oriented, commodity hardware focused (~50-300 H/s per core).
+  - **Height $H \ge 2500$ (Active Hard Fork):** Stream-Fast **ArmaxHash v2** (Chained BLAKE2b-512 + BLAKE2b-256 with domain separation `ARMX-BLAKE2B-V2`). 0 heap allocation, instantaneous block validation, highly optimized for multi-core CPUs and ARM single-board computers (~1-5 MH/s per core).
+- **Console Telemetry:** Prints real-time hashrate metrics (`H/s`, `kH/s`, `MH/s`) and solve timestamps every stats interval.
 - **Dynamic Tip Adaptation:** Automatically queries daemon tip height and aborts stale rounds if a competing peer mines a block first (`HTTP 409 Conflict`).
 - **Coinbase Maturity (10 Confirmations on Testnet, 100 on Mainnet):** Freshly mined block rewards enter an on-chain immature queue and cannot be spent until 10 blocks (testnet) or 100 blocks (mainnet) have been confirmed on top of them (consensus-enforced, storage schema v3).
 - **Daemon Internal Mining:** Alternatively, `armcoind` can mine in the background using standard flags:
@@ -121,8 +122,9 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 
 ### Hashrate and Difficulty Targets
 - **Legacy Target (H < 520):** `0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (SHA-256d baseline).
-- **ArmaxHash PoW Limit (H = 520 bootstrap):** `000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (~4,096 ArmaxHash evaluations).
-- **Dynamic LWMA-1 Floor (H >= 520):** Down to Difficulty 1 (`0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`), allowing low-hashrate single-board nodes to smoothly stabilize to the target 120-second block time.
+- **ArmaxHash v1 PoW Limit (H = 520 bootstrap):** `000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (~4,096 ArmaxHash v1 evaluations).
+- **ArmaxHash v2 Target Adjustment (H >= 2500):** LWMA-1 dynamically retargets to reflect high-throughput Stream-Fast hashrates while preserving target 120-second block intervals.
+- **Dynamic LWMA-1 Floor:** Down to Difficulty 1 (`0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`), allowing low-hashrate single-board nodes to smoothly stabilize to the target 120-second block time.
 - **Target Block Time:** 120 seconds (2 minutes).
 - **Dynamic Difficulty:** Linear Weighted Moving Average across a 60-block window (LWMA-1).
 

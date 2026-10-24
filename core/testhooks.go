@@ -82,8 +82,10 @@ func SetAllowMainnetForTesting(allow bool) {
 func LockNetworkForTesting(t testing.TB) {
 	unlock := AcquireNetworkTestLock()
 	SetArmaxHashActivationHeight(-1)
+	SetArmaxHashV2ActivationHeight(-1)
 	t.Cleanup(func() {
 		ResetArmaxHashActivationHeightOverride()
+		ResetArmaxHashV2ActivationHeightOverride()
 		SetNetworkForTesting(true)
 		_ = SetNetwork("testnet")
 		unlock()
