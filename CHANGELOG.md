@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Post-Quantum Cryptography:** Full implementation and consensus enforcement of NIST FIPS 204 ML-DSA-65 digital signatures for all transactions and addresses via Go standard library `crypto/mldsa`.
-- **ArmaxHash Proof-of-Work:** Memory-hard CPU-oriented PoW algorithm chaining Argon2id (2 MB scratchpad, $t=1, p=1$), Blake2b-512, and SHA-256, activated at block #520 on testnet.
+- **ArmaxHash Proof-of-Work:** CPU-oriented PoW algorithm chaining Argon2id (2048 KiB scratchpad, $t=2, p=1$), Blake2b-512, and SHA-256, activated at block #520 on testnet (see `docs/CONSENSUS_AND_NETWORK.md`).
 - **Dynamic Difficulty Retargeting:** Real-time Linear Weighted Moving Average (LWMA-1) algorithm with $N=60$ sliding window and 120-second target block time.
 - **P2P Transport Security:** Mandatory TLS 1.3 encryption across all peer-to-peer gossip connections with Trust On First Use (TOFU) certificate fingerprint pinning in `peers.json`.
 - **Concurrency & Concurrency Hardening:** Lockless chainwork queries (`GetTotalChainworkUnsafe`), deadlock elimination in P2P sync loops, and batch commit optimizations during initial block download.
@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `armwallet`: CLI wallet supporting 24-word BIP-39 recovery mnemonics and Argon2id encrypted keystores.
   - `armsend`: Lightweight offline client transaction generator and sender.
   - `armgui`: Windows 64-bit desktop graphical wallet with embedded manifest and icons.
-- **Open Testnet Documentation:** Complete English documentation suite including Testnet Guide, Mining Guide, Node Operations Guide, Consensus Specifications, Contributor Reward Proposal, and Release Checklists.
+- **Open Testnet Documentation:** Complete English documentation suite including Testnet Guide, Mining Guide, Node Operations Guide, Consensus Specifications, Contributor Recognition, and Release Checklists.
 
 ### Changed
 - **Repository Migration:** Standardized canonical project repository and module path to `github.com/acxxcxx/armax-coin`.

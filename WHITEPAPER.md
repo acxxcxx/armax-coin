@@ -22,12 +22,12 @@ ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, an
 | Parameter | Specification | Details & Consensus Rules |
 |---|---|---|
 | **Consensus Mechanism** | Proof-of-Work (PoW) | Dynamic per-block numerical target adjustment via LWMA-1 ($N=60$) |
-| **Fork Choice Rule** | Heaviest Chain (Satoshi Chainwork) | Cumulative Proof-of-Work ($\sum \frac{2^{256}}{\text{Target} + 1}$) strictly supersedes chain length |
+| **Fork Choice Rule** | Heaviest Chain (Cumulative Chainwork) | Cumulative Proof-of-Work ($\sum \frac{2^{256}}{\text{Target} + 1}$) strictly supersedes chain length |
 | **Max Reorganization Depth** | 720 Blocks (~24 hours) | Finality boundary preventing deep history rewrites while accommodating natural network splits |
 | **Max Block Transactions** | 1,000 Txs / Block | Hard consensus limit preventing block bloat and memory exhaustion attacks |
 | **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
 | **Block Structure** | Binary Merkle Tree | Canonical 32-byte Merkle root in header enabling SPV light proofs |
-| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b) for $H \ge 2500$ / ArmaxHash v1 for $520 \le H < 2500$ / SHA-256d for $H < 520$ | High-throughput, 0-heap allocation, multi-core CPU & ARM friendly ($H \ge 2500$); historical blocks ($H < 2500$) preserved with 100% backward compatibility |
+| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b) for $H \ge 2500$ / ArmaxHash v1 for $520 \le H < 2500$ / SHA-256d for $H < 520$ | High-throughput, 0-heap allocation, multi-core CPU & ARM friendly ($H \ge 2500$); see canonical spec in docs/CONSENSUS_AND_NETWORK.md |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Encoding** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |
@@ -145,7 +145,7 @@ $$\text{Spendable}(\text{CoinbaseTx}) \iff \text{Confirmations} \ge \text{Coinba
 ### 4.6 Proof-of-Work Consensus Evolution: ArmaxHash v2
 To accommodate consumer hardware, commodity desktop CPUs, and cache-constrained ARM single-board computers, Armaxcoin implements a backward-compatible three-phase Proof-of-Work timeline:
 1. **Era 1 (Blocks $0 \le H < 520$):** Legacy double-SHA256 (`SHA-256d`). All bootstrap blocks remain permanently valid.
-2. **Era 2 (Blocks $520 \le H < 2500$):** ArmaxHash v1 memory-hard PoW chaining Argon2id (2048 KiB memory footprint, 1 lane, 1 iteration) with BLAKE2b and SHA-256.
+2. **Era 2 (Blocks $520 \le H < 2500$):** ArmaxHash v1 PoW chaining Argon2id (2048 KiB memory footprint, 1 lane, 2 iterations; see `docs/CONSENSUS_AND_NETWORK.md`) with BLAKE2b and SHA-256.
 3. **Era 3 (Blocks $H \ge 2500$):** **ArmaxHash v2 Stream-Fast** PoW. Activated via scheduled hard fork at block #2500, ArmaxHash v2 eliminates GC heap allocation churn and RAM bus saturation by utilizing a dual-stage chained BLAKE2b cryptographic construction with network-level domain separation:
    $$\text{Prehash} = \text{Blake2b-512}\Big(\text{"ARMX-BLAKE2B-V2:"} \parallel \text{NetworkID} \parallel \text{":"} \parallel \text{Header}\Big)$$
    $$\text{ArmaxHash}_{v2} = \text{Blake2b-256}\Big(\text{Prehash} \parallel \text{Header}\Big)$$

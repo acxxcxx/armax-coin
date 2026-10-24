@@ -36,11 +36,11 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | Parameter | Specification | Details / Rules |
 |---|---|---|
 | **Consensus Mechanism** | Proof-of-Work (PoW) | Dynamic 256-bit numerical target difficulty adjustment via LWMA-1 ($N=60$) |
-| **Fork Choice Rule** | Heaviest Chain (Satoshi Chainwork) | Cumulative Proof-of-Work ($\sum \frac{2^{256}}{\text{Target} + 1}$) strictly beats low-difficulty chains |
+| **Fork Choice Rule** | Heaviest Chain (Cumulative Chainwork) | Cumulative Proof-of-Work ($\sum \frac{2^{256}}{\text{Target} + 1}$) strictly beats low-difficulty chains |
 | **Max Reorg Depth** | 720 Blocks (~24 hours) | Finality boundary preventing deep history overwrites while accommodating natural network splits |
 | **Max Block Transactions** | 1,000 Txs / Block | Hard consensus ceiling preventing block bloat and memory exhaustion attacks |
 | **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
-| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b, $H \ge 2500$) / ArmaxHash v1 ($520 \le H < 2500$) / Legacy SHA-256d ($H < 520$) | High-throughput, 0-heap allocation Stream-Fast PoW ($H \ge 2500$); historical blocks preserved under 100% backward-compatible consensus rules |
+| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b, $H \ge 2500$) / ArmaxHash v1 ($520 \le H < 2500$) / Legacy SHA-256d ($H < 520$) | High-throughput, 0-heap allocation Stream-Fast PoW ($H \ge 2500$); see canonical spec in docs/CONSENSUS_AND_NETWORK.md |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Derivation** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |
@@ -578,7 +578,7 @@ Initial official public testnet release of the ARMAXcoin Proof-of-Work Layer-1 b
 - **Passphrase Encryption:** BIP-39 24-word recovery mnemonics with PBKDF2/Argon2id keystore protection.
 
 #### Consensus & PoW Hardening
-- **Memory-Hard Hybrid PoW (ArmaxHash):** Dual-phase PoW migration enforcing memory-hard Argon2id (2 MB scratchpad, $t=1, p=1$), Blake2b-512, and SHA-256 at block height $\ge 520$ for decentralized CPU mining.
+- **Memory-Hard Hybrid PoW (ArmaxHash):** Dual-phase PoW migration enforcing Argon2id (2048 KiB scratchpad, $t=2, p=1$), Blake2b-512, and SHA-256 at block height $\ge 520$ for CPU mining (see `docs/CONSENSUS_AND_NETWORK.md` for the canonical specification across all eras).
 - **Continuous LWMA-1 Difficulty Adjustment:** Responsive sliding-window retargeting ($N=60$) with safety dampening bounds preventing oscillation, timewarp attacks, and hashrate collapse.
 - **Chainwork & Fork Resolution:** Satoshi cumulative chainwork fork choice rule with a strict `MaxReorganizationDepth = 720` blocks (~24h finality limit).
 - **Consensus Ceilings:** `MaxBlockTransactions = 1,000` block transaction cap and continuous circulating supply tracking.
