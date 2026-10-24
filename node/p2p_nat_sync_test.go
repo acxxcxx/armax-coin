@@ -87,6 +87,7 @@ func TestP2P_NATNode_OutboundSync(t *testing.T) {
 	psPublic.RequireTLS = false
 	RegisterPeerServer(psPublic)
 	defer UnregisterPeerServer(psPublic)
+	defer psPublic.Stop()
 	go psPublic.StartServer()
 
 	// Start NAT Node B (simulating a machine behind NAT with no inbound reachability:

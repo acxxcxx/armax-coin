@@ -31,6 +31,7 @@ func TestL1_2_CrossNetworkP2PRejection(t *testing.T) {
 
 		port := getFreePort(t)
 		ps := NewPeerServer(port, bc)
+		defer ps.Stop()
 		go ps.StartServer()
 		time.Sleep(100 * time.Millisecond)
 
@@ -59,6 +60,7 @@ func TestL1_2_CrossNetworkP2PRejection(t *testing.T) {
 
 		port := getFreePort(t)
 		ps := NewPeerServer(port, bc)
+		defer ps.Stop()
 		go ps.StartServer()
 		time.Sleep(100 * time.Millisecond)
 

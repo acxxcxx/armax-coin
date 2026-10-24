@@ -23,11 +23,12 @@ func TestT1_RateLimitActiveWhenPeersKnown(t *testing.T) {
 	ps := NewPeerServer(port, bc)
 
 	// Simulate node having connected peers
-	ps.Peers = []string{"198.51.100.1:9000", "198.51.100.2:9000"}
+	ps.Peers = []string{"198.51.100.1:19334", "198.51.100.2:19334"}
 	if ps.GetPeersKnown() == 0 {
 		t.Fatalf("Expected GetPeersKnown() > 0, got 0")
 	}
 
+	defer ps.Stop()
 	go ps.StartServer()
 	time.Sleep(100 * time.Millisecond)
 	target := "127.0.0.1:" + port

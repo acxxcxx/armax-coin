@@ -183,6 +183,16 @@ func loadOrGenerateNodeTLSCertificate(dataDir ...string) (tls.Certificate, error
 	}, nil
 }
 
+// GetNodeTLSConfig returns a thread-safe cloned copy of the active node TLS config.
+func GetNodeTLSConfig() *tls.Config {
+	nodeTLSMu.RLock()
+	defer nodeTLSMu.RUnlock()
+	if nodeTLSConfig == nil {
+		return nil
+	}
+	return nodeTLSConfig.Clone()
+}
+
 // InitNodeIdentity initializes or loads the persistent P2P TLS identity and returns its TLS config and SHA-256 fingerprint [T11]
 func InitNodeIdentity(dataDir ...string) (*tls.Config, [32]byte, error) {
 	nodeTLSMu.Lock()
@@ -201,7 +211,7 @@ func InitNodeIdentity(dataDir ...string) (*tls.Config, [32]byte, error) {
 	if len(cert.Certificate) > 0 {
 		fp = sha256.Sum256(cert.Certificate[0])
 	}
-	return nodeTLSConfig, fp, nil
+	return nodeTLSConfig.Clone(), fp, nil
 }
 
 // EnsureNodeTLSConfig initializes or reloads nodeTLSConfig for the active network profile [F1-BLOCKER, T11]
@@ -231,15 +241,28 @@ func (b *bufferedConn) Read(p []byte) (int, error) {
 // or plaintext JSON, and seamlessly wraps it with TLS if encrypted.
 // When strict TLS is enabled, plaintext inbound connections are rejected and nil is returned [N-08].
 func UpgradeToEncryptedTransport(rawConn net.Conn) (net.Conn, bool) {
-	if nodeTLSConfig == nil {
-		_, _ = EnsureNodeTLSConfig()
-	}
-	if nodeTLSConfig == nil {
-		if IsStrictTLS() {
-			_ = rawConn.Close()
-			return nil, false
+	return UpgradeToEncryptedTransportWithConfig(rawConn, nil)
+}
+
+// UpgradeToEncryptedTransportWithConfig wraps rawConn with TLS if incoming data is TLS 1.3,
+// using the provided tls.Config or falling back to the global node identity TLS config.
+func UpgradeToEncryptedTransportWithConfig(rawConn net.Conn, conf *tls.Config) (net.Conn, bool) {
+	var activeConf *tls.Config
+	if conf != nil {
+		activeConf = conf.Clone()
+	} else {
+		activeConf = GetNodeTLSConfig()
+		if activeConf == nil {
+			var err error
+			activeConf, err = EnsureNodeTLSConfig()
+			if err != nil || activeConf == nil {
+				if IsStrictTLS() {
+					_ = rawConn.Close()
+					return nil, false
+				}
+				return rawConn, false
+			}
 		}
-		return rawConn, false
 	}
 
 	br := bufio.NewReader(rawConn)
@@ -255,7 +278,7 @@ func UpgradeToEncryptedTransport(rawConn net.Conn) (net.Conn, bool) {
 	// 0x16 is the standard TLS Handshake record type
 	if firstByte[0] == 0x16 {
 		wrapped := &bufferedConn{Conn: rawConn, r: br}
-		tlsConn := tls.Server(wrapped, nodeTLSConfig)
+		tlsConn := tls.Server(wrapped, activeConf)
 		return tlsConn, true
 	}
 

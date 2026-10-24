@@ -90,7 +90,7 @@ func TestT2_10k_JunkBlocks_ZeroClones(t *testing.T) {
 		junk.MerkleRoot = "bad_merkle_root"
 		junk.Hash = "bad_hash_value"
 
-		ps.ProcessIncomingBlock(junk, attackerIP, attackerIP+":9000")
+		ps.ProcessIncomingBlock(junk, attackerIP, attackerIP+":19334")
 	}
 
 	cloneEnd := atomic.LoadInt64(&core.CloneCount)

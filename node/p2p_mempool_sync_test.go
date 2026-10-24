@@ -67,6 +67,7 @@ func TestP2P_MempoolSync_BIP35(t *testing.T) {
 	psA.RequireTLS = false
 	RegisterPeerServer(psA)
 	defer UnregisterPeerServer(psA)
+	defer psA.Stop()
 	go psA.StartServer()
 
 	psB := NewPeerServer(portB, bcB, tempDirB, "ARMX-TESTNET-1")
@@ -74,6 +75,7 @@ func TestP2P_MempoolSync_BIP35(t *testing.T) {
 	psB.RequireTLS = false
 	RegisterPeerServer(psB)
 	defer UnregisterPeerServer(psB)
+	defer psB.Stop()
 	go psB.StartServer()
 
 	time.Sleep(300 * time.Millisecond)
@@ -163,6 +165,7 @@ func TestP2P_MempoolSync_BIP35(t *testing.T) {
 	psC.RequireTLS = false
 	RegisterPeerServer(psC)
 	defer UnregisterPeerServer(psC)
+	defer psC.Stop()
 	go psC.StartServer()
 
 	time.Sleep(300 * time.Millisecond)

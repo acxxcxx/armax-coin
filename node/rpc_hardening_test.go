@@ -16,12 +16,14 @@ import (
 )
 
 func setupTestServer(t *testing.T) (*core.Blockchain, http.Handler) {
+	ResetRPCAuthForTesting()
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	core.SetTargetOverrideForTesting(core.DifficultyToTarget(1))
 	bc := core.NewBlockchain(3)
 	t.Cleanup(func() {
 		_ = bc.Close()
 		core.SetTargetOverrideForTesting(nil)
+		ResetRPCAuthForTesting()
 	})
 	limiter := newIPRateLimiter()
 	cfg := &ServerConfig{
@@ -267,8 +269,12 @@ func TestMutatingEndpointsNoWildcardCORS(t *testing.T) {
 
 // TestBlockSubmitBodyLimit verifies [R-05]: Body size bounding on block submissions
 func TestBlockSubmitBodyLimit(t *testing.T) {
+	ResetRPCAuthForTesting()
 	AllowInsecureLocalhost = true
-	defer func() { AllowInsecureLocalhost = false }()
+	defer func() {
+		AllowInsecureLocalhost = false
+		ResetRPCAuthForTesting()
+	}()
 
 	_, handler := setupTestServer(t)
 

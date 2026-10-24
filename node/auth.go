@@ -246,11 +246,16 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// ResetRPCAuthForTesting resets auth state (used in unit tests)
+// ResetRPCAuthForTesting resets auth state and clears IP lockouts (used in unit tests)
 func ResetRPCAuthForTesting() {
 	GlobalAuth.lock.Lock()
 	defer GlobalAuth.lock.Unlock()
 	GlobalAuth.User = ""
 	GlobalAuth.Password = ""
 	GlobalAuth.Cookie = ""
+
+	globalAuthLockout.Lock()
+	globalAuthLockout.fails = make(map[string]int)
+	globalAuthLockout.lockouts = make(map[string]time.Time)
+	globalAuthLockout.Unlock()
 }

@@ -327,6 +327,7 @@ type PeerServer struct {
 	AllowPrivatePeers  bool                         // [N-05, N-16] Allow loopback and private IP addresses (LAN/testnet)
 	RequireTLS         bool                         // [N-08] Require strict TLS 1.3
 	P2PTOFU            bool                         // [F1] Enable Trust-On-First-Use (TOFU) TLS certificate fingerprint pinning
+	tlsConfig          *tls.Config                  // Instance TLS config for concurrent safety
 	peerStoreCorrupted bool                         // [Phase 5, Follow-up Point 4] Fail-closed flag when peer store file is corrupt
 	savePeersLock      sync.Mutex                   // [P1 Final Blocker] Serializes peer-store snapshot -> marshal -> write -> sync -> rename transactions
 	tofuLock           sync.Mutex                   // [P1 Final Fix] Serializes first-contact TOFU pinning per peer address
@@ -1633,11 +1634,12 @@ func NewPeerServer(port string, bc *core.Blockchain, opts ...string) *PeerServer
 	}
 
 	// Ensure persistent TLS identity is loaded or created for this data directory [T11]
-	_, _ = EnsureNodeTLSConfig(dataDir)
+	instTLS, _ := EnsureNodeTLSConfig(dataDir)
 
 	ps := &PeerServer{
 		Port:               port,
 		DataDir:            dataDir,
+		tlsConfig:          instTLS,
 		peerStorePath:      path,
 		peerStoreInitErr:   initErr,
 		peerStoreCorrupted: initErr != nil,
@@ -2959,7 +2961,7 @@ func (p *PeerServer) runCycle(cycle *serverCycle, listener net.Listener) {
 		atomic.AddInt32(&p.ActiveConns, 1)
 
 		// Opportunistic or strict TLS 1.3 Transport Upgrade [N-08, F1]
-		secureConn, isTLS := UpgradeToEncryptedTransport(conn)
+		secureConn, isTLS := UpgradeToEncryptedTransportWithConfig(conn, p.tlsConfig)
 		if secureConn != nil && (!(requireTLS || p2pTOFU) || isTLS) {
 			debugLogf(
 				"[P2P][CONN] inbound established remote=%s tls=%t active=%d",
