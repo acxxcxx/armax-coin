@@ -378,10 +378,12 @@ type orphanTxEntry struct {
 }
 
 type peerRateTracker struct {
-	tokens         float64
-	lastRefill     time.Time
-	blockRangeReqs []time.Time
-	forkpointReqs  []time.Time
+	tokens          float64
+	lastRefill      time.Time
+	blockTokens     float64
+	lastBlockRefill time.Time
+	blockRangeReqs  []time.Time
+	forkpointReqs   []time.Time
 }
 
 const (
@@ -1621,13 +1623,43 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 	now := time.Now()
 	if !exists {
 		tracker = &peerRateTracker{
-			tokens:     30,
-			lastRefill: now,
+			tokens:          30,
+			lastRefill:      now,
+			blockTokens:     200,
+			lastBlockRefill: now,
 		}
 		p.rateTrackers[ip] = tracker
 	}
 
-	// Refill token bucket: 20 tokens per second up to 30 burst
+	// Dedicated token bucket for NEW_BLOCK messages during block sync [T1]
+	// Allows burst 200 and sustained refill of 80 blocks/sec so honest sync is not throttled
+	if msgType == "NEW_BLOCK" {
+		elapsed := now.Sub(tracker.lastBlockRefill).Seconds()
+		if elapsed > 0 {
+			tracker.blockTokens += elapsed * 80.0
+			if tracker.blockTokens > 200.0 {
+				tracker.blockTokens = 200.0
+			}
+			tracker.lastBlockRefill = now
+		}
+		if tracker.blockTokens < 1.0 {
+			if p.banScores == nil {
+				p.banScores = make(map[string]int)
+			}
+			p.banScores[ip] += 5
+			if p.banScores[ip] >= 100 {
+				if p.bannedIPs == nil {
+					p.bannedIPs = make(map[string]time.Time)
+				}
+				p.bannedIPs[ip] = now.Add(24 * time.Hour)
+			}
+			return false
+		}
+		tracker.blockTokens -= 1.0
+		return true
+	}
+
+	// Refill token bucket: 20 tokens per second up to 30 burst for general messages
 	elapsed := now.Sub(tracker.lastRefill).Seconds()
 	tracker.tokens += elapsed * 20.0
 	if tracker.tokens > 30.0 {
@@ -2916,11 +2948,11 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 			continue
 		}
 
-		// Rate limiting and abusive behavior ban score [N-15].
+		// Rate limiting and abusive behavior ban score [N-15, T1].
 		if p.IsBanned(remoteIP) {
 			continue
 		}
-		if p.GetPeersKnown() == 0 && !p.AllowMessage(remoteIP, msg.Type) {
+		if !p.AllowMessage(remoteIP, msg.Type) {
 			continue
 		}
 
@@ -4493,7 +4525,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 						return
 					}
 				}
-				time.Sleep(10 * time.Millisecond)
+				time.Sleep(20 * time.Millisecond) // Pacing 50 msgs/s, well within NEW_BLOCK budget of 80/s [T1]
 			}
 		}
 		return
