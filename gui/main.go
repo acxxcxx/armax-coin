@@ -1087,7 +1087,7 @@ func generateQRBitmap(content string, size int) (*walk.Bitmap, error) {
 		return nil, err
 	}
 	img := qr.Image(size)
-	return walk.NewBitmapFromImage(img)
+	return walk.NewBitmapFromImageForDPI(img, 96)
 }
 
 func updateReceiveQRCode(addr string) {

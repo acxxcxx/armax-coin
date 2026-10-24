@@ -17,9 +17,9 @@ The Armaxcoin project is partitioned across three separate Git repositories. Pri
 
 | Repository | Path | Base Branch | Migration Branch | Initial Commit SHA |
 |---|---|---|---|---|
-| **`armax_coin`** | `d:\new_armax\armax_coin` | `main` | `feat/mainnet-tokenomics-migration` | `32671920d8628f0833765538ff8b2f4bde8c4d05` |
-| **`armax_explorer`** | `d:\new_armax\armax_explorer` | `main` | `feat/mainnet-tokenomics-migration` | `67e4f6e347c9b80b484f407e1afb18939b07a33e` |
-| **`armax_android`** | `d:\new_armax\armax_android` | `main` | `feat/mainnet-tokenomics-migration` | `62dcbeaca84a13350439aa61f1b40218b241f3f4` |
+| **`armax_coin`** | `./armax_coin` | `main` | `feat/mainnet-tokenomics-migration` | `32671920d8628f0833765538ff8b2f4bde8c4d05` |
+| **`armax_explorer`** | `./armax_explorer` | `main` | `feat/mainnet-tokenomics-migration` | `67e4f6e347c9b80b484f407e1afb18939b07a33e` |
+| **`armax_android`** | `./armax_android` | `main` | `feat/mainnet-tokenomics-migration` | `62dcbeaca84a13350439aa61f1b40218b241f3f4` |
 
 > [!IMPORTANT]
 > **Safety Constraints:**

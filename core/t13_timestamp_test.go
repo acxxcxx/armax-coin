@@ -11,6 +11,7 @@ import (
 // replayed during storage load or IBD are not rejected by the 2-hour wall-clock limit,
 // while real-time tip blocks are strictly validated [T13].
 func TestT13_HistoricalReplayIgnoresFutureWallClock(t *testing.T) {
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	bc := NewBlockchain(1)
 	defer bc.Close()
 

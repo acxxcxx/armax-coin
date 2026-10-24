@@ -61,6 +61,7 @@ func TestT5_WitnessHashCacheSkipsRedundantVerify(t *testing.T) {
 // TestT5_DifferentialAddTransaction verifies identical acceptance/rejection semantics
 // for valid, invalid amount, bad fee, and bad signature transactions [T5].
 func TestT5_DifferentialAddTransaction(t *testing.T) {
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	bc := NewBlockchain(1)
 	defer bc.Close()
 
@@ -103,7 +104,7 @@ func TestT5_DifferentialAddTransaction(t *testing.T) {
 	// 2. Bad amount
 	txBadAmount := *txValid
 	txBadAmount.Amount = 0
-	ok, msg = bc.AddTransaction(txBadAmount)
+	ok, _ = bc.AddTransaction(txBadAmount)
 	if ok {
 		t.Fatalf("Zero amount tx was accepted")
 	}
@@ -113,7 +114,7 @@ func TestT5_DifferentialAddTransaction(t *testing.T) {
 	txBadSig.Nonce = 2
 	// Tamper signature without resigning
 	txBadSig.Signature = txBadSig.Signature[:len(txBadSig.Signature)-4] + "dead"
-	ok, msg = bc.AddTransaction(txBadSig)
+	ok, _ = bc.AddTransaction(txBadSig)
 	if ok {
 		t.Fatalf("Bad signature tx was accepted")
 	}
