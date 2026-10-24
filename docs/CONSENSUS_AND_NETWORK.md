@@ -179,10 +179,10 @@ Instead of private mining, the following transparent launch procedure is strongl
 
 ## 7. P2P Wire Protocol & Handshake Flow
 
-1. **Transport Layer:** TCP with mandatory TLS 1.3 encryption.
+1. **Transport Layer:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 2. **Handshake:**
    - Initiator connects and performs TLS handshake.
-   - Remote peer certificate public-key fingerprint is checked against `peers.json` (TOFU pinning).
+   - Remote peer certificate public-key fingerprint is checked against `peers.json` (TOFU pinning). If fingerprint changed, connection terminates immediately.
    - Nodes exchange `VERSION` payload containing:
      - Software version (`1.0.0`)
      - Network ID (`ARMX-TESTNET-1`)
