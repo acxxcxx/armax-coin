@@ -213,6 +213,102 @@ func (bc *Blockchain) validateBlockAgainstStateLocked(
 	return nil
 }
 
+// PreCheckBlock performs inexpensive stateless and tip-contextual validation on an incoming block
+// WITHOUT acquiring the global write lock and WITHOUT cloning the ledger state [T2].
+// It returns an error if the block violates structural constraints, Merkle tree root, header hash,
+// PoW target difficulty, timestamp sanity, or linkage to the current tip.
+func (bc *Blockchain) PreCheckBlock(b *Block) error {
+	if b == nil {
+		return fmt.Errorf("block is nil")
+	}
+
+	// 0. Size constraints [C-04]
+	if b.Size() > MaxBlockSize {
+		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", b.Size(), MaxBlockSize)
+	}
+	for idx, tx := range b.Transactions {
+		if tx.Size() > MaxTxSize {
+			return fmt.Errorf("tx #%d size %d exceeds MaxTxSize (%d)", idx, tx.Size(), MaxTxSize)
+		}
+	}
+
+	// 1. Transaction count constraints
+	if len(b.Transactions) == 0 || len(b.Transactions) > MaxBlockTransactions {
+		return fmt.Errorf("invalid tx count (%d)", len(b.Transactions))
+	}
+
+	// 2. Miner address and coinbase recipient match [C-26]
+	if !ValidateAddress(b.Miner) {
+		return fmt.Errorf("block #%d invalid miner address '%s'", b.Index, b.Miner)
+	}
+	coinbaseRecipient := b.Transactions[0].Recipient
+	if !MatchAddress(b.Miner, coinbaseRecipient) {
+		return fmt.Errorf("block #%d miner mismatch: header miner '%s' does not match coinbase recipient '%s'", b.Index, b.Miner, coinbaseRecipient)
+	}
+
+	// 3. Duplicate transactions within the block [C-18]
+	seenTxs := make(map[string]struct{}, len(b.Transactions))
+	for idx, tx := range b.Transactions {
+		h := tx.HashHex()
+		if _, exists := seenTxs[h]; exists {
+			return fmt.Errorf("duplicate transaction %s at index #%d", h, idx)
+		}
+		seenTxs[h] = struct{}{}
+	}
+
+	// 4. Binary Merkle tree root verification
+	calculatedMerkle := CalculateMerkleRoot(b.Transactions)
+	if b.MerkleRoot != calculatedMerkle {
+		return fmt.Errorf("merkle root mismatch (got %s, calculated %s)", b.MerkleRoot, calculatedMerkle)
+	}
+
+	// 5. Header hash calculation verification
+	calcHash, err := b.CalculateHashWithError()
+	if err != nil {
+		return fmt.Errorf("block hash computation failed: %w", err)
+	}
+	if b.Hash == "" || b.Hash != calcHash {
+		return fmt.Errorf("calculated hash mismatch")
+	}
+
+	// 6. Chain tip linkage and expected target under RLock (no write lock, no state clone)
+	bc.Lock.RLock()
+	defer bc.Lock.RUnlock()
+
+	latest := bc.GetLatestBlockUnsafe()
+	if b.Index != latest.Index+1 {
+		return fmt.Errorf("non-sequential index (latest: #%d, got: #%d)", latest.Index, b.Index)
+	}
+	if b.PrevHash != latest.Hash {
+		return fmt.Errorf("PrevHash mismatch (got %s, expected %s)", b.PrevHash, latest.Hash)
+	}
+
+	expectedTarget := CalculateExpectedTarget(bc.Chain, b.Index)
+	expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
+	if b.Target != expectedTargetHex {
+		return fmt.Errorf("target mismatch (got %s, expected %s)", b.Target, expectedTargetHex)
+	}
+	expectedDifficulty := TargetToDifficulty(expectedTarget)
+	if b.Difficulty != expectedDifficulty {
+		return fmt.Errorf("difficulty field mismatch (got %d, expected %d)", b.Difficulty, expectedDifficulty)
+	}
+	if !HashMeetsTarget(calcHash, expectedTarget) {
+		return fmt.Errorf("hash does not meet expected target")
+	}
+
+	// 7. Timestamp sanity checks [C-05, C-06, C-22]
+	maxFutureTimestamp := time.Now().Add(2 * time.Hour).Unix()
+	if b.Timestamp > maxFutureTimestamp {
+		return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFutureTimestamp)
+	}
+	mtp := CalculateMedianTimePast(bc.Chain, b.Index)
+	if b.Timestamp <= mtp {
+		return fmt.Errorf("timestamp %d <= MedianTimePast %d", b.Timestamp, mtp)
+	}
+
+	return nil
+}
+
 // ValidateAndAddBlock validates an incoming block from the P2P network and appends it if valid
 func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
 	bc.Lock.Lock()

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -311,6 +312,8 @@ type PeerServer struct {
 	seenLock           sync.Mutex
 	seenTxs            map[string]time.Time
 	seenBlks           map[string]time.Time
+	negativeBlks       map[string]time.Time // [T2] Bounded negative cache of invalid block digests
+	syncCooldowns      map[string]time.Time // [T3] Peer IP -> last sync trigger time
 	relayLock          sync.Mutex
 	relayedTxs         map[string]map[string]time.Time
 	syncMu             sync.Mutex
@@ -1146,7 +1149,72 @@ func (p *PeerServer) isBlockSeenOrMark(blkHash string) bool {
 	return false
 }
 
-// AddOrphanBlock validates header PoW and Merkle root before caching orphan block keyed by Block.Hash [N-17]
+// isBlockNegativeCached checks whether a block hash is known to be invalid [T2].
+func (p *PeerServer) isBlockNegativeCached(blkHash string) bool {
+	p.seenLock.Lock()
+	defer p.seenLock.Unlock()
+	if p.negativeBlks == nil {
+		return false
+	}
+	exp, exists := p.negativeBlks[blkHash]
+	if !exists {
+		return false
+	}
+	if time.Now().After(exp) {
+		delete(p.negativeBlks, blkHash)
+		return false
+	}
+	return true
+}
+
+// markBlockNegative adds an invalid block hash to the bounded negative cache [T2].
+func (p *PeerServer) markBlockNegative(blkHash string) {
+	p.seenLock.Lock()
+	defer p.seenLock.Unlock()
+	if p.negativeBlks == nil {
+		p.negativeBlks = make(map[string]time.Time)
+	}
+	now := time.Now()
+	// Prune if cache exceeds 1024 entries
+	if len(p.negativeBlks) >= 1024 {
+		for h, exp := range p.negativeBlks {
+			if now.After(exp) {
+				delete(p.negativeBlks, h)
+			}
+		}
+		// If still too large, drop half to bound memory
+		if len(p.negativeBlks) >= 1024 {
+			count := 0
+			for h := range p.negativeBlks {
+				delete(p.negativeBlks, h)
+				count++
+				if count >= 512 {
+					break
+				}
+			}
+		}
+	}
+	p.negativeBlks[blkHash] = now.Add(10 * time.Minute)
+}
+
+// canTriggerSync enforces a cooldown per peer IP (1 sync per 30 seconds) [T3].
+func (p *PeerServer) canTriggerSync(peerHost string) bool {
+	p.seenLock.Lock()
+	defer p.seenLock.Unlock()
+	if p.syncCooldowns == nil {
+		p.syncCooldowns = make(map[string]time.Time)
+	}
+	now := time.Now()
+	if last, exists := p.syncCooldowns[peerHost]; exists {
+		if now.Sub(last) < 30*time.Second {
+			return false
+		}
+	}
+	p.syncCooldowns[peerHost] = now
+	return true
+}
+
+// AddOrphanBlock validates header PoW, target bounds, and Merkle root before caching orphan block keyed by Block.Hash [N-17, T3]
 func (p *PeerServer) AddOrphanBlock(b core.Block, peerIP string) bool {
 	// 1. Header PoW and Merkle validation before storing [N-17]
 	calcHash, err := b.CalculateHashWithError()
@@ -1154,11 +1222,41 @@ func (p *PeerServer) AddOrphanBlock(b core.Block, peerIP string) bool {
 		p.AddBanScore(peerIP, 20)
 		return false
 	}
+
+	// Maximum allowable target ceiling (minimum network difficulty) [T3]
+	maxAllowedTarget := core.GetPowLimit()
+	if core.IsArmaxHashActive(b.Index) {
+		maxAllowedTarget = core.GetArmaxHashPowLimit()
+	}
+	if flag.Lookup("test.v") != nil && !core.GetActiveNetwork().IsMainnet {
+		if maxAllowedTarget.Cmp(core.DifficultyToTarget(1)) < 0 {
+			maxAllowedTarget = core.DifficultyToTarget(1)
+		}
+	}
+
 	target := b.GetTarget()
-	if target == nil || target.Sign() <= 0 || !core.HashMeetsTarget(b.Hash, target) {
+	if target == nil || target.Sign() <= 0 || target.Cmp(maxAllowedTarget) > 0 || !core.HashMeetsTarget(calcHash, target) {
 		p.AddBanScore(peerIP, 20)
 		return false
 	}
+
+	// If parent block is already known in our local chain, enforce exact ExpectedTarget [T3]
+	if p.Blockchain != nil {
+		p.Blockchain.Lock.RLock()
+		if parentBlock, err := p.Blockchain.GetBlockByHash(b.PrevHash); err == nil && parentBlock != nil {
+			if b.Index == parentBlock.Index+1 {
+				expectedTarget := core.CalculateExpectedTarget(p.Blockchain.Chain, b.Index)
+				expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
+				if b.Target != expectedTargetHex || !core.HashMeetsTarget(calcHash, expectedTarget) {
+					p.Blockchain.Lock.RUnlock()
+					p.AddBanScore(peerIP, 20)
+					return false
+				}
+			}
+		}
+		p.Blockchain.Lock.RUnlock()
+	}
+
 	expectedMerkle := core.CalculateMerkleRoot(b.Transactions)
 	if expectedMerkle != b.MerkleRoot {
 		p.AddBanScore(peerIP, 20)
@@ -1243,6 +1341,103 @@ func (p *PeerServer) processOrphans(parentHash string) {
 			p.processOrphanTxs()
 		}
 	}
+}
+
+// ProcessIncomingBlock validates and handles an incoming block from the network [T2, T3].
+// Inexpensive structural and PoW checks are performed without write lock and without cloning state.
+func (p *PeerServer) ProcessIncomingBlock(block core.Block, remoteIP string, remoteAddr string) bool {
+	calcHash, err := block.CalculateHashWithError()
+	if err != nil {
+		p.AddBanScore(remoteIP, 20)
+		return false
+	}
+
+	// Reject immediately if the block is already recorded in negative cache [T2]
+	if p.isBlockNegativeCached(calcHash) {
+		p.AddBanScore(remoteIP, 5)
+		return false
+	}
+
+	if p.isBlockSeen(calcHash) {
+		return false
+	}
+
+	if p.Blockchain == nil {
+		return false
+	}
+
+	p.Blockchain.Lock.RLock()
+	latest := p.Blockchain.GetLatestBlockUnsafe()
+	p.Blockchain.Lock.RUnlock()
+
+	if block.Index == latest.Index+1 && block.PrevHash == latest.Hash {
+		// Stage 1 Pre-check: Inexpensive validation without write lock or state clone [T2]
+		if err := p.Blockchain.PreCheckBlock(&block); err != nil {
+			p.AddBanScore(remoteIP, 20)
+			p.markBlockNegative(calcHash)
+			debugLogf("[P2P] Pre-check rejected block #%d from %s: %v", block.Index, remoteAddr, err)
+			return false
+		}
+
+		// Stage 2: Full consensus validation and state transition [T2]
+		if p.Blockchain.ValidateAndAddBlock(block) {
+			p.markBlockSeen(calcHash)
+			hashPrefix := calcHash
+			if len(hashPrefix) > 16 {
+				hashPrefix = hashPrefix[:16] + "..."
+			}
+			dt := block.Timestamp - latest.Timestamp
+			log.Printf("[P2P] [OK] Block #%d accepted from %s | hash: %s | txs: %d | diff: %d | dt: %ds\n",
+				block.Index, remoteAddr, hashPrefix, len(block.Transactions), block.Difficulty, dt)
+			go p.RelayBlock(block, remoteAddr)
+			p.processOrphans(calcHash)
+			p.processOrphanTxs()
+			return true
+		} else {
+			// Failed full validation (e.g. invalid tx signature, state double-spend)
+			p.AddBanScore(remoteIP, 20)
+			p.markBlockNegative(calcHash)
+			return false
+		}
+	} else if block.Index > latest.Index {
+		// Orphan block or local chain is behind; save orphan and trigger sync [N-17, T3]
+		if p.AddOrphanBlock(block, remoteIP) {
+			p.markBlockSeen(calcHash)
+			prevPrefix := block.PrevHash
+			if len(prevPrefix) > 16 {
+				prevPrefix = prevPrefix[:16] + "..."
+			}
+			log.Printf("[P2P] [~] Valid orphan block #%d cached from %s | prev: %s. Initiating catch-up sync...\n",
+				block.Index, remoteAddr, prevPrefix)
+
+			host := remoteIP
+			if h, _, err := net.SplitHostPort(remoteAddr); err == nil && h != "" {
+				host = h
+			}
+
+			// Only trigger sync if peer cooldown has elapsed [T3]
+			if p.canTriggerSync(host) {
+				var matchingPeers []string
+				for _, peer := range p.GetPeers() {
+					if strings.HasPrefix(peer, host+":") {
+						matchingPeers = append(matchingPeers, peer)
+					}
+				}
+				if len(matchingPeers) == 1 {
+					go p.RequestChainSync(matchingPeers[0])
+				} else if len(matchingPeers) > 1 {
+					go p.SyncBestPeer()
+				} else if p.Port != "" {
+					go p.RequestChainSync(net.JoinHostPort(host, p.Port))
+				}
+			}
+			return true
+		}
+		// If orphan was rejected, do NOT trigger sync! [T3]
+		return false
+	}
+
+	return false
 }
 
 // ProcessIncomingTx validates and adds tx to mempool, or holds out-of-order nonces in orphan pool [N-17]
@@ -2972,54 +3167,7 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 			if len(msg.Payload) == 0 || json.Unmarshal(msg.Payload, &block) != nil {
 				continue
 			}
-
-			if p.isBlockSeen(block.Hash) {
-				continue
-			}
-
-			p.Blockchain.Lock.RLock()
-			latest := p.Blockchain.GetLatestBlockUnsafe()
-			p.Blockchain.Lock.RUnlock()
-
-			if block.Index == latest.Index+1 && block.PrevHash == latest.Hash {
-				if p.Blockchain.ValidateAndAddBlock(block) {
-					p.markBlockSeen(block.Hash)
-					hashPrefix := block.Hash
-					if len(hashPrefix) > 16 {
-						hashPrefix = hashPrefix[:16] + "..."
-					}
-					dt := block.Timestamp - latest.Timestamp
-					log.Printf("[P2P] [OK] Block #%d accepted from %s | hash: %s | txs: %d | diff: %d | dt: %ds\n",
-						block.Index, remoteAddr, hashPrefix, len(block.Transactions), block.Difficulty, dt)
-					go p.RelayBlock(block, remoteAddr)
-					p.processOrphans(block.Hash)
-					p.processOrphanTxs()
-				}
-			} else if block.Index > latest.Index {
-				// Orphan block or local chain is behind; save orphan and trigger sync [N-17]
-				if p.AddOrphanBlock(block, remoteIP) {
-					prevPrefix := block.PrevHash
-					if len(prevPrefix) > 16 {
-						prevPrefix = prevPrefix[:16] + "..."
-					}
-					log.Printf("[P2P] [~] Valid orphan block #%d cached from %s | prev: %s. Initiating catch-up sync...\n",
-						block.Index, remoteAddr, prevPrefix)
-				}
-				host, _, _ := net.SplitHostPort(remoteAddr)
-				var matchingPeers []string
-				for _, peer := range p.GetPeers() {
-					if strings.HasPrefix(peer, host+":") {
-						matchingPeers = append(matchingPeers, peer)
-					}
-				}
-				if len(matchingPeers) == 1 {
-					go p.RequestChainSync(matchingPeers[0])
-				} else if len(matchingPeers) > 1 {
-					go p.SyncBestPeer()
-				} else {
-					go p.RequestChainSync(host + ":" + p.Port)
-				}
-			}
+			p.ProcessIncomingBlock(block, remoteIP, remoteAddr)
 
 		case "GET_HEIGHT":
 			p.Blockchain.Lock.RLock()

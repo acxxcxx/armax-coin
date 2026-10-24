@@ -5,7 +5,11 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
+
+// CloneCount tracks total StateManager.Clone() invocations (for telemetry and test verification).
+var CloneCount int64
 
 // ImmatureReward tracks an immature coinbase block reward entry [L4-10-a]
 type ImmatureReward struct {
@@ -88,6 +92,7 @@ func NewStateManager() *StateManager {
 
 // Clone creates a deep copy of the state ledger (used for atomic block validation)
 func (sm *StateManager) Clone() *StateManager {
+	atomic.AddInt64(&CloneCount, 1)
 	sm.Lock.RLock()
 	defer sm.Lock.RUnlock()
 
