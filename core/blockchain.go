@@ -463,9 +463,6 @@ func CalculateMinMempoolFee(txSize int) int64 {
 
 // AddTransaction enforces security validation, mempool size limits, and appends valid transactions
 func (bc *Blockchain) AddTransaction(tx Transaction) (bool, string) {
-	bc.Lock.Lock()
-	defer bc.Lock.Unlock()
-
 	// 1. Block external SYSTEM transaction spoofing
 	if strings.EqualFold(tx.Sender, "SYSTEM") {
 		return false, "Rejected: SYSTEM transactions can only be generated internally by the protocol"
@@ -501,7 +498,16 @@ func (bc *Blockchain) AddTransaction(tx Transaction) (bool, string) {
 		return false, "Rejected: Self-transfer transactions are prohibited"
 	}
 
-	// 2b. Rate-limit unconfirmed pending transactions per sender [C-16, C-20]
+	// 3. Cryptographic Signature verification (ML-DSA-65 NIST FIPS 204) before taking write lock [T5]
+	if !tx.Verify() {
+		return false, "Rejected: Digital signature is invalid or does not match public key"
+	}
+
+	// Stateful validation and mempool modifications under global write lock [T5]
+	bc.Lock.Lock()
+	defer bc.Lock.Unlock()
+
+	// 4. Rate-limit unconfirmed pending transactions per sender [C-16, C-20]
 	bc.pendingLock.RLock()
 	senderPendingCount := 0
 	if bc.txsPerSender != nil {
@@ -510,11 +516,6 @@ func (bc *Blockchain) AddTransaction(tx Transaction) (bool, string) {
 	bc.pendingLock.RUnlock()
 	if senderPendingCount >= MaxTxsPerSender {
 		return false, fmt.Sprintf("Rejected: Sender has exceeded maximum unconfirmed pending transactions (%d)", MaxTxsPerSender)
-	}
-
-	// 4. Cryptographic Signature verification (ECDSA P-256)
-	if !tx.Verify() {
-		return false, "Rejected: Digital signature is invalid or does not match public key"
 	}
 
 	// 5. Balance validation including fee and Coinbase maturity (prevent double-spending and immature spend)

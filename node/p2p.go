@@ -322,6 +322,7 @@ type PeerServer struct {
 	orphanLock         sync.Mutex
 	orphanBlocks       map[string]*orphanBlockEntry // [N-06, N-17] orphan block buffer keyed by Block.Hash
 	orphanTxs          map[string]*orphanTxEntry    // [N-17] out-of-order pending transactions pool
+	lastOrphanScan     time.Time                    // [T5] Timestamp of last top-level orphan tx scan
 	DisableSubnetLimit bool                         // [N-12] Allow multiple connections from same subnet (LAN/testnet)
 	AllowPrivatePeers  bool                         // [N-05, N-16] Allow loopback and private IP addresses (LAN/testnet)
 	RequireTLS         bool                         // [N-08] Require strict TLS 1.3
@@ -1510,14 +1511,28 @@ func (p *PeerServer) HasOrphanTx(txHash string) bool {
 	return ok
 }
 
-// processOrphanTxs checks cached orphan transactions to see if any can now be added to mempool [N-17]
+// processOrphanTxs checks cached orphan transactions to see if any can now be added to mempool [N-17, T5]
 func (p *PeerServer) processOrphanTxs() {
+	p.processOrphanTxsWithDepth(0)
+}
+
+func (p *PeerServer) processOrphanTxsWithDepth(depth int) {
+	if depth > 5 {
+		return
+	}
 	p.orphanLock.Lock()
 	if len(p.orphanTxs) == 0 {
 		p.orphanLock.Unlock()
 		return
 	}
 	now := time.Now()
+	// Debounce top-level scan if triggered less than 100ms ago [T5]
+	if depth == 0 && now.Sub(p.lastOrphanScan) < 100*time.Millisecond {
+		p.orphanLock.Unlock()
+		return
+	}
+	p.lastOrphanScan = now
+
 	var candidates []core.Transaction
 	for h, entry := range p.orphanTxs {
 		if now.Sub(entry.AddedAt) > OrphanTxExpiry {
@@ -1543,7 +1558,7 @@ func (p *PeerServer) processOrphanTxs() {
 	}
 
 	if promotedAny {
-		p.processOrphanTxs()
+		p.processOrphanTxsWithDepth(depth + 1)
 	}
 }
 
@@ -3304,6 +3319,10 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 		case "MEMPOOL_RESPONSE":
 			var txList []core.Transaction
 			if len(msg.Payload) > 0 && json.Unmarshal(msg.Payload, &txList) == nil {
+				// Bound max incoming txs per MEMPOOL_RESPONSE to 100 [T5]
+				if len(txList) > 100 {
+					txList = txList[:100]
+				}
 				for _, tx := range txList {
 					p.ProcessIncomingTx(tx, remoteIP)
 				}

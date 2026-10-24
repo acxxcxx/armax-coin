@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/acxxcxx/armax-coin/core/pqsig"
 )
@@ -67,6 +68,44 @@ func (tx *Transaction) WitnessHash() []byte {
 // WitnessHashHex returns the 64-character hexadecimal representation of the witness hash
 func (tx *Transaction) WitnessHashHex() string {
 	return hex.EncodeToString(tx.WitnessHash())
+}
+
+type sigVerifyCache struct {
+	sync.RWMutex
+	entries map[string]struct{}
+	maxSize int
+}
+
+var globalSigVerifyCache = &sigVerifyCache{
+	entries: make(map[string]struct{}),
+	maxSize: 10000,
+}
+
+// IsSignatureVerified returns true if this transaction's witness hash has already been verified [T5].
+func (tx *Transaction) IsSignatureVerified() bool {
+	wHash := tx.WitnessHashHex()
+	globalSigVerifyCache.RLock()
+	_, exists := globalSigVerifyCache.entries[wHash]
+	globalSigVerifyCache.RUnlock()
+	return exists
+}
+
+// MarkSignatureVerified caches the transaction witness hash as cryptographically valid [T5].
+func (tx *Transaction) MarkSignatureVerified() {
+	wHash := tx.WitnessHashHex()
+	globalSigVerifyCache.Lock()
+	if len(globalSigVerifyCache.entries) >= globalSigVerifyCache.maxSize {
+		count := 0
+		for k := range globalSigVerifyCache.entries {
+			delete(globalSigVerifyCache.entries, k)
+			count++
+			if count >= globalSigVerifyCache.maxSize/2 {
+				break
+			}
+		}
+	}
+	globalSigVerifyCache.entries[wHash] = struct{}{}
+	globalSigVerifyCache.Unlock()
 }
 
 // Size returns the approximate serialized byte size of the transaction, caching the result [C-28, C-34]
@@ -133,8 +172,12 @@ func (tx *Transaction) ValidateBasic() error {
 	return tx.VerifyWithError()
 }
 
-// VerifyWithError validates the transaction and returns a descriptive error upon failure [L1-2]
+// VerifyWithError validates the transaction and returns a descriptive error upon failure [L1-2, T5]
 func (tx *Transaction) VerifyWithError() error {
+	if tx.IsSignatureVerified() {
+		return nil
+	}
+
 	// [C-29] Whitelist only standard transaction types for consensus
 	if tx.Type != "" && tx.Type != TxTypeStandard {
 		return fmt.Errorf("invalid transaction type: %s", tx.Type)
@@ -243,5 +286,6 @@ func (tx *Transaction) VerifyWithError() error {
 	if !pqsig.Verify(pubKeyBytes, tx.Hash(), sigBytes) {
 		return errors.New("signature verification failed (invalid signature for network/message)")
 	}
+	tx.MarkSignatureVerified()
 	return nil
 }
