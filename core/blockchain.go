@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -154,8 +155,10 @@ func NewBlockchain(difficulty int) *Blockchain {
 		break
 	}
 
-	// If timeout persists during test initialization, safely fallback to in-memory mode
-	if err != nil && strings.Contains(err.Error(), "timeout") {
+	// In-memory fallback is strictly restricted to test environments or explicit regtest/ARMX_IN_MEMORY [T12]
+	isExplicitInMemory := os.Getenv("ARMX_IN_MEMORY") == "1" || GetActiveNetwork().Name == "regtest"
+	isTest := flag.Lookup("test.v") != nil
+	if err != nil && strings.Contains(err.Error(), "timeout") && (isExplicitInMemory || isTest) {
 		fmt.Printf("[!] Warning: bbolt store timeout encountered. Falling back to in-memory mode for test safety.\n")
 		mat := GetActiveNetwork().CoinbaseMaturity
 		if mat <= 0 {
@@ -181,7 +184,7 @@ func NewBlockchain(difficulty int) *Blockchain {
 	}
 
 	if err != nil {
-		panic(err.Error())
+		panic(fmt.Sprintf("FATAL: failed to initialize blockchain database: %v", err))
 	}
 	return bc
 }

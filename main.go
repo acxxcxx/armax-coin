@@ -175,6 +175,10 @@ func main() {
 
 	// 1. Initialize Blockchain with Difficulty 3
 	bc := core.NewBlockchain(3)
+	if bc.StoragePath == "IN_MEMORY" && !*testFlag && activeNet.Name != "regtest" {
+		fmt.Printf("[-] FATAL: Failed to access persistent database on disk. Operating in-memory is prohibited in production to prevent data loss.\n")
+		os.Exit(1)
+	}
 	bc.CoinbaseMaturity = activeNet.CoinbaseMaturity
 	if *miningThreadsFlag > 0 {
 		bc.MiningThreads = *miningThreadsFlag
