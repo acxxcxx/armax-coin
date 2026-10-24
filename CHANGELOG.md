@@ -17,8 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 100% backward verification compatibility preserving historical block eras (Blocks 0..519 on Double-SHA256, Blocks 520..2499 on ArmaxHash v1 Argon2id).
 - **Consensus Improvement Proposals (C1-C5):**
   - Published formal consensus enhancement specifications (`docs/security/consensus-proposals.md`) addressing reorg finality boundaries, timestamp clamping, and mempool DoS mitigation.
-- **Mainnet Tokenomics & Vesting Architecture Proposal:**
-  - Added comprehensive tokenomics audit and proposal (`docs/TOKENOMICS_MIGRATION_PROPOSAL.md`) detailing the 126,000,000 ARMX hard cap preservation, block-height-indexed vesting schedules, and 10:1 testnet migration formula.
 
 ### Fixed
 - **Storage Replay Future Wall-Clock Check [T13]:** Bypassed future drift wall-clock check during historical storage replay and node re-indexing so valid past blocks are never rejected during initial block download.
