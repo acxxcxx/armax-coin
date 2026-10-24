@@ -587,9 +587,16 @@ func main() {
 	fmt.Printf("[+] Wallet 2 (W2)    : %s\n", w2.Address)
 	fmt.Printf("[+] Miner Wallet     : %s\n", minerWallet.Address)
 
-	// Save miner wallet to encrypted wallet.json for CLI testing convenience
-	_ = wallet.EncryptAndSaveKeystore(minerWallet, "armax-demo", "wallet.json")
-	fmt.Println("[+] Miner wallet secured and saved to wallet.json")
+	// Save miner wallet to encrypted wallet.json for CLI testing convenience without destroying existing user keys [T15]
+	bakPath, err := wallet.CreateNewWalletKeystore(minerWallet, "armax-demo", "wallet.json", false)
+	if err != nil {
+		fmt.Printf("[-] Warning: Failed to save demo miner wallet: %v\n", err)
+	} else if bakPath != "" {
+		fmt.Printf("[+] Existing wallet.json detected and backed up to %s\n", bakPath)
+		fmt.Println("[+] Demo miner wallet secured and saved to wallet.json")
+	} else {
+		fmt.Println("[+] Miner wallet secured and saved to wallet.json")
+	}
 
 	// 3. Genesis miner mines initial block for block reward
 	fmt.Println("\n[~] Miner mining block #1 (Initial Mining Reward)...")

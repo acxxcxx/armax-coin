@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/term"
@@ -191,6 +192,29 @@ func EncryptAndSaveKeystore(w *Wallet, passphrase, filePath string) error {
 	_ = os.Chmod(filePath, 0600)
 
 	return nil
+}
+
+// CreateNewWalletKeystore creates or restores a wallet keystore at filePath.
+// If the destination file already exists, it automatically creates a timestamped backup
+// (<filePath>.backup.<timestamp>) before saving the new wallet, unless force is true [T15].
+func CreateNewWalletKeystore(w *Wallet, passphrase, filePath string, force bool) (string, error) {
+	var backupPath string
+	if _, err := os.Stat(filePath); err == nil {
+		if !force {
+			backupPath = fmt.Sprintf("%s.backup.%d", filePath, time.Now().UnixNano())
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return "", fmt.Errorf("failed to read existing wallet for backup: %w", err)
+			}
+			if err := os.WriteFile(backupPath, data, 0600); err != nil {
+				return "", fmt.Errorf("failed to create wallet backup at %s: %w", backupPath, err)
+			}
+		}
+	}
+	if err := EncryptAndSaveKeystore(w, passphrase, filePath); err != nil {
+		return "", err
+	}
+	return backupPath, nil
 }
 
 // DecryptAndLoadKeystore loads an encrypted keystore file, enforces size/parameter bounds,

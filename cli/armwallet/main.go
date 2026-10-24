@@ -38,6 +38,7 @@ func main() {
 	getMempoolInfoPtr := flag.Bool("getmempoolinfo", false, "Display unconfirmed transactions waiting in the daemon mempool (alias for -mempool)")
 	filePtr := flag.String("file", DefaultWalletFile, "Wallet keystore file path (default: wallet.json)")
 	walletPtr := flag.String("wallet", "", "Wallet keystore file path (alias for -file)")
+	forcePtr := flag.Bool("force", false, "Force overwrite existing wallet file without creating backup [T15]")
 	daemonPtr := flag.String("daemon", "", "RPC daemon URL for balance queries (default: profile port)")
 	rpcUserPtr := flag.String("rpcuser", "", "Username for RPC authentication")
 	rpcPasswordPtr := flag.String("rpcpassword", "", "Password for RPC authentication")
@@ -154,9 +155,9 @@ func main() {
 	}
 
 	if *createPtr || *newAddressPtr {
-		createWallet(targetWalletPath)
+		createWallet(targetWalletPath, *forcePtr)
 	} else if *restorePtr != "" {
-		restoreWallet(*restorePtr, targetWalletPath)
+		restoreWallet(*restorePtr, targetWalletPath, *forcePtr)
 	} else if *balancePtr != "" || *getBalancePtr != "" {
 		addr := *balancePtr
 		if addr == "" {
@@ -209,7 +210,7 @@ func getPassphrase(confirm bool) (string, error) {
 	return pass, nil
 }
 
-func createWallet(filePath string) {
+func createWallet(filePath string, force bool) {
 	passphrase, err := getPassphrase(true)
 	if err != nil {
 		fmt.Println("[-] Error:", err)
@@ -222,7 +223,8 @@ func createWallet(filePath string) {
 		return
 	}
 
-	if err := wallet.EncryptAndSaveKeystore(w, passphrase, filePath); err != nil {
+	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
+	if err != nil {
 		fmt.Println("[-] Failed to save encrypted keystore:", err)
 		return
 	}
@@ -235,10 +237,13 @@ func createWallet(filePath string) {
 	fmt.Printf("   \"%s\"\n", w.Mnemonic)
 	fmt.Println("   [!] Write down these 24 words on paper and store offline! Never share them!")
 	fmt.Println("--------------------------------------------------")
+	if backupPath != "" {
+		fmt.Printf("    [!] Previous wallet safely backed up to: %s\n", backupPath)
+	}
 	fmt.Printf("    Saved to           : %s (mode: 0600)\n", filePath)
 }
 
-func restoreWallet(mnemonic, filePath string) {
+func restoreWallet(mnemonic, filePath string, force bool) {
 	passphrase, err := getPassphrase(true)
 	if err != nil {
 		fmt.Println("[-] Error:", err)
@@ -251,13 +256,17 @@ func restoreWallet(mnemonic, filePath string) {
 		return
 	}
 
-	if err := wallet.EncryptAndSaveKeystore(w, passphrase, filePath); err != nil {
+	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
+	if err != nil {
 		fmt.Println("[-] Failed to save encrypted keystore:", err)
 		return
 	}
 
 	fmt.Println("\n[OK] Wallet successfully restored and encrypted with Argon2id!")
 	fmt.Printf("    Restored Address   : %s\n", w.Address)
+	if backupPath != "" {
+		fmt.Printf("    [!] Previous wallet safely backed up to: %s\n", backupPath)
+	}
 	fmt.Printf("    Saved to           : %s\n", filePath)
 }
 
