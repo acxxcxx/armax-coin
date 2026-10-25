@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Storage Replay Future Wall-Clock Check [T13]:** Bypassed future drift wall-clock check during historical storage replay and node re-indexing so valid past blocks are never rejected during initial block download.
+- **Bitcoin/Litecoin Standard Token-Bucket Rate Limiter & Continuous IBD Sync:** Replaced rigid 5-req/min rolling window for `GET_BLOCK_RANGE` and `GET_FORKPOINT` with a token-bucket rate limiter (Burst: 120 chunks / 30,000 blocks, Refill: 20 chunks/s), eliminated false-positive ban score penalization during block history synchronization, and enabled pipelined continuous Initial Block Download with automatic multi-peer failover.
 - **Production Database Fail-Fast Guard [T12]:** Prevented silent fallback to in-memory database on database open failures; node terminates immediately to protect against state loss.
 - **Keystore Overwrite Protection & Auto-Backup [T15]:** Hardened CLI (`armwallet`) and GUI against accidental keystore overwrites by automatically creating timestamped `.bak` files when new keys are generated.
 - **HTTP RPC Error Schema Standardization:** Standardized `writeJSONError` across node endpoints to consistently return `error`, `message`, and `status` fields for robust GUI, mobile, and explorer client interoperability.
