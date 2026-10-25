@@ -21,6 +21,7 @@ func TestT1_RateLimitActiveWhenPeersKnown(t *testing.T) {
 
 	port := getFreePort(t)
 	ps := NewPeerServer(port, bc)
+	ps.BlockRangeBurst = 5.0 // Test token bucket rate limiting with capacity of 5
 
 	// Simulate node having connected peers
 	ps.Peers = []string{"198.51.100.1:19334", "198.51.100.2:19334"}

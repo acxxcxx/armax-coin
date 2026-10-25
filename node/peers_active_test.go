@@ -86,8 +86,15 @@ func TestInboundOnlyPeerCountsActive(t *testing.T) {
 
 	// Close inbound connection and verify peers_active returns to 0
 	_ = conn.Close()
-	time.Sleep(200 * time.Millisecond)
-	if remaining := ps.GetPeersActive(); remaining != 0 {
+	var remaining int
+	for attempt := 0; attempt < 20; attempt++ {
+		time.Sleep(100 * time.Millisecond)
+		remaining = ps.GetPeersActive()
+		if remaining == 0 {
+			break
+		}
+	}
+	if remaining != 0 {
 		t.Fatalf("Expected peers_active == 0 after disconnect, got %d", remaining)
 	}
 }

@@ -22,6 +22,7 @@ func TestN15_BlockRangeRateLimiterAndBanScore(t *testing.T) {
 
 	port := getFreePort(t)
 	ps := NewPeerServer(port, bc)
+	ps.BlockRangeBurst = 5.0 // Test token bucket rate limiting with capacity of 5
 	go ps.StartServer()
 
 	time.Sleep(100 * time.Millisecond)

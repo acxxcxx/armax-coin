@@ -337,6 +337,8 @@ type PeerServer struct {
 	banScores          map[string]int               // [N-15] Misbehavior ban scores per IP
 	bannedIPs          map[string]time.Time         // [N-15] Active IP bans and expiry
 	rateTrackers       map[string]*peerRateTracker  // [N-15] Token bucket and endpoint trackers
+	BlockRangeBurst      float64                      // Configurable burst for GET_BLOCK_RANGE (BTC/LTC standard; default 120.0)
+	BlockRangeRefillRate float64                      // Configurable refill rate/sec for GET_BLOCK_RANGE (default 20.0)
 	listener           net.Listener                 // [T-06] Active TCP listener
 	quitChan           chan struct{}                // [T-06] Shutdown signal channel
 	stopLock           sync.Mutex
@@ -383,12 +385,14 @@ type orphanTxEntry struct {
 }
 
 type peerRateTracker struct {
-	tokens          float64
-	lastRefill      time.Time
-	blockTokens     float64
-	lastBlockRefill time.Time
-	blockRangeReqs  []time.Time
-	forkpointReqs   []time.Time
+	tokens               float64
+	lastRefill           time.Time
+	blockTokens          float64
+	lastBlockRefill      time.Time
+	blockRangeTokens     float64
+	lastBlockRangeRefill time.Time
+	forkpointTokens      float64
+	lastForkpointRefill  time.Time
 }
 
 const (
@@ -1837,11 +1841,19 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 	tracker, exists := p.rateTrackers[ip]
 	now := time.Now()
 	if !exists {
+		burst := p.BlockRangeBurst
+		if burst <= 0 {
+			burst = 120.0
+		}
 		tracker = &peerRateTracker{
-			tokens:          30,
-			lastRefill:      now,
-			blockTokens:     200,
-			lastBlockRefill: now,
+			tokens:               30,
+			lastRefill:           now,
+			blockTokens:          200,
+			lastBlockRefill:      now,
+			blockRangeTokens:     burst,
+			lastBlockRangeRefill: now,
+			forkpointTokens:      30,
+			lastForkpointRefill:  now,
 		}
 		p.rateTrackers[ip] = tracker
 	}
@@ -1874,6 +1886,47 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 		return true
 	}
 
+	// Dedicated token bucket for GET_BLOCK_RANGE during sync (BTC/LTC standard)
+	// Allows burst up to 120 chunks (30,000 blocks) and sustained refill of 20 chunks/sec (5,000 blocks/sec)
+	if msgType == "GET_BLOCK_RANGE" {
+		burst := p.BlockRangeBurst
+		if burst <= 0 {
+			burst = 120.0
+		}
+		refillRate := p.BlockRangeRefillRate
+		if refillRate <= 0 {
+			refillRate = 20.0
+		}
+		elapsed := now.Sub(tracker.lastBlockRangeRefill).Seconds()
+		if elapsed > 0 {
+			tracker.blockRangeTokens += elapsed * refillRate
+			if tracker.blockRangeTokens > burst {
+				tracker.blockRangeTokens = burst
+			}
+			tracker.lastBlockRangeRefill = now
+		}
+		if tracker.blockRangeTokens < 1.0 {
+			// Throttle excess requests without banning honest sync peer (BTC/LTC standard)
+			return false
+		}
+		tracker.blockRangeTokens -= 1.0
+		return true
+	} else if msgType == "GET_FORKPOINT" {
+		elapsed := now.Sub(tracker.lastForkpointRefill).Seconds()
+		if elapsed > 0 {
+			tracker.forkpointTokens += elapsed * 5.0
+			if tracker.forkpointTokens > 30.0 {
+				tracker.forkpointTokens = 30.0
+			}
+			tracker.lastForkpointRefill = now
+		}
+		if tracker.forkpointTokens < 1.0 {
+			return false
+		}
+		tracker.forkpointTokens -= 1.0
+		return true
+	}
+
 	// Refill token bucket: 20 tokens per second up to 30 burst for general messages
 	elapsed := now.Sub(tracker.lastRefill).Seconds()
 	tracker.tokens += elapsed * 20.0
@@ -1897,55 +1950,6 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 		return false
 	}
 	tracker.tokens -= 1.0
-
-	// Specific endpoint limits
-	oneMinAgo := now.Add(-1 * time.Minute)
-	if msgType == "GET_BLOCK_RANGE" {
-		var valid []time.Time
-		for _, t := range tracker.blockRangeReqs {
-			if t.After(oneMinAgo) {
-				valid = append(valid, t)
-			}
-		}
-		if len(valid) >= 5 {
-			// Limit exceeded: max 5/min
-			if p.banScores == nil {
-				p.banScores = make(map[string]int)
-			}
-			p.banScores[ip] += 25
-			if p.banScores[ip] >= 100 {
-				if p.bannedIPs == nil {
-					p.bannedIPs = make(map[string]time.Time)
-				}
-				p.bannedIPs[ip] = now.Add(24 * time.Hour)
-			}
-			tracker.blockRangeReqs = valid
-			return false
-		}
-		tracker.blockRangeReqs = append(valid, now)
-	} else if msgType == "GET_FORKPOINT" {
-		var valid []time.Time
-		for _, t := range tracker.forkpointReqs {
-			if t.After(oneMinAgo) {
-				valid = append(valid, t)
-			}
-		}
-		if len(valid) >= 5 {
-			if p.banScores == nil {
-				p.banScores = make(map[string]int)
-			}
-			p.banScores[ip] += 25
-			if p.banScores[ip] >= 100 {
-				if p.bannedIPs == nil {
-					p.bannedIPs = make(map[string]time.Time)
-				}
-				p.bannedIPs[ip] = now.Add(24 * time.Hour)
-			}
-			tracker.forkpointReqs = valid
-			return false
-		}
-		tracker.forkpointReqs = append(valid, now)
-	}
 
 	return true
 }
@@ -4548,113 +4552,157 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 			return
 		}
 
-		// 3. Fetch missing blocks in bounded chunks from ancestorHeight + 1 up to hr.Height [N-14]
-		var newBlocks []core.Block
-		const MaxSyncBlocksPerRequest = 5000 // Safeguard batch limit
+		// 3. Fetch missing blocks in continuous bounded batches from ancestorHeight + 1 up to hr.Height (BTC/LTC standard)
+		currentAncestor := ancestorHeight
+		syncPeer := peerAddress
 
-		for from := ancestorHeight + 1; from <= hr.Height; {
-			// Safeguard: apply in bounded batches to prevent memory exhaustion
-			if len(newBlocks) >= MaxSyncBlocksPerRequest {
+		for currentAncestor < hr.Height {
+			var batchBlocks []core.Block
+			const MaxSyncBlocksPerRequest = 4 * SyncChunkSize // 1000 blocks per DB commit batch
+			fetchFailed := false
+
+			for from := currentAncestor + 1; from <= hr.Height; {
+				// Safeguard: apply in bounded batches to commit progress safely to database
+				if len(batchBlocks) >= MaxSyncBlocksPerRequest {
+					break
+				}
+
+				to := from + SyncChunkSize - 1
+				if to > hr.Height {
+					to = hr.Height
+				}
+
+				rangeMsg := Message{
+					NetworkID: p.GetNetworkID(),
+					Type:      "GET_BLOCK_RANGE",
+					Payload:   BlockRangeRequest{FromIndex: from, ToIndex: to},
+				}
+
+				rangeResp, err := p.QueryPeer(syncPeer, rangeMsg, 15*time.Second)
+				if err != nil {
+					log.Printf(
+						"[SYNC] GET_BLOCK_RANGE failed peer=%s from=%d to=%d err=%v",
+						syncPeer, from, to, err,
+					)
+					// Multi-peer failover: attempt alternative peers if primary fails (BTC/LTC standard)
+					failedPeer := syncPeer
+					recovered := false
+					for _, altPeer := range p.GetPeers() {
+						if altPeer == failedPeer || altPeer == "" {
+							continue
+						}
+						log.Printf("[SYNC] Attempting failover to alternative peer %s for range %d-%d", altPeer, from, to)
+						if altResp, altErr := p.QueryPeer(altPeer, rangeMsg, 15*time.Second); altErr == nil && altResp != nil && altResp.Type == "BLOCK_RANGE_RESPONSE" {
+							rangeResp = altResp
+							err = nil
+							syncPeer = altPeer
+							recovered = true
+							break
+						}
+					}
+					if !recovered {
+						fetchFailed = true
+						break
+					}
+				}
+
+				if rangeResp == nil || rangeResp.Type != "BLOCK_RANGE_RESPONSE" {
+					log.Printf(
+						"[SYNC] unexpected block range response peer=%s from=%d to=%d resp=%+v",
+						syncPeer, from, to, rangeResp,
+					)
+					fetchFailed = true
+					break
+				}
+
+				var br BlockRangeResponse
+				chunkBytes, err := json.Marshal(rangeResp.Payload)
+				if err != nil {
+					log.Printf(
+						"[SYNC] Failed to unmarshal block range payload peer=%s from=%d to=%d err=%v",
+						syncPeer, from, to, err,
+					)
+					fetchFailed = true
+					break
+				}
+				if err := json.Unmarshal(chunkBytes, &br); err != nil {
+					log.Printf(
+						"[SYNC] Failed to unmarshal block range response into struct peer=%s from=%d to=%d err=%v",
+						syncPeer, from, to, err,
+					)
+					fetchFailed = true
+					break
+				}
+				if len(br.Blocks) == 0 {
+					log.Printf(
+						"[SYNC] Peer %s returned empty block list for range %d-%d",
+						syncPeer, from, to,
+					)
+					fetchFailed = true
+					break
+				}
+
+				// Validate start index and contiguous linkage in received partial range
+				if br.Blocks[0].Index != from {
+					fmt.Printf("[P2P] [!] Received unexpected block range start index %d (expected %d) from %s\n", br.Blocks[0].Index, from, syncPeer)
+					fetchFailed = true
+					break
+				}
+				segmentContiguous := true
+				for i := 1; i < len(br.Blocks); i++ {
+					if br.Blocks[i].Index != br.Blocks[i-1].Index+1 {
+						fmt.Printf("[P2P] [!] Received non-contiguous block range segment from %s\n", syncPeer)
+						segmentContiguous = false
+						break
+					}
+				}
+				if !segmentContiguous {
+					fetchFailed = true
+					break
+				}
+
+				batchBlocks = append(batchBlocks, br.Blocks...)
+				from += len(br.Blocks)
+				time.Sleep(10 * time.Millisecond) // Fast pipeline pacing
+			}
+
+			if len(batchBlocks) == 0 {
 				break
 			}
 
-			to := from + SyncChunkSize - 1
-			if to > hr.Height {
-				to = hr.Height
-			}
-
-			rangeMsg := Message{
-				NetworkID: p.GetNetworkID(),
-				Type:      "GET_BLOCK_RANGE",
-				Payload:   BlockRangeRequest{FromIndex: from, ToIndex: to},
-			}
-
-			rangeResp, err := p.QueryPeer(peerAddress, rangeMsg, 15*time.Second)
-			if err != nil {
-				log.Printf(
-					"[SYNC] GET_BLOCK_RANGE failed peer=%s from=%d to=%d err=%v",
-					peerAddress, from, to, err,
-				)
-				return
-			}
-			if rangeResp == nil || rangeResp.Type != "BLOCK_RANGE_RESPONSE" {
-				log.Printf(
-					"[SYNC] unexpected block range response peer=%s from=%d to=%d resp=%+v",
-					peerAddress, from, to, rangeResp,
-				)
+			// 4. Resolve fork or catch-up atomically using ResolveFork for this batch [N-14]
+			if err := p.Blockchain.ResolveFork(currentAncestor, batchBlocks); err != nil {
+				fmt.Printf("[P2P] ResolveFork with peer %s failed: %v\n", syncPeer, err)
 				return
 			}
 
-			var br BlockRangeResponse
-			chunkBytes, err := json.Marshal(rangeResp.Payload)
-			if err != nil {
-				log.Printf(
-					"[SYNC] Failed to unmarshal block range payload peer=%s from=%d to=%d err=%v",
-					peerAddress, from, to, err,
-				)
-				return
-			}
-			if err := json.Unmarshal(chunkBytes, &br); err != nil {
-				log.Printf(
-					"[SYNC] Failed to unmarshal block range response into struct peer=%s from=%d to=%d err=%v",
-					peerAddress, from, to, err,
-				)
-				return
-			}
-			if len(br.Blocks) == 0 {
-				log.Printf(
-					"[SYNC] Peer %s returned empty block list for range %d-%d",
-					peerAddress, from, to,
-				)
-				return
+			for _, blk := range batchBlocks {
+				p.markBlockSeen(blk.Hash)
 			}
 
-			// Validate start index and contiguous linkage in received partial range
-			if br.Blocks[0].Index != from {
-				fmt.Printf("[P2P] [!] Received unexpected block range start index %d (expected %d) from %s\n", br.Blocks[0].Index, from, peerAddress)
-				return
-			}
-			for i := 1; i < len(br.Blocks); i++ {
-				if br.Blocks[i].Index != br.Blocks[i-1].Index+1 {
-					fmt.Printf("[P2P] [!] Received non-contiguous block range segment from %s\n", peerAddress)
-					return
-				}
-			}
+			p.Blockchain.Lock.RLock()
+			newChainLen := len(p.Blockchain.Chain)
+			latest := p.Blockchain.GetLatestBlockUnsafe()
+			p.Blockchain.Lock.RUnlock()
 
-			newBlocks = append(newBlocks, br.Blocks...)
-			from += len(br.Blocks)
+			currentAncestor = latest.Index
+
+			hashPrefix := latest.Hash
+			if len(hashPrefix) > 16 {
+				hashPrefix = hashPrefix[:16] + "..."
+			}
+			log.Printf("[P2P] [OK] Successfully synchronized %d blocks from peer %s! New height: #%d (%d blocks, tip: %s)\n",
+				len(batchBlocks), syncPeer, newChainLen-1, newChainLen, hashPrefix)
+
+			// Mark and relay new tip
+			p.isBlockSeenOrMark(latest.Hash)
+			p.processOrphans(latest.Hash)
+			p.processOrphanTxs()
+
+			if fetchFailed {
+				break
+			}
 		}
-
-		if len(newBlocks) == 0 {
-			return
-		}
-
-		// 4. Resolve fork or catch-up atomically using ResolveFork [N-14]
-		if err := p.Blockchain.ResolveFork(ancestorHeight, newBlocks); err != nil {
-			fmt.Printf("[P2P] ResolveFork with peer %s failed: %v\n", peerAddress, err)
-			return
-		}
-
-		for _, blk := range newBlocks {
-			p.markBlockSeen(blk.Hash)
-		}
-
-		p.Blockchain.Lock.RLock()
-		newChainLen := len(p.Blockchain.Chain)
-		latest := p.Blockchain.GetLatestBlockUnsafe()
-		p.Blockchain.Lock.RUnlock()
-
-		hashPrefix := latest.Hash
-		if len(hashPrefix) > 16 {
-			hashPrefix = hashPrefix[:16] + "..."
-		}
-		log.Printf("[P2P] [OK] Successfully synchronized %d blocks from peer %s! New height: #%d (%d blocks, tip: %s)\n",
-			len(newBlocks), peerAddress, newChainLen-1, newChainLen, hashPrefix)
-
-		// Mark and relay new tip
-		p.isBlockSeenOrMark(latest.Hash)
-		p.processOrphans(latest.Hash)
-		p.processOrphanTxs()
 		return
 	} else if hr.Height < localLatest.Index {
 		// Remote peer is behind; stream missing blocks over a persistent connection [N-02]
