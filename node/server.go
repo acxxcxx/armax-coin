@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -782,7 +781,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		})
 	})
 
-	// Endpoint: Standard mining info (Bitcoin / Litecoin standard: getmininginfo)
+	// Endpoint: Standard mining info (/getmininginfo)
 	mux.HandleFunc("/getmininginfo", func(w http.ResponseWriter, r *http.Request) {
 		bc.Lock.RLock()
 		latest := bc.GetLatestBlockUnsafe()
@@ -819,7 +818,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		})
 	})
 
-	// Endpoint: Standard network hashrate estimate (Bitcoin / Litecoin standard: getnetworkhashps)
+	// Endpoint: Standard network hashrate estimate (/getnetworkhashps)
 	mux.HandleFunc("/getnetworkhashps", func(w http.ResponseWriter, r *http.Request) {
 		bc.Lock.RLock()
 		target := bc.CalculateLWMA1()
@@ -838,7 +837,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		})
 	})
 
-	// Endpoint: Submit solved block from external miner/pool (Bitcoin standard: /block/submit or /submitblock)
+	// Endpoint: Submit solved block from external miner or pool (/submitblock)
 	submitBlockHandler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, `{"error":"HTTP method must be POST"}`, http.StatusMethodNotAllowed)
@@ -865,7 +864,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			if len(hashPrefix) > 16 {
 				hashPrefix = hashPrefix[:16] + "..."
 			}
-			log.Printf("[RPC] [OK] Mined block #%d accepted via submitblock | hash: %s | txs: %d | diff: %d | miner: %s\n",
+			core.LogInfo(core.LogCategoryMiner, "Mined block #%d accepted via submitblock | hash: %s | txs: %d | diff: %d | miner: %s",
 				submittedBlock.Index, hashPrefix, len(submittedBlock.Transactions), submittedBlock.Difficulty, submittedBlock.Miner)
 			if peerServer != nil {
 				go peerServer.RelayBlock(submittedBlock, "EXTERNAL_MINING_POOL")

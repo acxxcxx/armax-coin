@@ -33,12 +33,12 @@ func main() {
 	dataDirFlag := flag.String("datadir", "", "Custom data directory for blockchain database, peers, and logs")
 	peersFlag := flag.String("peers", "", "Comma-separated list of initial P2P peer addresses")
 	mineFlag := flag.Bool("mine", false, "Enable automated background CPU mining")
-	genFlag := flag.Bool("gen", false, "Enable automated background CPU mining (Bitcoin/Litecoin standard alias for -mine)")
+	genFlag := flag.Bool("gen", false, "Enable automated background CPU mining (alias for -mine)")
 	minerAddrFlag := flag.String("miner", "", "Miner reward address for background mining")
 	miningThreadsFlag := flag.Int("miningthreads", 0, "Number of CPU worker threads for mining (default: all CPU cores)")
 	miningThreadSingularFlag := flag.Int("miningthread", 0, "Alias for -miningthreads")
 	threadsFlag := flag.Int("threads", 0, "Alias for -miningthreads")
-	genProcLimitFlag := flag.Int("genproclimit", 0, "Processor limit / threads for background mining (Bitcoin/Litecoin standard alias for -miningthreads)")
+	genProcLimitFlag := flag.Int("genproclimit", 0, "Processor limit / threads for background mining (alias for -miningthreads)")
 	insecureLocalhostFlag := flag.Bool("rpcinsecure-localhost", false, "Allow unauthenticated mutation requests from localhost (insecure)")
 	resyncFlag := flag.Bool("resync", false, "Safely backup local blockchain database and resynchronize from Genesis")
 	infoFlag := flag.Bool("info", false, "Display active network profile configuration and exit [L3-8]")
@@ -56,7 +56,8 @@ func main() {
 	mempoolFlag := flag.Bool("mempool", false, "Display unconfirmed transactions waiting in the mempool (alias for -getmempoolinfo)")
 	verifyChainFlag := flag.Bool("verifychain", false, "Verify local blockchain integrity and cryptographic block continuity")
 	reindexFlag := flag.Bool("reindex", false, "Rebuild database index and state verification from genesis")
-	logLevelFlag := flag.String("loglevel", "info", "Set daemon logging verbosity: error, warn, info, debug")
+	logLevelFlag := flag.String("loglevel", "info", "Set daemon logging verbosity: error, warn, info, debug, trace")
+	debugCategoriesFlag := flag.String("debug", "", "Enable debug logging for categories (comma-separated: net, sync, mempool, validation, rpc, discovery, miner, or 'all')")
 	printToConsoleFlag := flag.Bool("printtoconsole", true, "Send log output to console/terminal (standard daemon behavior)")
 	shutdownFlag := flag.Bool("shutdown", false, "Safely request shutdown of a running daemon via authenticated RPC")
 	armaxHashHeightFlag := flag.Int64("armaxhash-height", -2, "Block height where PoW transitions to ArmaxHash (-1 = disabled)")
@@ -66,10 +67,7 @@ func main() {
 		core.SetArmaxHashActivationHeight(*armaxHashHeightFlag)
 	}
 
-	_ = logLevelFlag
-	_ = printToConsoleFlag
-
-	// Resolve Bitcoin/Litecoin standard aliases
+	// Resolve mining CLI flag aliases
 	if *genFlag {
 		*mineFlag = true
 	}
@@ -150,6 +148,12 @@ func main() {
 	}
 	activeNet := core.GetActiveNetwork()
 
+	debugLogPath := filepath.Join(cliNet.DataDir, "debug.log")
+	if err := core.InitLogger(*logLevelFlag, *debugCategoriesFlag, *printToConsoleFlag, debugLogPath); err != nil {
+		fmt.Printf("[-] Warning: Failed to initialize debug.log at %s: %v\n", debugLogPath, err)
+	}
+	defer core.CloseLogger()
+
 	if *infoFlag {
 		fmt.Printf("[+] Target Network   : %s (%s, RPC: %s, P2P: %s, DataDir: %s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID, cliNet.RPCPort, cliNet.P2PPort, cliNet.DataDir)
 		for _, seed := range cliNet.DefaultSeeds {
@@ -173,21 +177,23 @@ func main() {
 		}
 	}
 
-	// 1. Initialize Blockchain with Difficulty 3
-	bc := core.NewBlockchain(3)
-	if bc.StoragePath == "IN_MEMORY" && !*testFlag && activeNet.Name != "regtest" {
-		fmt.Printf("[-] FATAL: Failed to access persistent database on disk. Operating in-memory is prohibited in production to prevent data loss.\n")
-		os.Exit(1)
-	}
-	bc.CoinbaseMaturity = activeNet.CoinbaseMaturity
-	if *miningThreadsFlag > 0 {
-		bc.MiningThreads = *miningThreadsFlag
-	}
-
-	daemonRPCURL := "http://127.0.0.1:" + activeNet.RPCPort
+	daemonHost := "127.0.0.1"
+	daemonPort := activeNet.RPCPort
 	if effRPCPort != "" {
-		daemonRPCURL = "http://127.0.0.1:" + effRPCPort
+		daemonPort = effRPCPort
 	}
+	// Parse positional host:port arguments if passed (e.g. -daemon 127.0.0.1:19333 or 127.0.0.1:19333)
+	for _, arg := range flag.Args() {
+		if strings.Contains(arg, ":") {
+			parts := strings.Split(arg, ":")
+			if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+				daemonHost = parts[0]
+				daemonPort = parts[1]
+				break
+			}
+		}
+	}
+	daemonRPCURL := "http://" + daemonHost + ":" + daemonPort
 
 	queryDaemon := func(path string) ([]byte, error) {
 		client := &http.Client{Timeout: 3 * time.Second}
@@ -206,24 +212,43 @@ func main() {
 		return io.ReadAll(resp.Body)
 	}
 
+	var bc *core.Blockchain
+	getBC := func() *core.Blockchain {
+		if bc != nil {
+			return bc
+		}
+		bc = core.NewBlockchain(3)
+		if bc.StoragePath == "IN_MEMORY" && !*testFlag && activeNet.Name != "regtest" {
+			fmt.Printf("[-] FATAL: Failed to access persistent database on disk. Operating in-memory is prohibited in production to prevent data loss.\n")
+			os.Exit(1)
+		}
+		bc.CoinbaseMaturity = activeNet.CoinbaseMaturity
+		if *miningThreadsFlag > 0 {
+			bc.MiningThreads = *miningThreadsFlag
+		}
+		return bc
+	}
+
 	if *verifyChainFlag {
 		fmt.Println("[*] Verifying local blockchain integrity and cryptographic continuity...")
-		if !bc.IsChainValid() {
+		chain := getBC()
+		if !chain.IsChainValid() {
 			fmt.Println("[-] Blockchain verification FAILED: invalid block hash, PoW target, or continuity")
 			os.Exit(1)
 		}
-		fmt.Printf("[OK] Blockchain verified successfully! Total blocks: %d, Difficulty: %d\n", len(bc.Chain), bc.Difficulty)
+		fmt.Printf("[OK] Blockchain verified successfully! Total blocks: %d, Difficulty: %d\n", len(chain.Chain), chain.Difficulty)
 		return
 	}
 
 	if *reindexFlag {
 		fmt.Println("[*] Reindexing local blockchain state from Genesis...")
-		if err := bc.RebuildState(); err != nil {
+		chain := getBC()
+		if err := chain.RebuildState(); err != nil {
 			fmt.Printf("[-] Reindexing verification error: %v\n", err)
 			os.Exit(1)
 		}
-		_ = bc.SaveToFile()
-		fmt.Printf("[OK] Blockchain state verified and database flushed cleanly. Total blocks: %d\n", len(bc.Chain))
+		_ = chain.SaveToFile()
+		fmt.Printf("[OK] Blockchain state verified and database flushed cleanly. Total blocks: %d\n", len(chain.Chain))
 		return
 	}
 
@@ -238,10 +263,11 @@ func main() {
 			fmt.Printf("    Node Version   : %v\n", st["version"])
 			fmt.Printf("    Block Height   : %v\n", st["height"])
 			fmt.Printf("    Active Peers   : %v\n", st["peers_active"])
-		} else {
-			fmt.Printf("[!] RPC Daemon     : OFFLINE (%v)\n", err)
+			return
 		}
-		fmt.Printf("[OK] Local Database : %d blocks indexed (Circulating: %d ARMX)\n", len(bc.Chain), bc.GetCirculatingSupply()/core.CoinUnit)
+		fmt.Printf("[!] RPC Daemon     : OFFLINE (%v)\n", err)
+		chain := getBC()
+		fmt.Printf("[OK] Local Database : %d blocks indexed (Circulating: %d ARMX)\n", len(chain.Chain), chain.GetCirculatingSupply()/core.CoinUnit)
 		return
 	}
 
@@ -268,22 +294,23 @@ func main() {
 			}
 		}
 		// Fallback to local offline blockchain info
+		chain := getBC()
 		topHeight := 0
-		if len(bc.Chain) > 0 {
-			topHeight = len(bc.Chain) - 1
+		if len(chain.Chain) > 0 {
+			topHeight = len(chain.Chain) - 1
 		}
 		fmt.Println("==================================================")
 		fmt.Println("  ARMAX BLOCKCHAIN INFO (LOCAL DATABASE)")
 		fmt.Println("==================================================")
 		fmt.Printf("  Network ID        : %s\n", activeNet.NetworkID)
 		fmt.Printf("  Block Height      : %d\n", topHeight)
-		fmt.Printf("  Total Blocks      : %d\n", len(bc.Chain))
-		fmt.Printf("  Difficulty        : %d\n", bc.Difficulty)
-		fmt.Printf("  Total Chainwork   : %s\n", bc.GetTotalChainwork().String())
-		fmt.Printf("  Circulating Supply: %d ARMX\n", bc.GetCirculatingSupply()/core.CoinUnit)
+		fmt.Printf("  Total Blocks      : %d\n", len(chain.Chain))
+		fmt.Printf("  Difficulty        : %d\n", chain.Difficulty)
+		fmt.Printf("  Total Chainwork   : %s\n", chain.GetTotalChainwork().String())
+		fmt.Printf("  Circulating Supply: %d ARMX\n", chain.GetCirculatingSupply()/core.CoinUnit)
 		fmt.Printf("  Max Supply        : %d ARMX\n", core.MaxSupply/core.CoinUnit)
-		if len(bc.Chain) > 0 {
-			fmt.Printf("  Best Block Hash   : %s\n", bc.GetLatestBlock().Hash)
+		if len(chain.Chain) > 0 {
+			fmt.Printf("  Best Block Hash   : %s\n", chain.GetLatestBlock().Hash)
 		}
 		fmt.Println("==================================================")
 		return
@@ -327,10 +354,11 @@ func main() {
 			}
 		}
 		// Fallback to local memory pool
-		bc.Lock.RLock()
-		mpSize := len(bc.Mempool)
+		chain := getBC()
+		chain.Lock.RLock()
+		mpSize := len(chain.Mempool)
 		totalBytes := 0
-		for _, tx := range bc.Mempool {
+		for _, tx := range chain.Mempool {
 			totalBytes += tx.Size()
 		}
 		fmt.Println("==================================================")
@@ -339,7 +367,7 @@ func main() {
 		fmt.Printf("  Mempool Size      : %d transactions\n", mpSize)
 		fmt.Printf("  Total Data Size   : %d bytes (%.2f KB)\n", totalBytes, float64(totalBytes)/1024.0)
 		fmt.Println("--------------------------------------------------")
-		for i, tx := range bc.Mempool {
+		for i, tx := range chain.Mempool {
 			fmt.Printf("  [%d] TXID : %s\n", i+1, tx.HashHex())
 			fmt.Printf("      From : %s\n", tx.Sender)
 			fmt.Printf("      To   : %s\n", tx.Recipient)
@@ -349,7 +377,7 @@ func main() {
 		if mpSize == 0 {
 			fmt.Println("  (mempool queue is currently empty)")
 		}
-		bc.Lock.RUnlock()
+		chain.Lock.RUnlock()
 		fmt.Println("==================================================")
 		return
 	}
@@ -427,6 +455,7 @@ func main() {
 	}
 
 	if *daemonFlag && !*testFlag {
+		bc = getBC()
 		fmt.Println("==================================================")
 		fmt.Println(" ARMAXCOIN (ARMX) - DAEMON & P2P NODE")
 		fmt.Println("==================================================")
@@ -561,6 +590,7 @@ func main() {
 		return
 	}
 
+	bc = getBC()
 	fmt.Println("==================================================")
 	fmt.Println(" ARMAXCOIN (ARMX) - SELF-TEST & DEMO SUITE")
 	fmt.Println("==================================================")

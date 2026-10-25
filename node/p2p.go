@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"math/big"
 	"math/rand"
 	"net"
@@ -337,7 +336,7 @@ type PeerServer struct {
 	banScores          map[string]int               // [N-15] Misbehavior ban scores per IP
 	bannedIPs          map[string]time.Time         // [N-15] Active IP bans and expiry
 	rateTrackers       map[string]*peerRateTracker  // [N-15] Token bucket and endpoint trackers
-	BlockRangeBurst      float64                      // Configurable burst for GET_BLOCK_RANGE (BTC/LTC standard; default 120.0)
+	BlockRangeBurst      float64                      // Configurable burst for GET_BLOCK_RANGE (token-bucket limiter; default 120.0)
 	BlockRangeRefillRate float64                      // Configurable refill rate/sec for GET_BLOCK_RANGE (default 20.0)
 	listener           net.Listener                 // [T-06] Active TCP listener
 	quitChan           chan struct{}                // [T-06] Shutdown signal channel
@@ -407,12 +406,12 @@ const (
 var errSessionClosed = errors.New("P2P outbound session was closed before write")
 
 func isP2PDebugEnabled() bool {
-	return os.Getenv("ARMX_P2P_DEBUG") == "1"
+	return os.Getenv("ARMX_P2P_DEBUG") == "1" || core.IsDebugEnabled(core.LogCategoryNet)
 }
 
 func debugLogf(format string, args ...any) {
 	if isP2PDebugEnabled() {
-		log.Printf(format, args...)
+		core.LogDebug(core.LogCategoryNet, format, args...)
 	}
 }
 
@@ -706,7 +705,7 @@ func (p *PeerServer) verifyAndAddInboundPeer(candidateAddr string) {
 			if sess := p.getExistingOutboundSession(candidateAddr); sess != nil {
 				p.dropOutboundSession(candidateAddr, sess)
 			}
-			log.Printf("[P2P][DISCOVERY] Inbound peer %s is not reachable on P2P port (NAT/firewall); cooldown %v", candidateAddr, UnreachablePeerCooldown)
+			core.LogDebug(core.LogCategoryDiscovery, "Inbound peer %s is not reachable on P2P port (NAT/firewall); cooldown %v", candidateAddr, UnreachablePeerCooldown)
 			return
 		}
 
@@ -718,7 +717,7 @@ func (p *PeerServer) verifyAndAddInboundPeer(candidateAddr string) {
 		if err := p.AddPeer(candidateAddr); err == nil {
 			_ = p.RecordPeerSuccess(candidateAddr, hr.Height, resp.NetworkID)
 			p.DHT.Update(candidateAddr)
-			log.Printf("[P2P][DISCOVERY] Verified reachable public peer %s (height #%d) and added as relay node", candidateAddr, hr.Height)
+			core.LogInfo(core.LogCategoryDiscovery, "Verified reachable public peer %s (height #%d) and added as relay node", candidateAddr, hr.Height)
 		}
 	}()
 }
@@ -1393,7 +1392,7 @@ func (p *PeerServer) ProcessIncomingBlock(block core.Block, remoteIP string, rem
 				hashPrefix = hashPrefix[:16] + "..."
 			}
 			dt := block.Timestamp - latest.Timestamp
-			log.Printf("[P2P] [OK] Block #%d accepted from %s | hash: %s | txs: %d | diff: %d | dt: %ds\n",
+			core.LogInfo(core.LogCategoryValidation, "Block #%d accepted from %s | hash: %s | txs: %d | diff: %d | dt: %ds",
 				block.Index, remoteAddr, hashPrefix, len(block.Transactions), block.Difficulty, dt)
 			go p.RelayBlock(block, remoteAddr)
 			p.processOrphans(calcHash)
@@ -1413,7 +1412,7 @@ func (p *PeerServer) ProcessIncomingBlock(block core.Block, remoteIP string, rem
 			if len(prevPrefix) > 16 {
 				prevPrefix = prevPrefix[:16] + "..."
 			}
-			log.Printf("[P2P] [~] Valid orphan block #%d cached from %s | prev: %s. Initiating catch-up sync...\n",
+			core.LogInfo(core.LogCategoryValidation, "Valid orphan block #%d cached from %s | prev: %s. Initiating catch-up sync...",
 				block.Index, remoteAddr, prevPrefix)
 
 			host := remoteIP
@@ -1441,6 +1440,41 @@ func (p *PeerServer) ProcessIncomingBlock(block core.Block, remoteIP string, rem
 		}
 		// If orphan was rejected, do NOT trigger sync! [T3]
 		return false
+	} else if block.Index <= latest.Index && block.Index > 0 {
+		// Competing block on an alternate fork at equal or lower height [N-14]
+		if _, err := p.Blockchain.GetBlockByHash(calcHash); err != nil {
+			if p.AddOrphanBlock(block, remoteIP) {
+				p.markBlockSeen(calcHash)
+				hashPrefix := calcHash
+				if len(hashPrefix) > 16 {
+					hashPrefix = hashPrefix[:16] + "..."
+				}
+				core.LogInfo(core.LogCategoryValidation, "Competing fork block #%d received from %s | hash: %s (local tip: #%d). Initiating fork sync...",
+					block.Index, remoteAddr, hashPrefix, latest.Index)
+
+				host := remoteIP
+				if h, _, err := net.SplitHostPort(remoteAddr); err == nil && h != "" {
+					host = h
+				}
+
+				if p.canTriggerSync(host) {
+					var matchingPeers []string
+					for _, peer := range p.GetPeers() {
+						if strings.HasPrefix(peer, host+":") {
+							matchingPeers = append(matchingPeers, peer)
+						}
+					}
+					if len(matchingPeers) == 1 {
+						go p.RequestChainSync(matchingPeers[0])
+					} else if len(matchingPeers) > 1 {
+						go p.SyncBestPeer()
+					} else if p.Port != "" {
+						go p.RequestChainSync(net.JoinHostPort(host, p.Port))
+					}
+				}
+				return true
+			}
+		}
 	}
 
 	return false
@@ -1458,7 +1492,7 @@ func (p *PeerServer) ProcessIncomingTx(tx core.Transaction, peerIP string) bool 
 
 	success, msg := p.Blockchain.AddTransaction(tx)
 	if success {
-		log.Printf("[P2P][TX] ACCEPTED hash=%s peer=%s",
+		core.LogInfo(core.LogCategoryMempool, "Accepted transaction %s from peer %s",
 			txHash, peerIP)
 
 		p.markTxSeen(txHash)
@@ -1500,7 +1534,7 @@ func (p *PeerServer) ProcessIncomingTx(tx core.Transaction, peerIP string) bool 
 		}
 	}
 
-	log.Printf("[P2P][TX] REJECTED hash=%s peer=%s reason=%s",
+	core.LogWarn(core.LogCategoryMempool, "Rejected transaction %s from peer %s: %s",
 		txHash, peerIP, msg)
 	return false
 }
@@ -1557,7 +1591,7 @@ func (p *PeerServer) processOrphanTxsWithDepth(depth int) {
 			p.orphanLock.Unlock()
 			p.markTxSeen(tx.HashHex())
 			go p.RelayTransaction(tx, "")
-			log.Printf("[P2P][TX] ORPHAN_PROMOTED hash=%s", tx.HashHex())
+			core.LogInfo(core.LogCategoryMempool, "Orphan transaction promoted: %s", tx.HashHex())
 			promotedAny = true
 		}
 	}
@@ -1886,7 +1920,7 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 		return true
 	}
 
-	// Dedicated token bucket for GET_BLOCK_RANGE during sync (BTC/LTC standard)
+	// Dedicated token bucket for GET_BLOCK_RANGE during continuous synchronization
 	// Allows burst up to 120 chunks (30,000 blocks) and sustained refill of 20 chunks/sec (5,000 blocks/sec)
 	if msgType == "GET_BLOCK_RANGE" {
 		burst := p.BlockRangeBurst
@@ -1906,7 +1940,7 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 			tracker.lastBlockRangeRefill = now
 		}
 		if tracker.blockRangeTokens < 1.0 {
-			// Throttle excess requests without banning honest sync peer (BTC/LTC standard)
+			// Throttle excess requests gracefully without penalizing honest synchronization peers
 			return false
 		}
 		tracker.blockRangeTokens -= 1.0
@@ -4296,8 +4330,9 @@ func (p *PeerServer) RelayTransaction(
 			}
 
 			if err := p.SendMessage(target, msg); err != nil {
-				log.Printf(
-					"[P2P] Failed to relay transaction %s to peer %s: %v",
+				core.LogDebug(
+					core.LogCategoryNet,
+					"Failed to relay transaction %s to peer %s: %v",
 					txHash,
 					target,
 					err,
@@ -4307,8 +4342,9 @@ func (p *PeerServer) RelayTransaction(
 				return
 			}
 
-			log.Printf(
-				"[P2P] Relay sent: tx=%s peer=%s",
+			core.LogDebug(
+				core.LogCategoryNet,
+				"Relay sent: tx=%s peer=%s",
 				txHash,
 				target,
 			)
@@ -4358,14 +4394,14 @@ func (p *PeerServer) SyncBestPeer() {
 				}
 				debugLogf("[SYNC] GET_HEIGHT failed peer=%s err=%v", peerAddr, err)
 				if rerr := p.RecordPeerFailure(peerAddr); rerr != nil {
-					log.Printf("[P2P] Failed to persist peer store on failure for %s: %v", peerAddr, rerr)
+					core.LogDebug(core.LogCategoryNet, "Failed to persist peer store on failure for %s: %v", peerAddr, rerr)
 				}
 				return
 			}
 			if resp == nil || resp.Type != "HEIGHT_RESPONSE" {
-				log.Printf("[SYNC] unexpected height response peer=%s resp=%+v", peerAddr, resp)
+				core.LogWarn(core.LogCategorySync, "Unexpected height response peer=%s resp=%+v", peerAddr, resp)
 				if rerr := p.RecordPeerFailure(peerAddr); rerr != nil {
-					log.Printf("[P2P] Failed to persist peer store on failure for %s: %v", peerAddr, rerr)
+					core.LogDebug(core.LogCategoryNet, "Failed to persist peer store on failure for %s: %v", peerAddr, rerr)
 				}
 				return
 			}
@@ -4373,14 +4409,14 @@ func (p *PeerServer) SyncBestPeer() {
 			b, _ := json.Marshal(resp.Payload)
 			if json.Unmarshal(b, &hr) != nil {
 				if rerr := p.RecordPeerFailure(peerAddr); rerr != nil {
-					log.Printf("[P2P] Failed to persist peer store on failure for %s: %v", peerAddr, rerr)
+					core.LogDebug(core.LogCategoryNet, "Failed to persist peer store on failure for %s: %v", peerAddr, rerr)
 				}
 				return
 			}
 
 			// Handshake / query success: promote peer to tried table and persist [N-16]
 			if err := p.RecordPeerSuccess(peerAddr, hr.Height, resp.NetworkID); err != nil {
-				log.Printf("[P2P] Failed to persist peer store on success for %s: %v", peerAddr, err)
+				core.LogDebug(core.LogCategoryNet, "Failed to persist peer store on success for %s: %v", peerAddr, err)
 			}
 
 			peerCW, ok := new(big.Int).SetString(hr.Chainwork, 10)
@@ -4469,22 +4505,22 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 	}, 5*time.Second)
 
 	if err != nil {
-		log.Printf("[SYNC] GET_HEIGHT failed peer=%s err=%v", peerAddress, err)
+		core.LogDebug(core.LogCategorySync, "GET_HEIGHT failed peer=%s err=%v", peerAddress, err)
 		return
 	}
 	if heightResp == nil || heightResp.Type != "HEIGHT_RESPONSE" {
-		log.Printf("[SYNC] unexpected height response peer=%s resp=%+v", peerAddress, heightResp)
+		core.LogWarn(core.LogCategorySync, "Unexpected height response peer=%s resp=%+v", peerAddress, heightResp)
 		return
 	}
 
 	var hr HeightResponse
 	b, err := json.Marshal(heightResp.Payload)
 	if err != nil {
-		log.Printf("[SYNC] Failed to unmarshal height response payload peer=%s err=%v", peerAddress, err)
+		core.LogWarn(core.LogCategorySync, "Failed to unmarshal height response payload peer=%s err=%v", peerAddress, err)
 		return
 	}
 	if err := json.Unmarshal(b, &hr); err != nil {
-		log.Printf("[SYNC] Failed to unmarshal height response into struct peer=%s err=%v", peerAddress, err)
+		core.LogWarn(core.LogCategorySync, "Failed to unmarshal height response into struct peer=%s err=%v", peerAddress, err)
 		return
 	}
 
@@ -4521,22 +4557,22 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 
 		forkResp, err := p.QueryPeer(peerAddress, forkMsg, 5*time.Second)
 		if err != nil {
-			log.Printf("[SYNC] GET_FORKPOINT failed peer=%s err=%v", peerAddress, err)
+			core.LogDebug(core.LogCategorySync, "GET_FORKPOINT failed peer=%s err=%v", peerAddress, err)
 			return
 		}
 		if forkResp == nil || forkResp.Type != "FORKPOINT_RESPONSE" {
-			log.Printf("[SYNC] unexpected forkpoint response peer=%s resp=%+v", peerAddress, forkResp)
+			core.LogWarn(core.LogCategorySync, "Unexpected forkpoint response peer=%s resp=%+v", peerAddress, forkResp)
 			return
 		}
 
 		var fpResp ForkpointResponse
 		fb, err := json.Marshal(forkResp.Payload)
 		if err != nil {
-			log.Printf("[SYNC] Failed to unmarshal forkpoint response payload peer=%s err=%v", peerAddress, err)
+			core.LogWarn(core.LogCategorySync, "Failed to unmarshal forkpoint response payload peer=%s err=%v", peerAddress, err)
 			return
 		}
 		if err := json.Unmarshal(fb, &fpResp); err != nil {
-			log.Printf("[SYNC] Failed to unmarshal forkpoint response into struct peer=%s err=%v", peerAddress, err)
+			core.LogWarn(core.LogCategorySync, "Failed to unmarshal forkpoint response into struct peer=%s err=%v", peerAddress, err)
 			return
 		}
 
@@ -4552,7 +4588,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 			return
 		}
 
-		// 3. Fetch missing blocks in continuous bounded batches from ancestorHeight + 1 up to hr.Height (BTC/LTC standard)
+		// 3. Fetch missing blocks in continuous bounded batches from ancestorHeight + 1 up to hr.Height
 		currentAncestor := ancestorHeight
 		syncPeer := peerAddress
 
@@ -4580,18 +4616,19 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 
 				rangeResp, err := p.QueryPeer(syncPeer, rangeMsg, 15*time.Second)
 				if err != nil {
-					log.Printf(
-						"[SYNC] GET_BLOCK_RANGE failed peer=%s from=%d to=%d err=%v",
+					core.LogWarn(
+						core.LogCategorySync,
+						"GET_BLOCK_RANGE failed peer=%s from=%d to=%d err=%v",
 						syncPeer, from, to, err,
 					)
-					// Multi-peer failover: attempt alternative peers if primary fails (BTC/LTC standard)
+					// Multi-peer failover: attempt alternative peers if primary fails
 					failedPeer := syncPeer
 					recovered := false
 					for _, altPeer := range p.GetPeers() {
 						if altPeer == failedPeer || altPeer == "" {
 							continue
 						}
-						log.Printf("[SYNC] Attempting failover to alternative peer %s for range %d-%d", altPeer, from, to)
+						core.LogInfo(core.LogCategorySync, "Attempting failover to alternative peer %s for range %d-%d", altPeer, from, to)
 						if altResp, altErr := p.QueryPeer(altPeer, rangeMsg, 15*time.Second); altErr == nil && altResp != nil && altResp.Type == "BLOCK_RANGE_RESPONSE" {
 							rangeResp = altResp
 							err = nil
@@ -4607,8 +4644,9 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 				}
 
 				if rangeResp == nil || rangeResp.Type != "BLOCK_RANGE_RESPONSE" {
-					log.Printf(
-						"[SYNC] unexpected block range response peer=%s from=%d to=%d resp=%+v",
+					core.LogWarn(
+						core.LogCategorySync,
+						"Unexpected block range response peer=%s from=%d to=%d resp=%+v",
 						syncPeer, from, to, rangeResp,
 					)
 					fetchFailed = true
@@ -4618,24 +4656,27 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 				var br BlockRangeResponse
 				chunkBytes, err := json.Marshal(rangeResp.Payload)
 				if err != nil {
-					log.Printf(
-						"[SYNC] Failed to unmarshal block range payload peer=%s from=%d to=%d err=%v",
+					core.LogWarn(
+						core.LogCategorySync,
+						"Failed to unmarshal block range payload peer=%s from=%d to=%d err=%v",
 						syncPeer, from, to, err,
 					)
 					fetchFailed = true
 					break
 				}
 				if err := json.Unmarshal(chunkBytes, &br); err != nil {
-					log.Printf(
-						"[SYNC] Failed to unmarshal block range response into struct peer=%s from=%d to=%d err=%v",
+					core.LogWarn(
+						core.LogCategorySync,
+						"Failed to unmarshal block range response into struct peer=%s from=%d to=%d err=%v",
 						syncPeer, from, to, err,
 					)
 					fetchFailed = true
 					break
 				}
 				if len(br.Blocks) == 0 {
-					log.Printf(
-						"[SYNC] Peer %s returned empty block list for range %d-%d",
+					core.LogWarn(
+						core.LogCategorySync,
+						"Peer %s returned empty block list for range %d-%d",
 						syncPeer, from, to,
 					)
 					fetchFailed = true
@@ -4691,7 +4732,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 			if len(hashPrefix) > 16 {
 				hashPrefix = hashPrefix[:16] + "..."
 			}
-			log.Printf("[P2P] [OK] Successfully synchronized %d blocks from peer %s! New height: #%d (%d blocks, tip: %s)\n",
+			core.LogInfo(core.LogCategorySync, "Successfully synchronized %d blocks from peer %s! New height: #%d (%d blocks, tip: %s)",
 				len(batchBlocks), syncPeer, newChainLen-1, newChainLen, hashPrefix)
 
 			// Mark and relay new tip

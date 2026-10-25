@@ -33,6 +33,7 @@ func TestInboundOnlyPeerCountsActive(t *testing.T) {
 	defer bc.Close()
 
 	ps := NewPeerServer(port, bc)
+	ps.Peers = []string{}
 	ps.AllowPrivatePeers = true
 	ps.DisableSubnetLimit = true
 	go ps.StartServer()
@@ -112,6 +113,7 @@ func TestOutboundOnlyPeerCountsActive(t *testing.T) {
 	defer bcB.Close()
 
 	psB := NewPeerServer(portB, bcB)
+	psB.Peers = []string{}
 	psB.AllowPrivatePeers = true
 	psB.DisableSubnetLimit = true
 	go psB.StartServer()
@@ -129,6 +131,7 @@ func TestOutboundOnlyPeerCountsActive(t *testing.T) {
 	defer bcA.Close()
 
 	psA := NewPeerServer(portA, bcA)
+	psA.Peers = []string{}
 	psA.AllowPrivatePeers = true
 	psA.DisableSubnetLimit = true
 	go psA.StartServer()

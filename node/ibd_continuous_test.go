@@ -15,7 +15,7 @@ import (
 
 // TestIBD_ContinuousSyncPastOldLimit verifies that Initial Block Download (IBD)
 // can continuously synchronize past the old 1250-block / 5-request limit without
-// getting throttled, timed out, or banned (BTC/LTC standard).
+// getting throttled, timed out, or banned.
 func TestIBD_ContinuousSyncPastOldLimit(t *testing.T) {
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	t.Setenv("ARMX_ALLOW_PRIVATE_PEERS", "1")

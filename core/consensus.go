@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"log"
 	"math/big"
 	"sort"
 	"strings"
@@ -720,9 +719,9 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 		hashPrefix = hashPrefix[:16] + "..."
 	}
 	if ancestorIndex < currentLocalLen-1 {
-		log.Printf("[Consensus] [OK] Successfully reorganized chain at ancestor #%d! New height: #%d (%d blocks, tip: %s)\n", ancestorIndex, topHeight, totalBlocks, hashPrefix)
+		LogInfo(LogCategoryValidation, "Successfully reorganized chain at ancestor #%d! New height: #%d (%d blocks, tip: %s)", ancestorIndex, topHeight, totalBlocks, hashPrefix)
 	} else {
-		log.Printf("[Consensus] [OK] Successfully synchronized %d blocks from ancestor #%d! New height: #%d (%d blocks, tip: %s)\n", len(newBlocks), ancestorIndex, topHeight, totalBlocks, hashPrefix)
+		LogInfo(LogCategoryValidation, "Successfully synchronized %d blocks from ancestor #%d! New height: #%d (%d blocks, tip: %s)", len(newBlocks), ancestorIndex, topHeight, totalBlocks, hashPrefix)
 	}
 	return nil
 }
