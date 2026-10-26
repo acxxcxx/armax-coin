@@ -55,24 +55,24 @@ Every official release tag (`v*`) publishes pre-compiled archive packages accomp
 ### Verification on Linux / macOS
 ```bash
 # Download archive and checksum file
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.3/armax-v1.0.3-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.3/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.4/armax-v1.0.4-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.4/SHA256SUMS
 
 # Verify integrity using sha256sum
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 Expected output:
 ```text
-armax-v1.0.3-linux-amd64.tar.gz: OK
+armax-v1.0.4-linux-amd64.tar.gz: OK
 ```
 
 ### Verification on Windows (PowerShell)
 ```powershell
 # 1. Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.3-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.4-windows-amd64.zip
 
 # 2. Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.3-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.4-windows-amd64.zip"
 ```
 
 ---
@@ -87,15 +87,19 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.3-windows-amd64.zip"
 
 ## 5. Official Release Status
 
-- **Latest Release (`v1.0.3`):** **Active**
+- **Latest Release (`v1.0.4`):** **Active**
+  - **Release Tag:** [`v1.0.4`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.4)
+  - **Status:** Public Open Testnet -- Structured Diagnostics & Consensus Hardening
+  - **Target Architectures:**
+    - `armax-v1.0.4-linux-amd64.tar.gz` (Linux 64-bit x86)
+    - `armax-v1.0.4-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC)
+    - `armax-v1.0.4-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
+    - `armax-v1.0.4-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
+  - **Verification:** Automatically validated via GitHub Actions with race detection, staticcheck, govulncheck, and cryptographic SHA256SUMS aggregation.
+
+- **Previous Maintenance Release (`v1.0.3`):**
   - **Release Tag:** [`v1.0.3`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.3)
   - **Status:** Public Open Testnet -- ArmaxHash v2 Stream-Fast & Hardening
-  - **Target Architectures:**
-    - `armax-v1.0.3-linux-amd64.tar.gz` (Linux 64-bit x86)
-    - `armax-v1.0.3-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC)
-    - `armax-v1.0.3-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
-    - `armax-v1.0.3-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
-  - **Verification:** Automatically validated via GitHub Actions with race detection, staticcheck, govulncheck, and cryptographic SHA256SUMS aggregation.
 
 - **Previous Maintenance Release (`v1.0.1`):**
   - **Release Tag:** [`v1.0.1`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.1)

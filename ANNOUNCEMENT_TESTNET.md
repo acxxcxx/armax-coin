@@ -1,7 +1,7 @@
 [center]
 [size=24pt][b]ARMAXCOIN (ARMX)[/b][/size]
 [size=14pt][b]Proof-of-Work Layer-1 Blockchain with Post-Quantum Signatures (NIST FIPS 204, ML-DSA-65)[/b][/size]
-[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.3)[/b][/size]
+[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.4)[/b][/size]
 [/center]
 
 [hr]
@@ -9,7 +9,7 @@
 [b]Official Links:[/b]
 [*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
 [*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]
-[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.3]refs/tags/v1.0.3[/url]
+[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.4]refs/tags/v1.0.4[/url]
 [*] [b]Documentation Suite:[/b] [url=https://github.com/acxxcxx/armax-coin#authoritative-documentation-index]Documentation Index[/url]
 [*] [b]License:[/b] MIT Open Source License
 

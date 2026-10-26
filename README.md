@@ -1,7 +1,7 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.3` (Public Open Testnet)<br>
+**Current Release:** `v1.0.4` (Public Open Testnet)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
@@ -108,29 +108,29 @@ Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](ht
 #### On Linux / ARM64:
 ```bash
 # Download package and checksum
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.3/armax-v1.0.3-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.3/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.4/armax-v1.0.4-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.4/SHA256SUMS
 
 # Verify checksum integrity
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
-tar -xzf armax-v1.0.3-linux-amd64.tar.gz
+tar -xzf armax-v1.0.4-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet
 ```
 
 #### On Windows (PowerShell):
 ```powershell
 # Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.3-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.4-windows-amd64.zip
 
 # Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.3-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.4-windows-amd64.zip"
 ```
 
 #### Release Verification
 To verify the authenticity and integrity of a release:
-1. **Commit & Tag Matching:** Confirm that the release tag matches the official commit history (`git tag -v v1.0.3` or verifying commit `11bed60`).
+1. **Commit & Tag Matching:** Confirm that the release tag matches the official commit history (`git tag -v v1.0.4` or verifying commit history).
 2. **Checksum Integrity:** Verify downloaded archive hashes against the published `SHA256SUMS` manifest using `sha256sum --check --ignore-missing SHA256SUMS`.
 3. **Security Scope of Unsigned Checksums:** Note that checksums hosted directly alongside binaries protect against accidental network corruption, but do not provide cryptographic defense if the hosting infrastructure itself is compromised. Reproducible source compilation (`go build -trimpath ...`) matching the tagged commit provides independent binary verification.
 
@@ -539,6 +539,21 @@ Armaxcoin is strategically architected across 7 core pillars:
 ---
 
 ## Release History & Changelog
+
+### v1.0.4 (Public Open Testnet -- Structured Diagnostics & Consensus Hardening) -- 2026-10-27
+
+Maintenance, reliability, and consensus hardening release introducing structured RPC error handling, enhanced miner telemetry, continuous soak and CI verification automation, and synchronized explorer ecosystem documentation.
+
+#### Node & Consensus Hardening
+- **Consensus Version Bump:** Upgraded core protocol version to `v1.0.4` across node handshake, status outputs, and daemon runtime.
+- **Enhanced Diagnostics & CI Automation:** Added full automated test suites including race-detector coverage and multi-node chaos soak tests (`TestSoak_FiveNodesChaos`, `TestSoak_NoTargetOverride_LWMA300Blocks`) validating LWMA-1 difficulty adjustment and reorg bounds.
+- **Release Verification Script Fixes:** Streamlined cross-platform release verification tools (`scripts/verify-release.sh` and `scripts/verify-release.ps1`) targeting `v1.0.4`.
+
+#### Mining & Tooling
+- **Miner Telemetry & Diagnostic Logging:** Enhanced thread status tracking, hashrate telemetry, and RPC connectivity failover reporting.
+- **GUI Statusbar Synchronization:** Updated desktop wallet GUI status indicator to reflect `v1.0.4`.
+
+---
 
 ### v1.0.3 (Public Open Testnet -- ArmaxHash v2 Stream-Fast & Hardening) -- 2026-10-24
 

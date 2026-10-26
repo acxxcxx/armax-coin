@@ -5,6 +5,30 @@ All notable changes to the **Armaxcoin** (`armax-coin`) project will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.4] - 2026-10-27
+
+### Added
+- **Structured Categorized Logging Subsystem (`core/logger.go`):**
+  - Implemented categorized logging (`net`, `sync`, `mempool`, `validation`, `rpc`, `miner`) with configurable log levels (`DEBUG`, `INFO`, `WARN`, `ERROR`).
+  - Added rolling `debug.log` persistence with automatic size-based rotation and file-backed error diagnostic capture.
+- **Node CLI Diagnostic Suite:**
+  - Added CLI diagnostic flags to the daemon binary: `-getblockchaininfo`, `-getnetworkinfo`, `-getpeerinfo`, `-getmempoolinfo`, and `-checkhealth`.
+  - Supports live RPC query with offline database fallback inspection when the daemon process is stopped.
+
+### Fixed
+- **Transaction Pre-Validation Before Signature Cache Insertion:**
+  - Hardened `core/transaction.go` to strictly validate transaction fields (amounts, nonces, addresses, and bounds) prior to querying or writing to the signature verification cache, preventing cache poisoning vectors.
+- **Competing Fork Discovery & Automatic Fork Recovery (`core/consensus.go`, `node/p2p.go`):**
+  - Resolved chain stalling when competing fork blocks are received at equal or lower heights by triggering automated fork synchronization and reorganization evaluations.
+- **P2P Rate-Limiter Tuning for Continuous IBD:**
+  - Stabilized peer connection throughput under heavy network synchronization, ensuring reliable Initial Block Download without false-positive peer throttling.
+
+### Changed
+- **Documentation Parity & Accuracy Alignment:**
+  - Aligned all documentation across `README.md`, `WHITEPAPER.md`, `docs/CONSENSUS_AND_NETWORK.md`, `docs/MINING_GUIDE.md`, and `docs/security/consensus-proposals.md` to reflect active v1.0.4 specifications and consensus proposal statuses.
+
+---
+
 ## [v1.0.3] - 2026-10-24
 
 ### Added
