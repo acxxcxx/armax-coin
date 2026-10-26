@@ -179,17 +179,12 @@ Instead of private mining, the following transparent launch procedure is strongl
 
 ## 7. P2P Wire Protocol & Handshake Flow
 
-1. **Transport Layer:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
+1. **Transport Layer:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 2. **Handshake:**
-   - Initiator connects and performs TLS handshake.
-   - Remote peer certificate public-key fingerprint is checked against `peers.json` (TOFU pinning). If fingerprint changed, connection terminates immediately.
-   - Nodes exchange `VERSION` payload containing:
-     - Software version (`1.0.0`)
-     - Network ID (`ARMX-TESTNET-1`)
-     - Current block height & best block hash
-     - Cumulative chainwork
-   - If network IDs do not match, the connection is instantly closed.
+    - Peers establish TLS 1.3 before exchanging application messages.
+    - With TOFU enabled, the remote certificate public-key fingerprint is checked against the persisted peer store. A mismatch or pin persistence failure terminates the connection.
+    - P2P messages carry a `network_id`, a message `type`, and an optional `payload`. Messages are accepted only for the matching network profile; the protocol does not exchange a software-version `VERSION` message.
 3. **Block & Transaction Synchronization:**
-   - Nodes compare best block heights and chainwork.
-   - The node with lower chainwork requests block headers (`GETHEADERS`) and blocks (`GETBLOCKS`).
-   - Blocks are transferred in streaming batches, validated incrementally, and committed to LevelDB/BoltDB via atomic batch transactions.
+    - Nodes compare height and cumulative chainwork using `GET_HEIGHT` / `HEIGHT_RESPONSE`.
+    - The syncing node locates a common ancestor with `GET_FORKPOINT`, then requests bounded chunks using `GET_BLOCK_RANGE` / `BLOCK_RANGE_RESPONSE`.
+    - Candidate blocks are validated before the active chain is changed and persisted in the bbolt database.

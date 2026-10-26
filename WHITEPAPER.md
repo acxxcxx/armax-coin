@@ -44,7 +44,7 @@ ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, an
 | **P2P Address Book** | 1,000 Addrs (`tried` & `new`) | Separate address book from active connections (MaxPeers=50), dead peer eviction after 3 failures |
 | **P2P Eclipse Defense** | Subnet Connection Limiter | Maximum 3 concurrent connections per IPv4 `/24` (or IPv6 `/48`) subnet (`disable_subnet_limit` available) |
 | **P2P Flood Defense** | Seen-Filter Hash Cache & Orphan Pools | LRU deduplication cache; bounded 100 orphan blocks (max 10/peer) & 500 orphan txs pool |
-| **P2P Transport Encryption** | TLS 1.3 with TOFU pinning | Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band |
+| **P2P Transport Encryption** | TLS 1.3 with TOFU pinning | Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity; TOFU pins the remote certificate public-key fingerprint after first contact. The initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band |
 | **Storage Engine** | bbolt Key-Value ACID Store (v2) | Full persistence with undo log (1,440 retention), snapshots every 1,000 blocks, and automatic recovery |
 | **Network Profiles** | Mainnet & Testnet Profiles | Mainnet (`ARMX-MAINNET-1`: P2P 19334, RPC 19332) \| Testnet (`ARMX-TESTNET-1`: P2P 19335, RPC 19333) |
 
@@ -201,7 +201,7 @@ To prevent an attacker from saturating all node connection slots through rented 
 
 ### 6.4 Encrypted P2P Transport Layer
 Armaxcoin provides decentralized wire encryption:
-- Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
+- Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 - Nodes generate and persist an ECDSA P-256 self-signed X.509 identity (`p2ptls.pem`) when no identity exists. An existing identity that is unreadable, empty, or invalid fails closed and must be restored explicitly.
 - Plaintext fallback is not part of the default operating mode and is reserved for isolated legacy test environments.
 
@@ -307,7 +307,7 @@ Armaxcoin is compiled into standalone, zero-dependency static binaries:
 A rigorous blockchain design requires transparency regarding operational boundaries and threat assumptions:
 
 1. **Quantum-Resistant Digital Signatures (NIST FIPS 204, ML-DSA-65):** User transactions employ module-lattice signatures resistant to Shor's algorithm. However, this does not eliminate all quantum attack vectors: SHA-256 PoW mining remains subject to quadratic Grover speedups ($\approx 128\text{-bit}$ effective quantum security).
-2. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
+2. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 3. **Code Audit Status:** The codebase and cryptographic implementations have not yet undergone a formal third-party security audit.
 4. **Reorganization Finality (720 Blocks):** The 720-block (~24-hour) reorganization depth prevents catastrophic history rewrites by majority hashrate attackers. If an extended network partition lasts longer than 720 blocks, manual node operator coordination is required.
 5. **RPC Daemon Isolation:** The RPC daemon (`armcoind`) binds strictly to loopback (`127.0.0.1`). Exposing the RPC port to public interfaces without strong authentication introduces severe security risks.

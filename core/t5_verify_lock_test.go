@@ -58,6 +58,78 @@ func TestT5_WitnessHashCacheSkipsRedundantVerify(t *testing.T) {
 	}
 }
 
+func TestSignatureVerificationCacheDoesNotBypassBasicValidation(t *testing.T) {
+	senderKey, err := pqsig.GenerateFromSeed(sha256.Sum256([]byte("cache-validation-sender")))
+	if err != nil {
+		t.Fatalf("GenerateFromSeed sender failed: %v", err)
+	}
+	recipientKey, err := pqsig.GenerateFromSeed(sha256.Sum256([]byte("cache-validation-recipient")))
+	if err != nil {
+		t.Fatalf("GenerateFromSeed recipient failed: %v", err)
+	}
+
+	sender, err := PubToAddress(pqsig.SigAlgMLDSA65, senderKey.PublicKeyBytes())
+	if err != nil {
+		t.Fatalf("PubToAddress sender failed: %v", err)
+	}
+	recipient, err := PubToAddress(pqsig.SigAlgMLDSA65, recipientKey.PublicKeyBytes())
+	if err != nil {
+		t.Fatalf("PubToAddress recipient failed: %v", err)
+	}
+
+	tx := &Transaction{
+		Sender:    sender,
+		Recipient: recipient,
+		Amount:    1000,
+		Fee:       50000,
+		Nonce:     1,
+		SigAlg:    pqsig.SigAlgMLDSA65,
+	}
+	if err := tx.Sign(senderKey); err != nil {
+		t.Fatalf("Sign failed: %v", err)
+	}
+	if err := tx.VerifyWithError(); err != nil {
+		t.Fatalf("VerifyWithError failed on valid transaction: %v", err)
+	}
+
+	mutations := []struct {
+		name   string
+		mutate func(*Transaction)
+	}{
+		{
+			name: "time lock",
+			mutate: func(tx *Transaction) {
+				tx.TimeLock = 1700000000
+			},
+		},
+		{
+			name: "preimage",
+			mutate: func(tx *Transaction) {
+				tx.Preimage = "uncommitted metadata"
+			},
+		},
+	}
+
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			mutated := *tx
+			mutation.mutate(&mutated)
+			if mutated.WitnessHashHex() != tx.WitnessHashHex() {
+				t.Fatal("test mutation unexpectedly changed the cached witness hash")
+			}
+			if !mutated.IsSignatureVerified() {
+				t.Fatal("expected mutated transaction to share the cached witness hash")
+			}
+			if err := mutated.ValidateBasic(); err == nil {
+				t.Fatal("ValidateBasic accepted unsupported transaction metadata")
+			}
+			if err := mutated.VerifyWithError(); err == nil {
+				t.Fatal("VerifyWithError accepted unsupported transaction metadata from cache")
+			}
+		})
+	}
+}
+
 // TestT5_DifferentialAddTransaction verifies identical acceptance/rejection semantics
 // for valid, invalid amount, bad fee, and bad signature transactions [T5].
 func TestT5_DifferentialAddTransaction(t *testing.T) {

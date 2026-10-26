@@ -97,7 +97,7 @@ A production-grade systemd unit file is provided in `systemd/armcoind-testnet.se
 
 Armaxcoin implements transport encryption for node-to-node communication:
 
-- **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using self-signed ephemeral certificates; peer identity is not verified through a PKI/CA; TOFU fingerprint pinning detects certificate changes after first contact; initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
+- **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 - **Persistent Peer Store:** Known and validated peers are saved atomically to `peers.json` with versioning and checksum verification. Plaintext TCP fallback is strictly rejected.
 
 ---

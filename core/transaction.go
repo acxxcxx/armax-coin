@@ -169,15 +169,36 @@ func (tx *Transaction) Verify() bool {
 
 // ValidateBasic performs structural and consensus bounds validation on the transaction [Phase 6]
 func (tx *Transaction) ValidateBasic() error {
-	return tx.VerifyWithError()
+	return tx.validateBasic()
 }
 
 // VerifyWithError validates the transaction and returns a descriptive error upon failure [L1-2, T5]
 func (tx *Transaction) VerifyWithError() error {
+	if err := tx.validateBasic(); err != nil {
+		return err
+	}
+
 	if tx.IsSignatureVerified() {
 		return nil
 	}
 
+	pubKeyBytes, err := hex.DecodeString(tx.SenderPub)
+	if err != nil {
+		return errors.New("failed to decode sender public key hex bytes")
+	}
+	sigBytes, err := hex.DecodeString(tx.Signature)
+	if err != nil {
+		return errors.New("failed to decode signature hex bytes")
+	}
+
+	if !pqsig.Verify(pubKeyBytes, tx.Hash(), sigBytes) {
+		return errors.New("signature verification failed (invalid signature for network/message)")
+	}
+	tx.MarkSignatureVerified()
+	return nil
+}
+
+func (tx *Transaction) validateBasic() error {
 	// [C-29] Whitelist only standard transaction types for consensus
 	if tx.Type != "" && tx.Type != TxTypeStandard {
 		return fmt.Errorf("invalid transaction type: %s", tx.Type)
@@ -282,10 +303,5 @@ func (tx *Transaction) VerifyWithError() error {
 		return errors.New("failed to decode signature hex bytes")
 	}
 
-	// 3. ML-DSA-65 signature verification [P2-2, L1-2]
-	if !pqsig.Verify(pubKeyBytes, tx.Hash(), sigBytes) {
-		return errors.New("signature verification failed (invalid signature for network/message)")
-	}
-	tx.MarkSignatureVerified()
 	return nil
 }
