@@ -24,7 +24,7 @@ Armaxcoin is built from the ground up for the post-quantum era. All user transac
 
 ### 1.2 Hashing Functions
 - **Block Hashing (Testnet, Blocks 0..519):** Double-SHA256 (`SHA-256d`).
-- **Block Hashing (Testnet, Blocks 520..2499):** **ArmaxHash v1** (Argon2id 2048 KiB, time cost 2, 1 lane + BLAKE2b-512 + SHA-256).
+- **Block Hashing (Testnet, Blocks 520..2499):** **ArmaxHash v1** (network/header-derived BLAKE2b-512 input, Argon2id 2048 KiB, then BLAKE2b-256 finalization).
 - **Block Hashing (Testnet, Blocks 2500+):** **ArmaxHash v2 Stream-Fast** (chained BLAKE2b-512 + BLAKE2b-256 with domain separation).
 - **Block Hashing (Mainnet Profile - Locked):** Double-SHA256 (`SHA-256d`).
 - **Transaction ID & Merkle Trees:** SHA-256 hashing.
@@ -51,36 +51,35 @@ On the public testnet, PoW consensus evolves across three distinct height eras t
   - Memory cost: `MemoryKiB = 2048` (2 MiB / 2,048 KiB)
   - Time cost: `TimeCost = 2` iterations
   - Parallelism: `Threads = 1` lane
-  - Salt: First 16 bytes of block header (`SaltSize = 16`)
+  - Salt: 16 bytes derived from the BLAKE2b-512 prehash; it is not copied directly from the block header.
   - Key length: 32 bytes (`OutputSize = 32`)
 - **Formula:**
-  $$\text{D}_1 = \text{Argon2id}(H, \text{salt}=H[:16], \text{time}=2, \text{memory}=2048\text{ KiB}, \text{threads}=1)$$
-  $$\text{ArmaxHash}_{v1}(H) = \text{SHA-256}\Big(\text{BLAKE2b-512}(\text{D}_1)\Big)$$
+  $$D = \text{BLAKE2b-512}(\text{"ARMX-POW\\0"} \parallel 0x01 \parallel \text{byte}(\text{len(NetID)}) \parallel \text{NetID} \parallel H)$$
+  $$A = \text{Argon2id}(D[0:32], \text{salt}=D[32:48], t=2, m=2048\text{ KiB}, p=1, \text{out}=32\text{ bytes})$$
+  $$\text{ArmaxHash}_{v1}(H) = \text{BLAKE2b-256}(D[0:32] \parallel A)$$
 - **Hardware Profile & Limitations:** 2 MiB memory cost provides CPU cache affinity (fitting within L3 cache), but 2 MiB is modest by modern memory-hardness standards. Resistance to specialized hardware has not been evaluated; it serves as an architectural deterrent rather than permanent ASIC immunity.
 
 #### Era 3: ArmaxHash v2 Stream-Fast (Blocks 2,500+)
-- **Algorithm:** Dual-stage chained BLAKE2b (`armaxhash.VersionV2 = 2`), activated at block #2500 via scheduled hard fork (`core.TestnetParams.ArmaxHashV2ActivationHeight = 2500`).
+- **Algorithm:** Dual-stage chained BLAKE2b (`armaxhash.VersionV2 = 2`), active from block #2500 on testnet (`core.TestnetProfile.ArmaxHashV2ActivationHeight = 2500`).
 - **Code Specification (`armaxhash/armaxhash.go:87-118`):**
   - **Stage 1 (BLAKE2b-512):**
     $$\text{D}_1 = \text{BLAKE2b-512}\Big(\text{"ARMX-POW-V2\x00"} \parallel \text{byte}(2) \parallel \text{byte}(\text{len}(\text{NetID})) \parallel \text{NetID} \parallel H\Big)$$
   - **Stage 2 (BLAKE2b-256):**
     $$\text{ArmaxHash}_{v2}(H) = \text{BLAKE2b-256}\Big(\text{D}_1\Big)$$
 - **Technical Properties:**
-  - **Zero Heap Allocations:** Mining loops execute with $0\text{ B/op}$ heap allocation, eliminating garbage collector pauses.
+  - **Hash Primitive Allocation:** The fixed-header `HashV2` benchmark reports 0 allocations/op. Header construction and the complete mining loop are outside that benchmark and may allocate.
   - **Microsecond Verification:** Blocks verify in microseconds on commodity processors.
   - **Memory Hardness:** **ArmaxHash v2 is NOT memory-hard.** It is computationally intensive and designed for commodity CPU execution, but does not saturate DRAM. Resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated.
 
 ### 2.2 Mainnet Profile (`ARMX-MAINNET-1` - Unreleased / Locked)
 
-In `core/network.go`:
-- `MainnetParams.ArmaxHashActivationHeight = -1`
-- `MainnetParams.ArmaxHashV2ActivationHeight = -1`
+In `core/network.go`, `MainnetProfile.ArmaxHashActivationHeight` and `MainnetProfile.ArmaxHashV2ActivationHeight` are both `-1`.
 
 Unless changed by a future consensus hard-fork proposal, the mainnet profile in code specifies standard **Double-SHA256 (`SHA-256d`)** for all blocks. 
 - *Hardware Profile:* SHA-256d can be implemented in specialized hardware (ASIC/GPU). It is custom-serialized and not compatible with standard Bitcoin mining firmware without modifications, but is **not claimed to be CPU-friendly, memory-hard, or ASIC-resistant**.
 
-### 2.3 Regtest & Devnet Profiles
-Both `regtest` and `devnet` profiles have activation heights set to `-1`, operating under standard Double-SHA256 (`SHA-256d`).
+### 2.3 Regtest & Soak Profiles
+The `regtest` and `soak` profiles have ArmaxHash activation heights set to `-1`, so they use Double-SHA256 (`SHA-256d`).
 
 ---
 
@@ -105,8 +104,8 @@ Where:
 $$\text{TargetSolveTime} = T \times \frac{N \times (N + 1)}{2} = 120 \times \frac{60 \times 61}{2} = 219,600 \text{ seconds}$$
 
 ### 3.2 Safety Bounds & Damping
-- **Maximum Step Adjustment:** Target cannot change by more than a factor of $2.0$ (up or down) in a single block.
-- **Minimum Difficulty Floor:** Target can never exceed `PowLimit` (the minimum difficulty ceiling).
+- **Weighted Solve-Time Bound:** The weighted solve-time sum is clamped to $[E/4, 4E]$ before target adjustment, where $E$ is the expected weighted solve time. This is not a direct factor-of-two bound on the final target, which also depends on the average target in the window.
+- **Target Ceiling:** The next target is capped at the active profile's applicable floor. During ArmaxHash operation on testnet, the maximum target is `DifficultyToTarget(1)`; before that activation, the genesis/network target ceiling applies.
 
 ---
 
@@ -135,7 +134,7 @@ const MaxReorganizationDepth = 720
 - **Definition:** A node will strictly reject any reorganizing branch that attempts to fork the chain at a depth greater than **720 blocks** behind the current tip.
 - **Time Equivalent:** At a 120-second target block time, 720 blocks corresponds to:
   $$720 \times 120\text{ seconds} = 86,400\text{ seconds} = 24\text{ hours}$$
-- **Security Rationale:** Protects nodes from historical 51% reorganization attacks attempting to rewrite deeply settled transactions or replay past chain history after a day of network finality.
+- **Security Rationale:** Limits the depth of reorganizations accepted by a node. This is not protocol finality: shallower reorganizations remain possible, and users should not treat any fixed confirmation count as irreversible settlement.
 
 ---
 
@@ -147,7 +146,7 @@ The project maintainers are considering internally or privately mining 720 block
 ### 6.2 Disambiguation of "720"
 It is critical to distinguish between two distinct concepts:
 1. **`MaxReorganizationDepth = 720`:** An active security limit in code preventing chain reorganizations exceeding 720 blocks in depth.
-2. **Proposed Internal Mining of 720 Blocks:** A potential launch tactic under discussion by maintainers.
+2. **Proposed Internal Mining of 720 Blocks:** A launch tactic discussed in this document, not an implemented consensus rule or confirmed project decision.
 
 ### 6.3 Technical Implications & Security Analysis
 
@@ -155,16 +154,16 @@ Mining 720 blocks privately **does NOT** guarantee mainnet security, and introdu
 
 1. **Chainwork & Fork Vulnerability:**
    - Proof-of-Work networks derive security entirely from verifiable, cumulative chainwork produced under open competition.
-   - If 720 blocks are mined on private hardware with low initial difficulty, an external adversary with modest public hashrate could generate an alternative branch with greater cumulative chainwork in a matter of hours, orphaning the entire 720-block history.
+  - Whether a competing branch can exceed the private branch's chainwork depends on the targets and work accumulated on both branches; block count and the phrase "modest hashrate" are insufficient to estimate the time or outcome.
 2. **Difficulty Misalignment:**
-   - If 720 blocks are mined rapidly with dedicated hardware, the LWMA-1 difficulty retargeting will drive the network difficulty up to match the private hashrate.
-   - When the network is subsequently opened to the public, if public miners provide less hashrate than the private mining session, block times will stall (block production could slow from 2 minutes to hours per block), crippling network usability.
+  - If private blocks are produced faster than target, LWMA-1 adjusts difficulty based on the observed timestamps and targets, within its configured bounds.
+  - Opening the network with a substantially different hashrate can change block cadence; the magnitude and duration depend on the actual chain history and require simulation rather than a fixed prediction.
 3. **Economic Transparency & Premine Perception:**
    - Mining 720 blocks generates $720 \times 60 = 43,200 \text{ ARMX}$ in coinbase rewards.
-   - If mined internally without public participation, the broader cryptocurrency community will perceive this as an undisclosed premine or unfair advantage, severely damaging community trust and open-source credibility.
+  - If mined internally without public participation, the allocation may be perceived as a premine or unfair advantage. Public disclosure of the launch process and reward ownership is necessary for users to assess it.
 4. **Reorganization Boundary Edge Cases:**
-   - If independent public nodes start from genesis (height 0) and the private 720-block chain is released to the network, nodes that have already progressed past block 1 will treat this incoming 720-block chain as a deep reorganization.
-   - Because `MaxReorganizationDepth` is exactly 720, any timing skew where public nodes have reached height 2 or 3 would cause the incoming chain to be rejected as exceeding the maximum allowed reorganization depth!
+  - Reorganization depth is measured from the active tip back to the common ancestor, not from the length of the incoming branch. If a private branch and a public branch share genesis, a node at height 2 or 3 has a shallow rollback to genesis and does not reject the private 720-block branch for exceeding the 720-block limit.
+  - A node whose active tip is more than 720 blocks beyond that common ancestor rejects the reorganization under its local depth policy, regardless of the candidate branch's length or chainwork.
 
 ### 6.4 Recommended Mainnet Launch Strategy
 Instead of private mining, the following transparent launch procedure is strongly recommended:
@@ -173,7 +172,7 @@ Instead of private mining, the following transparent launch procedure is strongl
 2. **Open Public Bootstrap:** Deploy seed nodes with mainnet profile locked until the genesis moment.
 3. **Zero Premine / Transparent Block 0:** Generate Block 0 burning the coinbase reward or attributing it to a verifiable genesis commitment.
 4. **Public Mining from Height 1:** Allow all community miners to compete openly from block 1 onwards under real-time LWMA-1 difficulty adjustment.
-5. **Periodic Public Checkpoints:** Once the public network reaches maturity, hardcode periodic checkpoints in source code (e.g., at height 10,000) through transparent community consensus.
+5. **Checkpoint Policy (Optional):** Do not add checkpoints without a separately reviewed trust and governance model. Hardcoded checkpoints constrain which histories nodes accept and are not equivalent to proof-of-work consensus.
 
 ---
 

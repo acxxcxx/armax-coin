@@ -8,23 +8,22 @@ This guide details how to participate in Proof-of-Work (PoW) mining on the Armax
 
 Armaxcoin employs an evolutionary Proof-of-Work consensus timeline designed to transition from initial bootstrap hashing to accessible, high-performance CPU mining:
 
-| Block Range | Algorithm | Characteristics | Target Hashrate |
+| Block Range | Algorithm | Characteristics |
 |---|---|---|---|
-| **Blocks 0 .. 519** | **SHA-256d** | Double SHA-256 block header hashing | Legacy bootstrap phase |
-| **Blocks 520 .. 2499** | **ArmaxHash v1** | Argon2id ($m=2048$ KiB, $t=2$ iterations, $p=1$ lane) chained with BLAKE2b and SHA-256 | CPU-oriented (~50-300 H/s per thread) |
-| **Blocks 2500+ (Active)** | **ArmaxHash v2** | Stream-Fast chained **BLAKE2b-512 + BLAKE2b-256** PoW with domain separation | High-throughput, 0-heap allocation, ARM & commodity CPU friendly (~1-5 MH/s per thread) |
+| **Blocks 0 .. 519** | **SHA-256d** | Double SHA-256 block header hashing; legacy bootstrap phase |
+| **Blocks 520 .. 2499** | **ArmaxHash v1** | Network/header-derived BLAKE2b-512 prehash, Argon2id ($m=2048$ KiB, $t=2$, $p=1$), and BLAKE2b-256 finalization |
+| **Blocks 2500+ (Active)** | **ArmaxHash v2** | Stream-Fast chained **BLAKE2b-512 + BLAKE2b-256** PoW with domain separation; fixed-header hash benchmark reports 0 allocations/op, not end-to-end miner throughput |
 
 > [!NOTE]
 > For the complete canonical Proof-of-Work specification across all networks (Testnet and Mainnet profiles), see [docs/CONSENSUS_AND_NETWORK.md](CONSENSUS_AND_NETWORK.md). The unreleased Mainnet profile in code operates under standard Double-SHA256 (`SHA-256d`).
 
 ### Why ArmaxHash v2?
-ArmaxHash v1 utilized Argon2id (2048 KiB RAM per hash, 2 iterations), which provided an accessible transition from SHA-256d. However, repeated memory allocations per hash caused memory bus saturation and thermal throttling on cache-constrained edge devices (such as ARM SBCs with small L2/L3 caches).
+ArmaxHash v1 used Argon2id (2048 KiB per hash, 2 iterations). The current code uses the `golang.org/x/crypto` Argon2id implementation; mining performance and memory-system effects depend on the machine and workload.
 
-ArmaxHash v2 (activated at block #2500 on testnet via scheduled hard fork) replaces memory-churning allocations with high-speed, zero-allocation chained BLAKE2b cryptographic hashing with strict network-domain separation (`ARMX-BLAKE2B-V2`). ArmaxHash v2 is computation-bound rather than memory-hard; resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated. This achieves:
-- **Zero GC Memory Overhead:** 0 B/op heap allocation in mining tight loops.
-- **Microsecond Verification:** Instantaneous consensus validation across node networks.
-- **ARM & Commodity CPU Friendly:** Runs smoothly on laptops, desktop CPUs, and low-power ARM devices without thermal throttling or RAM bus exhaustion.
-- **100% Historical Continuity:** All blocks 0..519 (SHA-256d) and 520..2499 (ArmaxHash v1) remain fully valid and verifiable by all nodes on replay.
+ArmaxHash v2 is active from block #2500 on testnet. It uses chained BLAKE2b with the `ARMX-POW-V2\0` domain, version byte, network ID, and block header. It is not memory-hard; resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated.
+- **Hash Primitive Allocation:** The fixed-header `HashV2` benchmark reports 0 allocations/op. Header construction and the full mining loop are not covered by this measurement.
+- **Hardware Results:** Hashrate and thermal behavior vary by hardware and workload; no universal per-core throughput is claimed here.
+- **Historical Compatibility:** The node selects the hashing algorithm by block height and validates the historical SHA-256d and ArmaxHash v1 eras before applying v2 from testnet height 2500.
 
 ---
 
@@ -56,7 +55,7 @@ ArmaxHash v2 (activated at block #2500 on testnet via scheduled hard fork) repla
 ./armwallet -network testnet -create -wallet miner_wallet.json
 
 # View the address
-./armwallet -network testnet -balance -wallet miner_wallet.json
+./armwallet -network testnet -address -wallet miner_wallet.json
 ```
 Copy your public Bech32 address (`armx1...`).
 
@@ -77,15 +76,17 @@ Launch `armminer` specifying your reward address and thread count:
 ./armminer -network testnet \
   -miner armx1cdj242tzwrp5uutzyktj0p4jsyl0s06ahxfk3xzv0vqgnn438e7s2ps308 \
   -threads 4 \
-  -rpc http://127.0.0.1:19333
+  -daemon http://127.0.0.1:19333
 ```
 
 On Windows:
 ```powershell
-.\armminer.exe -network testnet -miner armx1... -threads 4 -rpc http://127.0.0.1:19333
+.\armminer.exe -network testnet -miner armx1... -threads 4 -daemon http://127.0.0.1:19333
 ```
 
 ### Expected Output
+
+The following is illustrative; actual hashrate and log details depend on the node, hardware, and current network state.
 
 ```text
 ==================================================
@@ -109,9 +110,9 @@ On Windows:
 - **Thread Selection:**
   For optimal hashrate without system stutter, set `-threads` equal to the physical core count of your machine (e.g. `4` or `8`). Leaving 1 core free for system and node operations (`NumCPU - 1`) is recommended on dedicated mining desktops.
 - **Memory Footprint:**
-  Under ArmaxHash v2, memory consumption is virtually zero (a tiny stack buffer per worker thread, 0 heap allocations).
+  ArmaxHash v2 does not use the Argon2 memory-hard stage. Memory use of the complete miner and node depends on header construction, networking, and other runtime activity; the hash benchmark alone does not measure it.
 - **Thermal Management:**
-  ArmaxHash v2 utilizes high-speed cryptographic hashing without memory bus stalling, keeping temperatures balanced across all CPU cores. Ensure adequate ventilation on sustained high-thread mining.
+  Sustained CPU mining can increase power use and temperatures. Monitor the device and use an appropriate thread count and cooling setup.
 
 ---
 
@@ -121,12 +122,12 @@ To monitor your mining rewards:
 
 ```bash
 # Check wallet balance
-./armwallet -network testnet -balance -wallet miner_wallet.json
+./armwallet -network testnet -balance <YOUR_ARMX_ADDRESS>
 ```
 
 Or query block details via RPC:
 ```bash
-curl -s http://127.0.0.1:19333/block/latest | jq .
+curl -s 'http://127.0.0.1:19333/block?index=<BLOCK_HEIGHT>' | jq .
 ```
 Verify that `"miner"` matches your address and `"merkle_root"` reflects the coinbase transaction.
 
@@ -134,4 +135,4 @@ Verify that `"miner"` matches your address and `"merkle_root"` reflects the coin
 
 ## 7. Pool Mining Notice
 
-The current open testnet exclusively supports **solo mining** via HTTP RPC template polling (`/mine` and `/block/submit`). Stratum protocol support and mining pool software are planned for future development and are not currently active.
+The current open testnet supports **solo mining** through HTTP RPC block-template polling and block submission (`/getblocktemplate` and `/submitblock`). Stratum protocol support and mining pool software are planned and are not currently active.

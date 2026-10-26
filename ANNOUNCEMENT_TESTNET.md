@@ -41,7 +41,7 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [*] [b]Block Header PoW Algorithm Timeline:[/b]
     - [b]Blocks 0 .. 519:[/b] Double-SHA256 (SHA-256d bootstrap phase)
     - [b]Blocks 520 .. 2499:[/b] ArmaxHash v1 (Argon2id 2,048 KiB + Blake2b-512)
-    - [b]Blocks 2500+ (Active):[/b] [b]ArmaxHash v2 Stream-Fast[/b] (Chained BLAKE2b with zero heap allocation)
+    - [b]Blocks 2500+ (Active):[/b] [b]ArmaxHash v2 Stream-Fast[/b] (domain-separated chained BLAKE2b; the fixed-header hash benchmark reports 0 allocations/op)
 [*] [b]Digital Signatures:[/b] NIST FIPS 204 (ML-DSA-65) Post-Quantum Module-Lattice Signatures (pure, non-hybrid)
 [*] [b]Target Block Time:[/b] 120 seconds (2 minutes)
 [*] [b]Difficulty Retargeting:[/b] Continuous LWMA-1 ($N=60$ sliding evaluation window)
@@ -55,14 +55,12 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [*] [b]Genesis Timestamp:[/b] 1710000001 (Nonce: 40,272,237)
 [*] [b]ArmaxHash Target Ceiling (Testnet):[/b] [font=monospace]000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff[/font] (Difficulty 3 bootstrap)
 [*] [b]Coinbase Maturity:[/b] 10 confirmations on Testnet (100 confirmations on Mainnet)
-[*] [b]Max Reorganization Depth:[/b] 720 blocks (~24 hours finality boundary)
+[*] [b]Max Reorganization Depth:[/b] 720 blocks (~24 hours at target cadence; local reorganization limit, not transaction finality)
 [*] [b]Active DNS Seed Nodes:[/b]
 [code]
 testnet-seed1.armax-coin.cloud:19335  (IP: 202.10.34.180)
 testnet-seed2.armax-coin.cloud:19335  (IP: 139.162.46.17)
-testnet-seed3.armax-coin.cloud:19335  (IP: 202.10.34.180)
-[/code]
-[/list]
+testnet-seed1.armax-coin.cloud:19335
 
 [hr]
 
@@ -71,7 +69,7 @@ Armaxcoin incorporates NIST FIPS 204 (ML-DSA-65) post-quantum signatures for eve
 [list]
 [*] [b]Public Key Size:[/b] 1,952 bytes (3,904 hex characters)
 [*] [b]Signature Size:[/b] 3,309 bytes (6,618 hex characters)
-[*] [b]Raw Cryptographic Payload:[/b] ~5,385 bytes per transaction
+[*] [b]Combined Public Key and Signature:[/b] 5,261 raw bytes per transaction (before addresses and transaction fields)
 [*] [b]Total JSON Wire Format:[/b] ~10,761 bytes per transaction
 [*] [b]Block Size Limit:[/b] 2,000,000 bytes (2 MB)
 [*] [b]Measured Block Capacity:[/b] Up to 185 user transactions per block (+1 coinbase transaction = 186 total, ~1,990,513 bytes)
@@ -119,7 +117,7 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 # Launch miner with 4 CPU worker threads
 ./armminer -miner <YOUR_ARMX_ADDRESS> -threads 4
 [/code]
-[i]Active blocks (height >= 2500) are evaluated using the ArmaxHash v2 Stream-Fast algorithm (chained BLAKE2b with zero heap churn). Hashrate is reported in real-time in H/s, kH/s, and MH/s.[/i]
+[i]Active blocks (height >= 2500) use ArmaxHash v2 Stream-Fast (domain-separated chained BLAKE2b). The fixed-header hash benchmark reports 0 allocations/op; actual mining throughput depends on hardware and workload. Hashrate is reported in real time in H/s, kH/s, and MH/s.[/i]
 
 [b]Step 5 -- Check Balance & Transfer Testnet Coins:[/b]
 [code]

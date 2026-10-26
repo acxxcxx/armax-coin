@@ -107,7 +107,9 @@ You will be prompted to enter a strong passphrase and securely record your 24-wo
 ### Check Wallet Balance
 
 ```bash
-./armwallet -network testnet -balance -wallet testnet_wallet.json
+# Display the address stored in the keystore, then query its balance
+./armwallet -network testnet -address -wallet testnet_wallet.json
+./armwallet -network testnet -balance <WALLET_ADDRESS>
 ```
 
 ---
@@ -132,15 +134,16 @@ All transaction signing occurs strictly client-side within `armsend`. Your encry
 
 If your node does not discover peers automatically via DNS, you can manually connect to the official testnet seeds:
 
-- `testnet-seed1.armax-coin.cloud:19335` (IP: `202.10.34.180:19335`)
-- `testnet-seed2.armax-coin.cloud:19335` (IP: `139.162.46.17:19335`)
+- `testnet-seed1.armax-coin.cloud:19335`
+- `testnet-seed2.armax-coin.cloud:19335`
 - `testnet-seed3.armax-coin.cloud:19335`
 
-Manual peer connection via RPC:
+Manual peer registration via RPC requires configured RPC credentials:
 ```bash
-curl -X POST http://127.0.0.1:19333/peer/add \
+curl -X POST http://127.0.0.1:19333/peers \
+  -u "$ARMX_RPC_USER:$ARMX_RPC_PASSWORD" \
   -H "Content-Type: application/json" \
-  -d '{"address": "202.10.34.180:19335"}'
+  -d '{"peer": "testnet-seed1.armax-coin.cloud:19335"}'
 ```
 
 ---

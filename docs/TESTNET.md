@@ -110,8 +110,8 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 - **Local Multi-Threaded Engine:** `armminer` queries `/getblocktemplate` from `armcoind`, constructs the candidate block with coinbase reward, and runs parallel worker threads across `-threads N` local CPU workers.
 - **Proof-of-Work Algorithm Migration:**
   - **Height $0 \le H < 520$:** Legacy SHA-256d PoW. All historical blocks remain valid and preserved.
-  - **Height $520 \le H < 2500$:** **ArmaxHash v1** (Argon2id 2048 KiB memory footprint + BLAKE2b + SHA-256, 1 lane, 2 iterations; see `docs/CONSENSUS_AND_NETWORK.md`). CPU-oriented (~50-300 H/s per core).
-  - **Height $H \ge 2500$ (Active Hard Fork):** Stream-Fast **ArmaxHash v2** (Chained BLAKE2b-512 + BLAKE2b-256 with domain separation `ARMX-BLAKE2B-V2`). 0 heap allocation, instantaneous block validation, computation-bound for multi-core CPUs and ARM single-board computers (~1-5 MH/s per core).
+   - **Height $520 \le H < 2500$:** **ArmaxHash v1** (BLAKE2b-512 prehash derived from the network ID and header, Argon2id with 2,048 KiB, 1 lane, 2 iterations, then BLAKE2b-256 finalization; see `docs/CONSENSUS_AND_NETWORK.md`).
+   - **Height $H \ge 2500$ (active on testnet):** Stream-Fast **ArmaxHash v2** (BLAKE2b-512 over the `ARMX-POW-V2\0` domain, version, network ID, and header, followed by BLAKE2b-256). The fixed-header `HashV2` benchmark reports 0 allocations/op; it does not measure complete block validation or end-to-end miner throughput.
 - **Console Telemetry:** Prints real-time hashrate metrics (`H/s`, `kH/s`, `MH/s`) and solve timestamps every stats interval.
 - **Dynamic Tip Adaptation:** Automatically queries daemon tip height and aborts stale rounds if a competing peer mines a block first (`HTTP 409 Conflict`).
 - **Coinbase Maturity (10 Confirmations on Testnet, 100 on Mainnet):** Freshly mined block rewards enter an on-chain immature queue and cannot be spent until 10 blocks (testnet) or 100 blocks (mainnet) have been confirmed on top of them (consensus-enforced, storage schema v3).
@@ -123,10 +123,10 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 ### Hashrate and Difficulty Targets
 - **Legacy Target (H < 520):** `0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (SHA-256d baseline).
 - **ArmaxHash v1 PoW Limit (H = 520 bootstrap):** `000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (~4,096 ArmaxHash v1 evaluations).
-- **ArmaxHash v2 Target Adjustment (H >= 2500):** LWMA-1 dynamically retargets to reflect high-throughput Stream-Fast hashrates while preserving target 120-second block intervals.
-- **Dynamic LWMA-1 Floor:** Down to Difficulty 1 (`0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`), allowing low-hashrate single-board nodes to smoothly stabilize to the target 120-second block time.
+- **ArmaxHash v2 Target Adjustment (H >= 2500):** LWMA-1 applies the same per-block retargeting formula; actual block intervals depend on network hashrate, timestamps, and random solve times.
+- **Dynamic LWMA-1 Target Ceiling:** During ArmaxHash operation the target may rise to Difficulty 1 (`0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`). This does not guarantee that low-hashrate devices will produce blocks at the target interval.
 - **Target Block Time:** 120 seconds (2 minutes).
-- **Dynamic Difficulty:** Linear Weighted Moving Average across a 60-block window (LWMA-1).
+- **Dynamic Difficulty:** Linear Weighted Moving Average across a 60-block window (LWMA-1). The 120-second block interval is a target, not a guarantee for individual blocks or short observation periods.
 
 ### Local Multi-Node Testing (29000-series Ports)
 For running multiple local nodes on the same host, use ports in the 29000-range with separate `-datadir`:
@@ -239,7 +239,7 @@ To prevent sybil attacks, resource draining, and spam without introducing comple
    ./armsend -network testnet \
      -wallet faucet_keystore.json \
      -to armx1<requester_address> \
-     -amount 100000000 \
-     -fee 11000
+     -amount-armoids 100000000 \
+     -fee-armoids 11000
    ```
-   *(Sends 1.0 ARMX [100,000,000 Armoids] with minimum relay fee 11,000 Armoids).*
+  *(Sends 1.0 ARMX [100,000,000 Armoids] with a fee of 11,000 Armoids).*

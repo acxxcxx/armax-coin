@@ -13,7 +13,7 @@ Please check the options that are relevant:
 
 ## Subsystem / Component
 - [ ] `core/` (Blockchain state, block validation, transactions, crypto/ML-DSA)
-- [ ] `armaxhash/` (Argon2id + Blake2b + SHA-256 Proof-of-Work algorithm)
+- [ ] `armaxhash/` (ArmaxHash v1: Argon2id and BLAKE2b; v2: domain-separated chained BLAKE2b)
 - [ ] `node/` (P2P mesh, TLS 1.3/TOFU transport, RPC daemon)
 - [ ] `miner/` (Multi-threaded CPU mining engine)
 - [ ] `wallet/` & `cli/` (CLI tools: `armwallet`, `armsend`)

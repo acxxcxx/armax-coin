@@ -1,16 +1,15 @@
-# ArmaxHash v1 Migration Audit & Consensus Technical Specification
+# ArmaxHash Consensus Migration Audit & Technical Specification
 
-> **Active Consensus Algorithm:** Double-SHA256 (SHA-256d) up to block #519.  
-> **Activation Status:** Scheduled for block **#520** on Testnet (`TestnetProfile.ArmaxHashActivationHeight = 520`). Mainnet remains disabled (`-1`).  
-> **Database Compatibility:** All historical testnet blocks (0..493+) remain **100% valid** without database reset.  
-> **Repository Integrity:** Genesis blocks unchanged, no commits, no push to remote.
+> **Testnet PoW eras:** SHA-256d at blocks 0..519, ArmaxHash v1 at blocks 520..2499, and ArmaxHash v2 from block 2500.
+> **Mainnet profile:** Both ArmaxHash activation heights are disabled (`-1`); mainnet remains locked and unreleased.
+> **Genesis anchors:** The configured mainnet and testnet genesis blocks remain fixed by consensus tests.
 
 ---
 
 ## 1. Comprehensive Audit of Current PoW Subsystems
 
 ### 1.1 Block Header Hash Computation
-- **Primary Method:** `Block.CalculateHash()` (`core/block.go`).
+- **Primary Consensus Method:** `Block.CalculateHashWithError()` (`core/block.go`); `CalculateHash()` is retained as a compatibility wrapper and should not be used for consensus validation.
 - **Canonical Header Commitment:**
   `record := fmt.Sprintf("%d:%d:%s:%s:%s:%d:%s", b.Index, b.Timestamp, b.PrevHash, b.MerkleRoot, b.Miner, b.Nonce, targetStr)`
   The cryptographic commitment binds exactly 7 canonical fields:
@@ -144,14 +143,14 @@ Differential testing evaluates 30 distinct permutations across:
 ### 4.3 Preservation of Frozen Legacy Genesis Hashes
 `core/consensus_freeze_test.go` verifies that legacy genesis hashes remain completely unchanged:
 - Testnet Genesis Hash: `0000000dc84202e63a340a2439625fbf9cea5cb7b84119f93d52cff39f63a68b` (**PASS**)
-- Mainnet Genesis Hash: `00000000490b4d4586dbba29c36209b552b7b5ea3f405527a08ecda977926830` (**PASS**)
+- Mainnet Genesis Hash: `0820d42962071e01c8a7d2e6a3aa5640a17f8a60e9006bf59b6e76ac0001535e` (**PASS**)
 
 ---
 
 ## 5. Consensus Separation & Explicit Activation Rules
 
-1. **Proof of Invariant Under Deactivated State:**
-   - Default state across all profiles is `ArmaxHashActivationHeight = -1`.
+1. **Disabled-Activation Invariant:**
+  - Profiles with `ArmaxHashActivationHeight = -1` disable ArmaxHash v1; this describes Mainnet, Regtest, and Soak, not Testnet.
    - The consensus dispatcher in `core/network.go` enforces:
      ```go
      func IsArmaxHashActive(blockIndex int) bool {
@@ -166,16 +165,14 @@ Differential testing evaluates 30 distinct permutations across:
      }
      ```
    - When `act <= 0` (e.g. `-1` or `0`), the function returns `false` unconditionally.
-   - Verified via unit test `TestActivationHeightDeactivatedInvariant`: across block heights from $0$ to $1,000,000$, `IsArmaxHashActive(h)` returns `false`, ensuring that all historical blocks, database stores, and new candidate blocks evaluate strictly with SHA-256d.
-   - **No blockchain database reset is required; existing testnet blocks remain completely valid.**
+  - The deactivated-activation test verifies that an explicit `-1` activation override returns `false` across its tested heights. Testnet instead activates v1 at height 520 and v2 at height 2500.
+  - These PoW activation heights do not by themselves require a database reset; storage schema migrations are a separate concern.
 2. **Deterministic Fork Activation:**
-   - When an activation height $H > 0$ is scheduled:
-     - Blocks $< H$: verified with SHA-256d.
-     - Blocks $\ge H$: verified with ArmaxHash.
+   - On Testnet, blocks 0..519 use SHA-256d, blocks 520..2499 use ArmaxHash v1, and blocks 2500 onward use ArmaxHash v2.
    - Older nodes rejecting block $H$ will cleanly identify a hardfork boundary rather than experiencing silent state corruption.
 3. **Target Reset Bootstrap (Preventing Chain Stalls):**
-   - At block $H$, `CalculateExpectedTarget` resets the target ceiling to `GetPowLimit()`.
-   - This prevents difficulty carryover from high-hashrate SHA-256d to memory-hard Argon2id, allowing CPU miners to produce block $H$ without stalling, after which LWMA-60 automatically retargets.
+  - At the v1 activation height 520, `CalculateExpectedTarget` uses `GetArmaxHashPowLimit()` for the bootstrap target.
+  - This provides a target appropriate to the new v1 algorithm before LWMA retargeting proceeds. The v2 activation at height 2500 does not use this v1 activation reset.
 4. **P0 Blocker Resolution: Zero-Fallback, Finite Mining Termination & Absolute Storage Immunity:**
    - **Vulnerability Identified:** Previously, if `CalculateArmaxHash()` failed (e.g., if a block header exceeded 1 MiB or had invalid network parameters), `CalculateHash()` would catch the error and silently fall back to `CalculateSha256dHash()`. This could allow an attacker to craft an oversized block that bypassed ArmaxHash entirely, creating a catastrophic consensus split.
    - **Remediation & Hardening:**
@@ -268,8 +265,8 @@ Benchmarks were executed on an Intel Core i5-8365U CPU @ 1.60GHz (x86-64 / amd64
 - **Historical Window Normalization:** Pre-activation SHA-256d blocks within the 60-block sliding window are normalized to `GetArmaxHashPowLimit()` to prevent legacy SHA-256d difficulty from dragging down the target and spiking post-fork difficulty.
 
 ### 8.2 Live Network Multi-Node Consensus Verification
-The ArmaxHash activation at block #520 was deployed to live testnet nodes:
-- **Seed Nodes:** `testnet-seed1.armax-coin.cloud` (`202.10.34.180`) and `testnet-seed2.armax-coin.cloud` (`139.162.46.17`) verified online and peering.
+The original migration report recorded a live-testnet deployment of the ArmaxHash v1 activation at block #520. The seed-availability observations below are historical and do not indicate current service status:
+- **Seed Nodes:** `testnet-seed1.armax-coin.cloud` and `testnet-seed2.armax-coin.cloud` were reported online and peering at the time of that observation.
 - **SBC Mining Validation:** An ARM64 SBC running Armbian (`x96q-v1-3`, 1 worker thread @ ~21.3 H/s) successfully mined block `#571` on live testnet (`armx1m0zc657c6an7zjtlqkd06qvlrkwzmh3c2vj302ge7u5dh2nuv59qyymq62`), which was accepted by all network peers.
 - **Stale Block Resolution:** When concurrent nodes mined competing solutions, daemons correctly issued `HTTP 409 Stale Block`, and miners cleanly aborted stale rounds and advanced to the new tip without forks or orphan chain growth.
 - **Cadence Stabilization:** Block times successfully converged from initial bootstrap intervals (~10s) towards the target steady-state of **120 seconds (2 minutes)** per block as difficulty scaled from Difficulty 3 to Difficulty 4.

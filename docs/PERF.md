@@ -16,11 +16,11 @@ Armax employs JSON wire serialization for P2P network blocks, mempool transactio
 | **Signature (`signature`)** | 3,309 bytes | 6,618 hex chars | Field key + quotes | ~6,634 bytes |
 | **Addresses (`sender`, `recipient`)** | ~64 bytes (Bech32) | 124 chars | Field keys + quotes | ~150 bytes |
 | **Integers (`amount`, `fee`, `nonce`)**| 24 bytes (int64) | ASCII digits | Field keys + syntax | ~57 bytes |
-| **1 Signed ML-DSA-65 Transaction** | **~5,385 bytes** | **10,522 hex chars** | **JSON formatting** | **10,761 bytes (~10.51 KB)** |
+| **Public key + signature fields** | **5,261 raw bytes** | **10,522 hex chars** | **Addresses, metadata, and JSON syntax** | **10,761 bytes for the measured full transaction** |
 
-### Note on P2 Preliminary Measurement vs. Wire Serialization
-- **Raw Cryptographic Payload**: ~5,540 bytes (reflecting in-memory raw binary representation of public key, signature, and state integers).
-- **Actual JSON Wire Format**: **10,761 bytes** (reflecting 2x expansion from hexadecimal encoding of the 1,952-byte public key to 3,904 hex characters and the 3,309-byte signature to 6,618 hex characters, plus JSON keys and delimiters).
+### Raw Key/Signature Size vs. Wire Serialization
+- **Combined raw public key and signature**: 5,261 bytes (1,952 + 3,309 bytes). This excludes addresses and other transaction fields.
+- **Measured JSON transaction**: **10,761 bytes**, including hexadecimal key/signature fields, addresses, metadata, and JSON syntax.
 
 ---
 
@@ -40,15 +40,15 @@ Armax enforces a consensus block size ceiling of `MaxBlockSize = 2,000,000 bytes
 
 ---
 
-## 4. Maximum Block Capacity
+## 4. Measured Capacity Estimate
 
 Under the consensus limit `MaxBlockSize = 2,000,000 bytes`:
 
-$$\text{Capacity} = \left\lfloor \frac{2,000,000 - 653}{10,761 + 1} \right\rfloor = 185 \text{ user transactions}$$
+$$\text{Estimated capacity} = \left\lfloor \frac{2,000,000 - 653}{10,761 + 1} \right\rfloor = 185 \text{ reference-sized user transactions}$$
 
-- **Maximum User Transactions per Block**: **185 transactions**
-- **Maximum Total Transactions per Block (including Coinbase)**: **186 transactions**
-- **Exact Serialized Block Size with 185 User Transactions**: **1,990,513 bytes** (~1.898 MB)
+- **Estimated User Transactions for the Reference Size**: **185 transactions**
+- **Estimated Total Transactions (including Coinbase)**: **186 transactions**
+- **Measured Fixture Size with 185 User Transactions**: **1,990,513 bytes** (~1.898 MiB). Individual JSON transaction sizes vary with field values, so this is not a universal maximum-size proof.
 - **Safety Margin / Headroom**: **9,487 bytes** remaining below the 2,000,000-byte consensus limit.
 
 ---
@@ -56,7 +56,7 @@ $$\text{Capacity} = \left\lfloor \frac{2,000,000 - 653}{10,761 + 1} \right\rfloo
 ## 5. Throughput and Mempool Economics
 
 - **Target Block Time**: 120 seconds (2 minutes).
-- **Maximum Transaction Throughput**:
+- **Estimated User-Transaction Rate at the Target Interval**:
   $$\text{Throughput} = \frac{185 \text{ transactions}}{120 \text{ seconds}} \approx 1.54 \text{ TPS}$$
 - **Mempool Minimum Relay Fee**:
   $$\text{MinRelayFee} \times \lceil\text{txSize} / 1000\rceil = 1,000 \times \lceil 10,761 / 1,000 \rceil = 11,000 \text{ Armoids (0.00011 ARMX)}$$

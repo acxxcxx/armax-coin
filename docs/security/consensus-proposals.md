@@ -19,33 +19,31 @@ In accordance with strict consensus safety protocols, **these proposals MUST NOT
 
 | Proposal ID | Title | Consensus Subsystem | Fork Type | Target Activation |
 |---|---|---|---|---|
-| **C1** | Extended MTP Window & Max-Time-Past Guard | Header Timestamp Validation | Hard Fork | Proposed Block #15,000 |
-| **C2** | Strict Monotonic Timestamps for LWMA-1 Difficulty | LWMA Difficulty Calculation | Hard Fork | Proposed Block #15,000 |
-| **C3** | ML-DSA-65 Canonicality & Network Preimage Binding | Cryptographic Verification | Hard Fork | Proposed Block #20,000 |
+| **C1** | Extended MTP Window & Parent-Relative Timestamp Bound | Header Timestamp Validation | Hard Fork | Proposed Block #15,000 |
+| **C2** | Nondecreasing Timestamps for LWMA-1 | LWMA Difficulty Calculation | Hard Fork | Proposed Block #15,000 |
+| **C3** | ML-DSA-65 Canonicality & Cross-Network Replay Audit | Cryptographic Verification | Audit / possible rule change | No activation proposed |
 | **C4** | Transaction Time-To-Live (TTL / Expiry Height) | Mempool & Transaction Structure | Hard Fork | Proposed Block #25,000 |
-| **C5** | Reorg Depth Limit & Coinbase Maturity Invariant | Fork Resolution & State Replay | Consensus Rule | Proposed Block #15,000 |
+| **C5** | Reorg Depth Limit & Coinbase Maturity Invariant | Fork Resolution & State Replay | Local policy | No activation proposed |
 
 ---
 
-## Proposal C1: Extended MTP Window & Max-Time-Past Guard
+## Proposal C1: Extended MTP Window & Parent-Relative Timestamp Bound
 
 ### 1. Problem Statement & Attack Scenario
 The current consensus rules (`core/consensus.go:validateBlockContext`) validate block timestamps using:
 1. **Median Time Past 11 (MTP-11):** `block.Timestamp > CalculateMedianTimePast(chainHistory, 11)`
 2. **Future Time Limit:** `block.Timestamp <= time.Now() + 2 hours`
 
-**Vulnerability:**
-With an MTP window of only 11 blocks (~22 minutes at 120s target spacing), a coalition of colluding miners controlling ~25-35% of network hashrate can execute a "timewarp" attack:
-- Miners artificially hold timestamps at `MTP + 1s` for consecutive blocks.
-- The LWMA difficulty algorithm perceives a sudden spike in block generation speed (time delta compressed to near zero), followed by artificial delays, oscillating difficulty downwards.
-- Furthermore, there is no **Max-Time-Past** ceiling (how far in the past a block timestamp can be relative to the active network time), enabling historical timestamp manipulation during long network partitions.
+**Risk to evaluate:**
+An 11-block MTP window allows timestamps to vary within the existing consensus constraints. However, the current LWMA implementation clamps individual solve times and bounds the weighted solve-time sum, so this proposal must not assume unbounded difficulty suppression. Any attack claim or hashrate threshold requires reproducible analysis against the implemented rules.
 
 ### 2. Proposed Consensus Rule Change
 1. **Expand MTP Window to 55 Blocks (MTP-55):**
    - Sample the median timestamp across the previous 55 blocks (~110 minutes).
-   - This matches proven defenses in modern PoW networks (e.g., Bitcoin Cash, DigiByte) against short-window timestamp manipulation.
-2. **Enforce Max Past Timestamp Boundary:**
-   - Require `block.Timestamp >= prev.Timestamp - MaxClockDrift` where `MaxClockDrift = 1800` (30 minutes).
+    - The security effect and liveness impact of this window size require simulation and review before adoption.
+2. **Bound Parent-Relative Timestamp Regression:**
+    - Consider requiring `block.Timestamp >= prev.Timestamp - MaxClockDrift`, where `MaxClockDrift = 1800` seconds.
+    - This bounds regression relative to the parent timestamp; it does not bound age relative to wall-clock time. A wall-clock age check would be node policy unless clock-skew and historical-replay behavior are specified carefully.
 
 ```go
 // Proposed Consensus Rule C1 Specification:
@@ -53,6 +51,9 @@ func ValidateBlockTimestampC1(b *Block, prev *Block, chainHistory []Block) error
     mtp55 := CalculateMedianTimePast(chainHistory, 55)
     if b.Timestamp <= mtp55 {
         return fmt.Errorf("block timestamp %d <= MTP-55 %d", b.Timestamp, mtp55)
+    }
+    if b.Timestamp < prev.Timestamp-MaxClockDrift {
+        return fmt.Errorf("block timestamp %d regresses too far from parent timestamp %d", b.Timestamp, prev.Timestamp)
     }
     // Wall-clock ceiling remains active only for live tip blocks
     if b.Timestamp > time.Now().Unix() + MaxFutureBlockTime {
@@ -76,7 +77,7 @@ func ValidateBlockTimestampC1(b *Block, prev *Block, chainHistory []Block) error
 
 ---
 
-## Proposal C2: Strict Monotonic Timestamps for LWMA-1 Difficulty
+## Proposal C2: Nondecreasing Timestamps for LWMA-1 Difficulty
 
 ### 1. Problem Statement & Attack Scenario
 Currently, LWMA-1 calculates difficulty using the time intervals between adjacent blocks:
@@ -84,12 +85,10 @@ Currently, LWMA-1 calculates difficulty using the time intervals between adjacen
 solvetime := chain[i].Timestamp - chain[i-1].Timestamp
 ```
 Because consensus currently only requires `Timestamp > MTP-11`, it is mathematically possible for `block[i].Timestamp < block[i-1].Timestamp` (negative solvetime).
-When `solvetime < 0`:
-- LWMA-1 clamps `solvetime` to a minimum value or incurs mathematical instability, distorting the difficulty target.
-- Miners can deliberately mine blocks out-of-order within the MTP window to game difficulty downward.
+When `solvetime < 0`, the current implementation clamps the interval and also bounds the accumulated weighted solve time. Negative intervals can still affect the retarget result within those bounds, but they do not cause the unbounded arithmetic instability described by this proposal's earlier draft. The economic impact should be measured before asserting an exploitable difficulty reduction.
 
 ### 2. Proposed Consensus Rule Change
-Enforce **strict weak monotonicity** for block timestamps from activation height:
+Enforce **nondecreasing timestamps** from the activation height:
 ```go
 // Proposed Consensus Rule C2 Specification:
 if b.Index >= ActivationHeight_C2 {
@@ -99,7 +98,7 @@ if b.Index >= ActivationHeight_C2 {
     }
 }
 ```
-Optionally require `b.Timestamp >= prev.Timestamp + 1` to prevent zero-second block intervals.
+Optionally require `b.Timestamp >= prev.Timestamp + 1` for strictly increasing timestamps. The selected rule and its effect on valid historical timestamps must be tested before adoption.
 
 ### 3. Migration & Activation Plan
 - Combined with Proposal C1 at `ActivationHeight = 15000`.
@@ -113,26 +112,23 @@ Optionally require `b.Timestamp >= prev.Timestamp + 1` to prevent zero-second bl
 
 ---
 
-## Proposal C3: ML-DSA-65 Canonicality & Network Preimage Binding
+## Proposal C3: ML-DSA-65 Canonicality & Cross-Network Replay Audit
 
 ### 1. Problem Statement & Attack Scenario
 Armaxcoin uses NIST FIPS 204 ML-DSA-65 post-quantum digital signatures.
-Two theoretical malleability risks exist:
-1. **Signature Non-Canonicality:** ML-DSA-65 signatures contain polynomial vectors $(z, h, c)$. If the verification library accepts non-canonical encodings of coefficients (e.g. non-reduced modular arithmetic or alternate byte packings), an attacker can alter the signature bytes without invalidating the cryptographic signature. This changes the transaction hash (`tx.HashHex()`) without invalidating the witness, creating transaction malleability.
-2. **Cross-Network Replay:** If a transaction signed on `ARMX-TESTNET-1` does not strictly bind the Network ID into the cryptographic signature preimage, the same signature could be replayed on `ARMX-MAINNET-1` once launched.
+Two questions warrant verification; this proposal does not establish either as a vulnerability:
+1. **Signature Encoding:** Confirm the ML-DSA implementation's handling of malformed or non-canonical signature encodings against NIST FIPS 204 and its library contract. Do not claim signature malleability without a reproducible accepted alternate encoding.
+2. **Cross-Network Replay:** The current transaction hash includes the active Network ID, and signature verification recomputes that hash. Add cross-network tests to preserve this behavior; do not describe Network ID binding as absent.
 
 ### 2. Proposed Consensus Rule Change
-1. **Explicit Preimage Network ID Binding:**
-   The canonical signing preimage must be formalized as:
-   $$\text{Preimage} = \text{SHA-256}(\text{NetworkID} \parallel \text{SigAlg} \parallel \text{SenderAddress} \parallel \text{RecipientAddress} \parallel \text{Amount} \parallel \text{Fee} \parallel \text{Nonce})$$
-2. **Canonical Witness Hash Verification:**
-   Strictly verify that the ML-DSA-65 signature length is exactly 3309 bytes and passes canonical boundary reduction checks before caching or mempool acceptance.
+1. **Preimage Conformance Tests:** Document the existing canonical transaction record, including Network ID, SigAlg, sender public key, addresses, amount, fee, nonce, and applicable script fields; test that signing and verification use it consistently.
+2. **Signature Validation Review:** Confirm exact signature-length and malformed-encoding rejection behavior in the deployed `crypto/mldsa` implementation. Add checks only where the library specification requires them and the current code lacks them.
 
 ### 3. Migration & Activation Plan
-- Scheduled for activation height `ActivationHeight_C3 = 20000`.
+- No activation height should be selected unless review identifies a consensus-rule change. If implementation behavior changes, specify compatibility and activation requirements separately from this audit.
 
 ### 4. Backward Compatibility
-- **Hard Fork:** Transactions using the old preimage scheme will fail signature verification on post-activation nodes.
+- **Compatibility:** No transaction-format change is implied by auditing the current preimage. Any proposed signing-format change would need a separate compatibility analysis.
 
 ### 5. Test Plan
 - Test attempting to replay a testnet-signed transaction on a regtest/mainnet node (must fail verification).
@@ -143,10 +139,7 @@ Two theoretical malleability risks exist:
 ## Proposal C4: Transaction Expiry (Time-To-Live / Block Height Expiration)
 
 ### 1. Problem Statement & Attack Scenario
-Currently, transactions in Armaxcoin do not expire.
-If a user submits a transaction with low fee during a period of high network activity, the transaction may remain unconfirmed in mempools indefinitely.
-- If the sender forgets about it and transfers funds months later, an adversary can broadcast the stale transaction, executing an unexpected transfer.
-- Mempools can become bloated with ancient, unexecutable transactions.
+Standard transactions do not currently have an explicit expiry field. A low-fee transaction may remain in a node's mempool until it is evicted or becomes invalid. Because account nonces are sequential, confirming a later transaction from the same account makes an earlier nonce stale; an old transaction cannot later execute with an already-consumed nonce. An explicit expiry could still give users predictable transaction lifetimes and simplify mempool cleanup.
 
 ### 2. Proposed Consensus Rule Change
 Add an optional or mandatory `ExpiryHeight` field to `Transaction`:
@@ -176,44 +169,43 @@ type Transaction struct {
 ## Proposal C5: Reorg Depth Limit & Coinbase Maturity Invariant
 
 ### 1. Problem Statement & Attack Scenario
-Currently:
-- `MaxReorganizationDepth = 720` blocks (~24 hours).
-- `CoinbaseMaturity = 100` blocks (~3.3 hours).
+For Mainnet, the current profile uses `MaxReorganizationDepth = 720` blocks and `CoinbaseMaturity = 100` confirmations. Testnet maturity is 10 confirmations; the reorganization-depth limit is 720 blocks.
 
-**Catastrophic State Split Scenario:**
-1. Miner mines block #1000 and receives 100 ARMX block reward.
-2. At block #1100 (100 confirmations), the coinbase reward matures. The miner transfers 100 ARMX to a merchant in transaction $T_x$.
+**Possible Reorganization Scenario:**
+1. A miner receives the current 60 ARMX block reward in block #1000 and has no other funds.
+2. At block #1099, that reward has 100 confirmations (`1099 - 1000 + 1`) and is mature under the Mainnet profile. The miner spends 60 ARMX in a transaction included at block #1100.
 3. At block #1150, an alternative branch with higher chainwork appears, forking from block #990 (depth: 160 blocks, well within `MaxReorganizationDepth = 720`).
 4. The node reorganizes to the alternative branch.
-5. In the new branch, block #1000 was mined by a different miner. Therefore, the original miner's account at block #1100 has a balance of 0 ARMX!
-6. $T_x$ now attempts to double-spend non-existent funds. The merchant has already shipped physical goods based on 50 confirmations of $T_x$.
+5. In the new branch, block #1000 was mined by a different miner. Assuming no other funds, the original miner cannot fund the transaction on that branch.
+6. The reorganization removes the original reward and the block #1100 transaction from canonical history. A merchant relying on that transaction may lose settlement; this is a reorganization risk, not a separate consensus state split.
 
 ### 2. Proposed Consensus Rule Change
-**Rule:** Reorganization depth must NEVER exceed the coinbase maturity period:
+**Candidate policy:** Compare the maximum accepted fork depth with coinbase maturity, but do not assume that `MaxReorganizationDepth <= CoinbaseMaturity` alone guarantees that a matured coinbase spend cannot be reorganized. The definition of fork depth, tip confirmation count, and the point at which a spend is included must be tested together.
 $$\text{MaxReorganizationDepth} \le \text{CoinbaseMaturity}$$
 **Implementation:**
-- Option A: Reduce `MaxReorganizationDepth` from 720 to 100 blocks.
-- Option B: Increase `CoinbaseMaturity` from 100 to 720 blocks.
+- Option A: Reduce `MaxReorganizationDepth` from 720 to a smaller value, recognizing that this also rejects deeper recovery branches after long partitions.
+- Option B: Increase Mainnet's `CoinbaseMaturity` from 100 blocks (Testnet currently uses 10), which delays coinbase spending but does not prevent reorganizations of ordinary transfers.
 
-**Recommendation:** Option A (Clamp `MaxReorganizationDepth = 100`) is strongly recommended. 100 blocks (3.3 hours) provides robust protection against selfish mining while guaranteeing that matured coinbase expenditures can NEVER be invalidated by a reorganization.
+**Recommendation:** Treat the reorganization limit as a recovery-policy tradeoff, not a finality guarantee. A smaller limit reduces the maximum rollback accepted by a node but does not prevent shallower reorganizations, ordinary transaction rollback, or selfish mining.
 
 ```go
-// Proposed Consensus Constant Alignment:
+// Mainnet example only; profile-specific values require separate review.
 const (
     CoinbaseMaturity       = 100 // confirmations required to spend coinbase rewards
-    MaxReorganizationDepth = 100 // strictly <= CoinbaseMaturity [C5]
+    MaxReorganizationDepth = 100 // example policy only; does not provide transaction finality
 )
 ```
 
 ### 3. Migration & Activation Plan
-- Can be activated at `ActivationHeight_C5 = 15000` alongside C1 and C2.
+- Specify whether a changed local reorganization policy takes effect immediately on software upgrade or is height-gated; this is not a consensus activation by itself.
 
 ### 4. Backward Compatibility
 - Node policy change: nodes simply reject candidate forks that diverge deeper than 100 blocks from the current tip.
 
 ### 5. Test Plan
 - Simulate fork reorganization attempt at depth 101 blocks (must return `reorg depth exceeds MaxReorganizationDepth`).
-- Verify that no spent coinbase output can ever be rolled back past maturity.
+- Test fork depths around the configured boundary, including the exact maturity and confirmation-count edge cases.
+- Verify that reorganized transactions are removed/replayed consistently and document that confirmation counts are risk guidance, not irreversible settlement.
 
 ---
 
@@ -222,7 +214,7 @@ const (
 | Milestone | Target Testnet Height | Target Date | Scope |
 |---|---|---|---|
 | **Phase 1** | Block #15,000 | Q1 2027 | C1 (MTP-55), C2 (Monotonic Time), C5 (Reorg Depth Clamp) |
-| **Phase 2** | Block #20,000 | Q2 2027 | C3 (ML-DSA-65 Canonicality & Network Preimage Binding) |
+| **Phase 2** | No activation proposed | Q2 2027 | C3 (ML-DSA-65 Encoding and Cross-Network Replay Audit) |
 | **Phase 3** | Block #25,000 | Q3 2027 | C4 (Transaction Expiry Height / TTL) |
 
 *Document compiled in strict accordance with Armaxcoin Security Audit Guidelines.*

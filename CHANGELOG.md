@@ -10,10 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **ArmaxHash v2 Stream-Fast PoW Consensus (Hard Fork at Block #2500):**
   - Activated high-efficiency two-stage Chained BLAKE2b Proof-of-Work:
-    - Stage 1 (Prehash): `BLAKE2b-512("ARMX-BLAKE2B-V2:" || NetworkID || ":" || Header)`
-    - Stage 2 (BlockHash): `BLAKE2b-256(Prehash || Header)`
-  - Achieves zero heap allocations (`0 B/op`) in tight worker loops, eliminating DRAM memory bus saturation on multi-core PCs, ARM single-board computers (Raspberry Pi/Orange Pi), and mobile devices.
-  - Sub-millisecond block verification enabling fast, low-latency block propagation across global peer meshes.
+    - Stage 1: `D1 = BLAKE2b-512("ARMX-POW-V2\0" || 0x02 || byte(len(NetworkID)) || NetworkID || Header)`
+    - Stage 2: `BlockHash = BLAKE2b-256(D1)`
+  - The fixed-header `HashV2` benchmark reports 0 allocations/op. This does not establish zero allocations or a fixed verification time for the full block/miner path.
   - 100% backward verification compatibility preserving historical block eras (Blocks 0..519 on Double-SHA256, Blocks 520..2499 on ArmaxHash v1 Argon2id).
 - **Consensus Improvement Proposals (C1-C5):**
   - Published formal consensus enhancement specifications (`docs/security/consensus-proposals.md`) addressing reorg finality boundaries, timestamp clamping, and mempool DoS mitigation.
@@ -49,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Post-Quantum Cryptography:** Full implementation and consensus enforcement of NIST FIPS 204 ML-DSA-65 digital signatures for all transactions and addresses via Go standard library `crypto/mldsa`.
-- **ArmaxHash Proof-of-Work:** CPU-oriented PoW algorithm chaining Argon2id (2048 KiB scratchpad, $t=2, p=1$), Blake2b-512, and SHA-256, activated at block #520 on testnet (see `docs/CONSENSUS_AND_NETWORK.md`).
+- **ArmaxHash v1 Proof-of-Work:** Testnet blocks from height 520 use a network/header-derived BLAKE2b-512 prehash, Argon2id (2048 KiB, $t=2$, $p=1$), and BLAKE2b-256 finalization (see `docs/CONSENSUS_AND_NETWORK.md`).
 - **Dynamic Difficulty Retargeting:** Real-time Linear Weighted Moving Average (LWMA-1) algorithm with $N=60$ sliding window and 120-second target block time.
 - **P2P Transport Security:** Mandatory TLS 1.3 encryption across all peer-to-peer gossip connections with Trust On First Use (TOFU) certificate fingerprint pinning in `peers.json`.
 - **Concurrency & Concurrency Hardening:** Lockless chainwork queries (`GetTotalChainworkUnsafe`), deadlock elimination in P2P sync loops, and batch commit optimizations during initial block download.

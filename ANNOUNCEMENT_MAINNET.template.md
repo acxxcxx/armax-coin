@@ -58,7 +58,7 @@
 [list]
 [*] [b]Public Key Size:[/b] 1,952 bytes (3,904 hex characters on wire)
 [*] [b]Signature Size:[/b] 3,309 bytes (6,618 hex characters on wire)
-[*] [b]Raw Cryptographic Payload:[/b] ~5,385 bytes per transaction
+[*] [b]Combined Public Key and Signature:[/b] 5,261 raw bytes per transaction (before addresses and transaction fields)
 [*] [b]Total JSON Wire Format:[/b] ~10,761 bytes per transaction
 [*] [b]Block Size Limit:[/b] 2,000,000 bytes (2 MB)
 [*] [b]Maximum Block Capacity:[/b] Up to 185 user transactions per block (+1 coinbase transaction = 186 total, ~1,990,513 bytes)

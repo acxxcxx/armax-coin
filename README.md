@@ -37,10 +37,10 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 |---|---|---|
 | **Consensus Mechanism** | Proof-of-Work (PoW) | Dynamic 256-bit numerical target difficulty adjustment via LWMA-1 ($N=60$) |
 | **Fork Choice Rule** | Heaviest Chain (Cumulative Chainwork) | Cumulative Proof-of-Work ($\sum \frac{2^{256}}{\text{Target} + 1}$) strictly beats low-difficulty chains |
-| **Max Reorg Depth** | 720 Blocks (~24 hours) | Finality boundary preventing deep history overwrites while accommodating natural network splits |
-| **Max Block Transactions** | 1,000 Txs / Block | Hard consensus ceiling preventing block bloat and memory exhaustion attacks |
+| **Max Reorg Depth** | 720 Blocks (~24 hours at target cadence) | Local reorganization-depth policy limit; not protocol finality or a guarantee that transactions cannot be reorganized |
+| **Max Block Transactions** | 1,000 Txs / Block | Consensus transaction-count limit; it does not replace block-size or other resource limits |
 | **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
-| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b, $H \ge 2500$) / ArmaxHash v1 ($520 \le H < 2500$) / Legacy SHA-256d ($H < 520$) | High-throughput, 0-heap allocation Stream-Fast PoW ($H \ge 2500$); see canonical spec in docs/CONSENSUS_AND_NETWORK.md |
+| **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b, $H \ge 2500$) / ArmaxHash v1 ($520 \le H < 2500$) / Legacy SHA-256d ($H < 520$) | The v2 hash-function benchmark reports 0 allocations/op for a fixed header; this does not describe allocations in the full block/miner path. See docs/CONSENSUS_AND_NETWORK.md |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Derivation** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |
@@ -51,7 +51,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **P2P Flood Defense** | Seen-Filter Hash Cache & Orphan Pools | LRU deduplication cache; bounded 100 orphan blocks (max 10/peer) & 500 orphan txs pool |
 | **DNS Seeds (Testnet)** | Dedicated Testnet Seeds | `testnet-seed1.armax-coin.cloud:19335`, `testnet-seed2.armax-coin.cloud:19335`, `testnet-seed3.armax-coin.cloud:19335` |
 | **Storage Engine** | bbolt ACID Key-Value Store | State snapshots every 1,000 blocks, undo logging (1,440 retention), and crash recovery |
-| **Target Block Time** | 120 seconds (~2 minutes) | Balanced propagation window ensuring ultra-low orphan rates across heterogeneous nodes |
+| **Target Block Time** | 120 seconds (~2 minutes) | Difficulty-adjustment target; observed block intervals and orphan rates vary with network conditions |
 | **Difficulty Algorithm** | LWMA-1 (Linear Weighted Moving Average) | Continuous 256-bit numerical target adjusted per block across 60-block window; dynamic floor down to Difficulty 1 for ArmaxHash |
 | **Candidate Block Extraction** | `/getblocktemplate` JSON RPC | Bounded block candidate endpoint (MaxBlockTransactions - 1) for external miners |
 | **RPC Security** | Loopback Binding & Cookie/Basic Auth | Mutation endpoints strictly require auth/cookie or `-rpcuser`/`-rpcpassword`; `-rpcinsecure-localhost` flag; /chain bounded to 50 blocks |
@@ -60,7 +60,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Maximum Total Supply** | 126,000,000 ARMX | Strict hard cap (12,600,000,000,000,000 Armoids, 8 decimal places; real theoretical emission: 125,999,999.874 ARMX) |
 | **Supply Accounting** | $O(1)$ Incremental State Cache | Constant-time circulating supply tracking without block history traversal |
 | **Genesis Allocation** | 60 ARMX (Burned) | Hardcoded deterministic Genesis block burned to zero address (`armx1qqqq...plwcdd`) without premine |
-| **Transfer Settlement (Standard)** | **6 Confirmations (Both Testnet & Mainnet)** | Standard account transfers are safely confirmed and settled after **6 block confirmations** on **BOTH Testnet and Mainnet** (~12 minutes). High-value payments recommend 12 confirmations for irreversible finality. Standard transfers have NO immature delay. |
+| **Transfer Confirmation Guidance** | 6 confirmations (standard), 12 (high-value) | These are operator guidance values exposed by RPC/UI, not consensus rules or irreversible finality. Ordinary transfers have no coinbase-maturity delay. |
 | **Coinbase Reward Maturity** | Profile-Enforced Lock Queue | Newly mined block rewards enter an immature lock queue before becoming spendable: **Public Testnet: 10 confirmations**, **Mainnet: 100 confirmations**, Regtest: 1 confirmation. |
 | **Network Profiles** | Mainnet (Unreleased / Locked) & Testnet Profiles | Mainnet (`ARMX-MAINNET-1`: P2P 19334, RPC 19332 - locked / rejected) \| Testnet (`ARMX-TESTNET-1`: P2P 19335, RPC 19333 - active) |
 
@@ -218,15 +218,15 @@ Transfer testnet coins to another address (requires sufficient spendable balance
 # Windows
 .\armsend.exe -to <RECIPIENT_ADDRESS> -amount 10 -wallet my_testnet_wallet.json
 
-# Wait for 1 confirmation after broadcast:
+# Wait until the transaction is included and has its first confirmation:
 .\armsend.exe -to <RECIPIENT_ADDRESS> -amount 5.0 -wait
 
 # Inspect or decode a transaction by TXID:
 .\armsend.exe -decode <TXID>
 ```
 > [!NOTE]
-> **Transfer Settlement vs Coinbase Maturity:**
-> - **Standard Transfers:** Funds require **6 block confirmations** on **BOTH Testnet and Mainnet** (~12 minutes) for standard safe payment settlement (12 confirmations recommended for high-value / irreversible finality). Standard transfers have NO immature delay.
+> **Transfer Confirmation Guidance vs Coinbase Maturity:**
+> - **Standard Transfers:** Consensus does not require a fixed confirmation count before an ordinary transfer can be spent again. The RPC/UI reports 6 confirmations as general payment guidance and 12 for higher-value payments; neither count guarantees irreversible finality. `armsend -wait` waits for the first confirmation only.
 > - **Mining Rewards (Coinbase):** Freshly mined coinbase rewards require consensus maturity confirmations (**10 on Public Testnet**, **100 on Mainnet**) before entering spendable balance.
 
 ### 7. Testnet Troubleshooting
@@ -363,18 +363,18 @@ The build script generates 5 binaries in the root directory:
 
 #### Testnet Target Specification & Hashrate Dynamics
 - **Testnet Genesis Target (Legacy $H < 520$):** `0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (true 28 leading zero bits, SHA-256d baseline).
-- **ArmaxHash Timeline & Targets:** Blocks 0..519 use bootstrap Double-SHA256 (`0000000ffff...`). Blocks 520..2499 use ArmaxHash v1 (Argon2id 2048 KiB, bootstrap target `000ffff...`). Blocks 2500+ activate **ArmaxHash v2 Stream-Fast** (chained BLAKE2b with zero heap allocation, high-speed execution for commodity CPUs and ARM edge devices).
+- **ArmaxHash Timeline & Targets:** Blocks 0..519 use bootstrap Double-SHA256 (`0000000ffff...`). Blocks 520..2499 use ArmaxHash v1 (derived BLAKE2b-512 input, Argon2id 2048 KiB, BLAKE2b-256 finalization). Blocks 2500+ use **ArmaxHash v2 Stream-Fast** (domain-separated chained BLAKE2b); the fixed-header hash benchmark reports 0 allocations/op, not end-to-end miner performance.
 - **Target Block Time:** 120 seconds ($T=120\text{s}$).
 - **Coinbase Maturity:** Consensus-enforced queue per profile (Mainnet: 100 blocks, Public Testnet: 10 blocks, Regtest: 1 block). Freshly mined rewards enter an on-chain immature queue and become spendable only after the required block confirmations are appended to the chain.
 - **Dynamic Difficulty Retargeting (LWMA-1):** Continuous 256-bit numerical target adjusted per block across an $N=60$ window ($N+1=61$ blocks evaluated).
   - Anti-timewarp clamping: $\text{solveTime} \in [-720\text{s}, +720\text{s}]$.
   - Dampening bounds: $\text{weightedSolveTimes} \in [\frac{\text{expected}}{4}, \text{expected} \times 4]$.
-  - Dynamic Floor: Floor is opened to `DifficultyToTarget(1)`, enabling low-power single-thread ARM SBC miners (e.g., Armbian at ~20 H/s) to mine blocks smoothly while scaling to multi-node clusters.
+  - Dynamic target ceiling: During ArmaxHash operation, the target may rise as high as `DifficultyToTarget(1)`. This permits difficulty to decrease but does not guarantee that a particular device can mine blocks at the target cadence.
   - Historical Window Normalization: Pre-activation SHA-256d blocks are normalized to `ArmaxHashPowLimit` during the 60-block transition to prevent legacy targets from dragging down the target.
 - **Hardware Profile:**
-  - ARM SBC (Armbian Orange Pi / Raspberry Pi, 1 worker thread): ~20-25 H/s
-  - Multi-Core Desktop / Laptop CPU (2-8 worker threads): ~250-700 H/s
-  - Network steady-state converges smoothly to the 120-second target block time.
+  - Historical rates of roughly 20-25 H/s on ARM SBCs and 250-700 H/s on desktop CPUs refer to the Argon2id v1 era and are not representative of active v2 mining.
+  - The v2 `HashV2` parallel benchmark on an Intel Core i5-8365U reported about 15.2 million hashes/s aggregate and 0 allocations/op for its fixed-header benchmark. This measures the hash primitive, not end-to-end mining throughput; results vary by hardware and workload.
+  - The 120-second value is a target block interval, not a guarantee that observed intervals will converge smoothly or remain constant.
 
 #### Production Logging Standards
 All binaries implement standard, structured logging:
@@ -463,7 +463,7 @@ Armaxcoin nodes communicate over raw TCP sockets using newline-delimited JSON me
 | `PEERS_LIST` | Direct | Returns `[]string` containing discovered peer addresses. |
 
 ### 3. P2P Hardening & Transport Encryption
-- **Wire Encryption:** Automatic TLS 1.3 handshake with ephemeral in-memory certificates prevents passive ISP wiretapping and DPI inspection. Note: P2P TLS transport is unauthenticated (does not verify peer identity via PKI/CA).
+- **Wire Encryption:** P2P uses TLS 1.3 with a persistent self-signed node identity stored in `p2ptls.pem`; TOFU pins the peer certificate fingerprint after first contact. The initial connection is not authenticated by a PKI/CA and can be intercepted unless fingerprints are distributed through a trusted out-of-band channel.
 - **Sybil / Eclipse Defense:** Subnet limiter enforces a maximum of **3 concurrent peers per `/24` IPv4 or `/48` IPv6 subnet** (can be bypassed for LAN/testnet via `disable_subnet_limit`).
 - **Decentralized Discovery:** Dedicated profile DNS seeds:
   - **Testnet:** `testnet-seed1.armax-coin.cloud:19335`, `testnet-seed2.armax-coin.cloud:19335`, `testnet-seed3.armax-coin.cloud:19335`
@@ -521,7 +521,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 3. **Encrypted P2P Transport:** Fully operational TLS 1.3 socket encryption with TOFU pinning.
 4. **Layer-2 Payment Channels (Planned):** Experimental HTLC primitives in core transactions for future off-chain microtransactions.
 5. **Lightweight Smart Contracts (Future Research):** Sandboxed WebAssembly (WASM) VM executing expressive UTXO smart contracts.
-6. **Small-Device PoW Consensus:** Responsive LWMA-1 difficulty adjustment ($N=60$) coupled with **ArmaxHash v2 Stream-Fast** (activated at block #2500) for high-efficiency, zero-alloc CPU mining on commodity desktops, laptops, and ARM mobile/edge devices.
+6. **Small-Device PoW Consensus:** LWMA-1 difficulty adjustment ($N=60$) and **ArmaxHash v2 Stream-Fast** (active from block #2500 on testnet). The hash primitive is fast in the included benchmark; complete mining performance and device efficiency vary by hardware and workload.
 7. **Democratic On-Chain Governance:** Block header miner/node signaling for smooth protocol upgrades.
 
 ---
@@ -530,7 +530,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 1. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 2. **Code Audit Status:** Armaxcoin is an experimental Layer-1 cryptocurrency under active testnet development. Neither the core consensus engine, the ArmaxHash implementation, nor the post-quantum signature integration has undergone a formal third-party cryptographic security audit.
-3. **PoW Consensus Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d), and blocks 520..2499 used ArmaxHash v1 (Argon2id 2 MB). Active mining from block #2500 onwards enforces **ArmaxHash v2 Stream-Fast** (chained BLAKE2b), engineered to eliminate DRAM memory churn and facilitate high-throughput, energy-efficient CPU mining across commodity hardware and mobile/ARM devices without claiming permanent ASIC immunity.
+3. **PoW Consensus Evolution:** Historical blocks 0..519 use double-SHA256 (SHA-256d), blocks 520..2499 use ArmaxHash v1, and testnet blocks from #2500 use **ArmaxHash v2 Stream-Fast** (chained BLAKE2b). V2 omits the Argon2id memory-hard stage; throughput, power use, and specialized-hardware resistance have not been established across devices.
 4. **Initial Hashrate & 51% Risk:** Early testnet and bootstrap states operate with low aggregate network hashrate, leaving the blockchain temporarily vulnerable to 51% hash power reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
 5. **ARM Verification Overhead:** NIST FIPS 204 ML-DSA-65 signatures require modular polynomial arithmetic, introducing measurable CPU verification latency on constrained ARM single-board computers (Raspberry Pi, Orange Pi).
 6. **Minimum Go Version:** Compiling Armaxcoin requires Go 1.27+ due to reliance on the standard library `crypto/mldsa` package and toolchain alignment (`go.mod`).
@@ -546,8 +546,8 @@ Major consensus evolution and stability hardening release activating ArmaxHash v
 
 #### Consensus & PoW Evolution (ArmaxHash v2)
 - **ArmaxHash v2 Stream-Fast PoW (Hard Fork Block #2500):** Transitioned active mining from Argon2id v1 to high-efficiency two-stage Chained BLAKE2b (`BLAKE2b-512` prehash + `BLAKE2b-256` block hash).
-- **Zero Heap Allocations:** Engineered worker tight loops with zero allocations (`0 B/op`) and zero DRAM bus saturation for low-thermal commodity PC, ARM, and mobile device CPU mining.
-- **Microsecond Verification:** Accelerates block validation for instant block gossip across international P2P meshes.
+- **Hash Primitive Benchmark:** The fixed-header `HashV2` benchmark reports 0 allocations/op. The full worker loop, including header construction, is not covered by that benchmark; no zero-allocation or DRAM-saturation claim is made for the complete miner.
+- **Validation Performance:** The hash benchmark measures `HashV2` only; full block validation also performs transaction and state checks and is not characterized by this benchmark.
 - **100% Historical Era Preserved:** Maintains backward consensus compatibility across all prior eras (Double-SHA256 blocks 0..519, ArmaxHash v1 blocks 520..2499).
 
 #### Reliability, Storage & Security Hardening
@@ -581,9 +581,9 @@ Initial official public testnet release of the ARMAXcoin Proof-of-Work Layer-1 b
 - **Passphrase Encryption:** BIP-39 24-word recovery mnemonics with PBKDF2/Argon2id keystore protection.
 
 #### Consensus & PoW Hardening
-- **Memory-Hard Hybrid PoW (ArmaxHash):** Dual-phase PoW migration enforcing Argon2id (2048 KiB scratchpad, $t=2, p=1$), Blake2b-512, and SHA-256 at block height $\ge 520$ for CPU mining (see `docs/CONSENSUS_AND_NETWORK.md` for the canonical specification across all eras).
-- **Continuous LWMA-1 Difficulty Adjustment:** Responsive sliding-window retargeting ($N=60$) with safety dampening bounds preventing oscillation, timewarp attacks, and hashrate collapse.
-- **Chainwork & Fork Resolution:** Satoshi cumulative chainwork fork choice rule with a strict `MaxReorganizationDepth = 720` blocks (~24h finality limit).
+- **ArmaxHash v1 PoW:** Testnet blocks 520..2499 use a network/header-derived BLAKE2b-512 prehash, Argon2id (2048 KiB, $t=2$, $p=1$), and BLAKE2b-256 finalization. Later testnet blocks use v2; see `docs/CONSENSUS_AND_NETWORK.md` for the complete height schedule.
+- **Continuous LWMA-1 Difficulty Adjustment:** Sliding-window retargeting ($N=60$) with solve-time clamps and weighted-sum bounds. These bounds limit retarget inputs; they do not eliminate timestamp manipulation or guarantee a particular block cadence.
+- **Chainwork & Fork Resolution:** Cumulative chainwork fork choice with a local `MaxReorganizationDepth = 720` policy limit (~24 hours at target cadence); this is not transaction finality.
 - **Consensus Ceilings:** `MaxBlockTransactions = 1,000` block transaction cap and continuous circulating supply tracking.
 
 #### Network Protocol & Transport Security
