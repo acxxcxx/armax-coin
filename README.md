@@ -119,8 +119,10 @@ sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
 tar -xzf armax-v1.0.5-linux-amd64.tar.gz
-chmod +x armcoind armminer armsend armwallet
+chmod +x armcoind armminer armsend armwallet armgui
 ```
+
+Each archive contains: `armcoind` (node daemon), `armminer` (CPU miner), `armwallet` (keystore and balance), `armsend` (send and query transactions), `armgui` (local web wallet), `armax.conf.example`, `LICENSE`, `README.md`, and `SHA256SUMS`.
 
 #### On Windows (PowerShell):
 ```powershell
@@ -149,14 +151,9 @@ Start the node daemon. By default, it connects to testnet seed nodes, binds P2P 
 .\armcoind.exe
 ```
 
-Expected startup output:
-```text
-WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited
-[Network] Active Network Profile: ARMX-TESTNET-1
-[Storage] Initialized state database at ~/.armax/testnet/data.db
-[P2P] Listening for peers on 0.0.0.0:19335 (TLS 1.3 + TOFU)
-[RPC] HTTP RPC daemon listening on 127.0.0.1:19333 (Loopback only)
-```
+The daemon prints a testnet warning, the active profile (`ARMX-TESTNET-1`), the data directory, the P2P port (`19335`), and the RPC address (`127.0.0.1:19333`). Log lines vary slightly between builds; check the status with `./armcoind -getblockchaininfo` and `./armcoind -getpeerinfo`.
+
+To keep settings in a file, copy `armax.conf.example` to `armax.conf` next to the binary. Command-line flags override values in the file. Use `-config <FILE>` to load a different file.
 
 ### 3. Create a Testnet Wallet Keystore
 
@@ -175,19 +172,30 @@ Generate a new quantum-safe wallet with a 24-word recovery phrase:
 
 ### 4. Start Mining Testnet Blocks
 
-### 4. Start Mining Testnet Blocks
+There are two ways to mine. Use one or the other on a given node.
 
-Mine testnet blocks using your local CPU (multi-threaded, with real-time hashrate telemetry):
+**Option A: mine from a separate miner process** (`armminer` talks to the daemon over RPC):
 
 ```bash
-# Linux / macOS / ARM64 (e.g., 4 CPU worker threads)
+# Linux / macOS / ARM64 (4 CPU worker threads)
 ./armminer -miner <YOUR_ARMX_ADDRESS> -threads 4
 
 # Windows
 .\armminer.exe -miner <YOUR_ARMX_ADDRESS> -threads 4
 
+# Check mining status from the daemon (height, difficulty, hashrate) and exit
+.\armminer.exe -getmininginfo
+
 # Run CPU hashing benchmark (hash/s per thread & aggregate total)
 .\armminer.exe -benchmark
+```
+
+Useful options: `-daemon <URL>[,<URL>...]` for failover between daemons, `-remote` to delegate hashing to the daemon's `/mine` endpoint, `-user` / `-pass` for RPC Basic Auth (or `ARMX_RPC_PASSWORD`), `-statsinterval <SEC>` (default 10), `-delay <MS>` between rounds (default 2000), `-mempool` to list unconfirmed transactions, and `-stop` for shutdown instructions.
+
+**Option B: mine inside the daemon**:
+
+```bash
+./armcoind -mine -miner <YOUR_ARMX_ADDRESS> -miningthreads 4
 ```
 
 ### 5. Check Balance & Maturity
@@ -218,6 +226,12 @@ Transfer testnet coins to another address (requires sufficient spendable balance
 # With explicit fee in tARMX and pre-flight dry-run validation (no broadcast):
 ./armsend -to <RECIPIENT_ADDRESS> -amount 10.5 -fee 0.0001 -dry-run
 
+# Machine-readable output for scripts (errors are JSON objects on stdout)
+./armsend -to <RECIPIENT_ADDRESS> -amount 10 -json
+
+# Estimate the minimum fee
+./armsend -estimatefee
+
 # Windows
 .\armsend.exe -to <RECIPIENT_ADDRESS> -amount 10 -wallet my_testnet_wallet.json
 
@@ -242,6 +256,44 @@ Transfer testnet coins to another address (requires sufficient spendable balance
 | `insufficient spendable balance (Immature: X [< N confirmations])` | Freshly mined coinbase rewards require maturity confirmations (10 on Testnet, 100 on Mainnet). | Wait until the block containing your reward receives at least 10 confirmations on Testnet (100 on Mainnet) before spending. |
 | `peer count = 0 (no peers connected)` | Outbound TCP port 19335 blocked by firewall/ISP. | Ensure outbound TCP 19335 is open, or pass explicit seed peers via `-peers <ip>:19335`. |
 | `Mainnet has not been launched` | Attempting to pass `-network mainnet`. | Mainnet is locked prior to formal launch. Use `-network testnet` (the default). |
+
+---
+
+## Command Reference (v1.0.5)
+
+Run any binary with `-h` for the full, current flag list. Defaults target testnet.
+
+**`armcoind`**: node daemon, RPC, and P2P
+- Run: `./armcoind` (or `.\armcoind.exe`). Config file: `-config <FILE>` (default `armax.conf`). Data: `-datadir <DIR>`.
+- Network and ports: `-network testnet|mainnet`, `-rpcport` (19333), `-p2pport` (19335), `-rpcbind`, `-peers <host:port,...>`, `-rpc-allow-non-loopback` (requires auth).
+- RPC auth: `-rpcuser`, `-rpcpassword`, `-rpcinsecure-localhost` (unauthenticated localhost mutations; not recommended).
+- Mining: `-mine`, `-miner <ADDRESS>`, `-miningthreads <N>`.
+- Status: `-getblockchaininfo`, `-getnetworkinfo`, `-getpeerinfo`, `-getmempoolinfo`, `-checkhealth`, `-verifychain`.
+- Maintenance: `-shutdown` (asks a running daemon to stop via RPC), `-resync` (backs up the database and resyncs from genesis), `-reindex`.
+- Logging: `-loglevel error|warn|info|debug|trace`, `-debug <net,sync,mempool,validation,rpc,discovery,miner|all>`.
+- Transport: `-require-tls` (no unencrypted fallback), `-p2p-tofu` (TOFU certificate pinning).
+
+**`armminer`**: CPU miner client (see step 4)
+- Mining: `-miner <ADDRESS>` (required), `-threads <N>` (0 = all cores), `-delay <MS>`, `-benchmark`, `-dry-run`, `-remote` (use the daemon's `/mine`).
+- Daemon: `-daemon <URL,...>`, `-rpcport`, `-rpcuser`/`-user`, `-rpcpassword`/`-pass` (also `ARMX_RPC_PASSWORD`), `-key` (also `ARMX_MINE_KEY`, for remote node authorization).
+- Info: `-getmininginfo`, `-getworkinfo`, `-mempool`, `-info`, `-statsinterval <SEC>`, `-stop`, `-version`.
+
+**`armwallet`**: keystore, addresses, and balance
+- Keystore: `-create`, `-restore "<24 WORDS>"`, `-address`, `-listaddresses`, `-walletcheck`, `-backup <DEST>`, `-rescan`. Use `-wallet <FILE>` (alias for `-file`, default `wallet.json`). `-force` overwrites an existing file without a backup.
+- Queries: `-balance <ADDRESS>`, `-gettransaction <TXID>`, `-mempool`, `-daemon <URL>`.
+- Environment: `ARMX_WALLET_PASSPHRASE` skips the passphrase prompt. Keep it out of shell history and scripts; prefer the prompt.
+
+**`armsend`**: transaction sender and query tool
+- Send: `-to <ADDRESS>` with `-amount <DECIMAL>` or `-amount-armoids <N>`. Optional `-fee <DECIMAL>` or `-fee-armoids <N>`, `-wallet <FILE>`, `-dry-run`, `-wait` (first confirmation).
+- Query: `-decode <TXID>`, `-confirmations <TXID>`, `-mempool`, `-estimatefee`, `-info`.
+- Output: `-json`. Other: `-daemon`, `-rpcport`, `-rpcuser`/`-rpcpassword`, `-datadir`.
+
+**`armgui`**: local GUI wallet, bound to localhost
+- Windows (`armgui.exe`): desktop window. Flags: `-network`, `-rpcport`, `-p2pport`, `-datadir`.
+- Linux / macOS / ARM64 (`./armgui`): serves a web UI on localhost. Flags: `-port <PORT>` (default 18088), `-rpc <URL>` (default `http://127.0.0.1:19333`), `-no-browser` (do not open a browser automatically).
+- On Linux / macOS, open `http://127.0.0.1:18088` in a browser after it starts.
+
+**Common flags:** `-version` (print version and exit) works on `armcoind`, `armminer`, `armwallet`, and `armsend`. `-info` (print the active network profile and exit) works on the same four.
 
 ---
 
