@@ -63,6 +63,14 @@ func TestConsensusParametersFrozen(t *testing.T) {
 		t.Fatalf("Mainnet P2PMagic mismatch: got %s", MainnetProfile.P2PMagic)
 	}
 
+	// Timestamp rules (C1/C2) hard-fork heights, v1.0.5: must never change once the tip passes them.
+	if TestnetProfile.TimestampRulesActivationHeight != 8000 {
+		t.Fatalf("Testnet timestamp rules activation height mismatch: got %d", TestnetProfile.TimestampRulesActivationHeight)
+	}
+	if MainnetProfile.TimestampRulesActivationHeight != 0 {
+		t.Fatalf("Mainnet timestamp rules activation height mismatch: got %d", MainnetProfile.TimestampRulesActivationHeight)
+	}
+
 	// 5. Testnet Network Profile & Ports
 	if TestnetProfile.NetworkID != "ARMX-TESTNET-1" {
 		t.Fatalf("Testnet NetworkID mismatch: got %s", TestnetProfile.NetworkID)

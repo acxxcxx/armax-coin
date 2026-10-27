@@ -751,6 +751,10 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		target := bc.CalculateLWMA1()
 		diff := core.TargetToDifficulty(target)
 		blockReward := bc.GetBlockReward(latest.Index + 1)
+		curTime := time.Now().Unix()
+		if minTs := core.MinValidTimestamp(bc.Chain, &latest, latest.Index+1); curTime < minTs {
+			curTime = minTs
+		}
 		bc.Lock.RUnlock()
 
 		if candidateTxs == nil {
@@ -771,7 +775,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			"version":           1,
 			"previousblockhash": latest.Hash,
 			"height":            latest.Index + 1,
-			"curtime":           time.Now().Unix(),
+			"curtime":           curTime,
 			"difficulty":        diff,
 			"target":            fmt.Sprintf("%064x", target),
 			"coinbasevalue":     coinbaseValue,

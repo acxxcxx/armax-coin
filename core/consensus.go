@@ -41,10 +41,15 @@ func CalculateChainwork(chain []Block) *big.Int {
 
 // CalculateMedianTimePast computes the median timestamp of up to 11 previous blocks (BIP-113 standard)
 func CalculateMedianTimePast(chain []Block, upToIndex int) int64 {
-	if upToIndex <= 0 || len(chain) == 0 {
+	return CalculateMedianTimePastN(chain, upToIndex, LegacyMTPWindow)
+}
+
+// CalculateMedianTimePastN computes the median timestamp of up to window blocks preceding upToIndex.
+func CalculateMedianTimePastN(chain []Block, upToIndex int, window int) int64 {
+	if upToIndex <= 0 || len(chain) == 0 || window <= 0 {
 		return 0
 	}
-	start := upToIndex - 11
+	start := upToIndex - window
 	if start < 0 {
 		start = 0
 	}
@@ -146,10 +151,10 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 			return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFutureTimestamp)
 		}
 	}
-	// Median-Time-Past 11 blocks (MTP-11) [C-05, C-06, C-22] strictly verified for ALL blocks
-	mtp := CalculateMedianTimePast(chainHistory, b.Index)
-	if b.Timestamp <= mtp {
-		return fmt.Errorf("timestamp %d <= MedianTimePast %d", b.Timestamp, mtp)
+	// Median-Time-Past (MTP-11, or MTP-55 plus non-decreasing timestamps from the C1/C2 activation height)
+	// strictly verified for ALL blocks [C-05, C-06, C-22, C1, C2]
+	if err := validateBlockTimestampRules(b, prev, chainHistory); err != nil {
+		return err
 	}
 
 	// 9. Checkpoint validation
@@ -303,9 +308,8 @@ func (bc *Blockchain) PreCheckBlock(b *Block) error {
 	if b.Timestamp > maxFutureTimestamp {
 		return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFutureTimestamp)
 	}
-	mtp := CalculateMedianTimePast(bc.Chain, b.Index)
-	if b.Timestamp <= mtp {
-		return fmt.Errorf("timestamp %d <= MedianTimePast %d", b.Timestamp, mtp)
+	if err := validateBlockTimestampRules(b, &latest, bc.Chain); err != nil {
+		return err
 	}
 
 	return nil

@@ -148,6 +148,8 @@ It is critical to distinguish between two distinct concepts:
 1. **`MaxReorganizationDepth = 720`:** An active security limit in code preventing chain reorganizations exceeding 720 blocks in depth.
 2. **Proposed Internal Mining of 720 Blocks:** A launch tactic discussed in this document, not an implemented consensus rule or confirmed project decision.
 
+> **Timestamp rules (v1.0.5):** Below the activation height (testnet 8,000) a block timestamp must exceed MTP-11. From the activation height (mainnet: block 1) it must exceed MTP-55 and must not be earlier than its parent. The 2-hour future limit applies throughout and is skipped when replaying stored blocks. See `docs/security/consensus-proposals.md`.
+
 ### 6.3 Technical Implications & Security Analysis
 
 Mining 720 blocks privately **does NOT** guarantee mainnet security, and introduces substantial operational and economic risks:

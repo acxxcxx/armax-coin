@@ -788,11 +788,11 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 	txsToMine := append([]Transaction{rewardTx}, validTxsToMine...)
 	newBlock := *NewBlock(txsToMine, prevBlock.Hash, prevBlock.Index+1, minerAddress, target)
 
-	// [C-22] Miner sets timestamp = max(now, MTP + 1) to ensure valid block
-	mtp := CalculateMedianTimePast(bc.Chain, prevBlock.Index+1)
+	// [C-22, C1, C2] Miner sets timestamp = max(now, MinValidTimestamp) to ensure a valid block
+	minTs := MinValidTimestamp(bc.Chain, &prevBlock, prevBlock.Index+1)
 	now := time.Now().Unix()
-	if now <= mtp {
-		now = mtp + 1
+	if now < minTs {
+		now = minTs
 	}
 	newBlock.Timestamp = now
 	// Randomize starting nonce (32-bit safe integer) so concurrent mining workers explore non-overlapping partitions

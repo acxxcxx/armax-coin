@@ -6,6 +6,8 @@
 
 [hr]
 
+[b]Upgrade Notice (v1.0.5 hard fork):[/b] timestamp rules C1/C2 (MTP-55, non-decreasing timestamps) activate at testnet block 8,000. All nodes and miners must upgrade to v1.0.5 before the tip reaches that height.
+
 [b]Official Links:[/b]
 [*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
 [*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]

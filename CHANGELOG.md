@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Version
 - Bumped the protocol/software version to `1.0.5` (`core/consensus.go`, GUI footer, Windows manifest, `scripts/build-release.ps1`). `scripts/verify-release.sh` now takes the expected version as an optional second argument (default `v1.0.5`) and strips the surrounding quotes from the printed recovery phrase, which previously made its mnemonic-restore step fail.
-- No consensus rule, genesis, NetworkID, or hashing change. Consensus proposals C1–C5 remain design-only; the proposal document now states this explicitly, uses activation height 6,500 for C1/C2, and lists C5 as local policy.
+- **HARD FORK at block 8,000 (testnet): all nodes and miners MUST upgrade to v1.0.5 before the tip reaches 8,000.** Implements C1 (block timestamp must exceed the median of the last 55 blocks, MTP-55) and C2 (timestamp must not be earlier than the parent). Below height 8,000 the legacy MTP-11 rule applies, so existing testnet blocks stay valid and sync from genesis is unchanged. The activation height must not be changed once the tip has passed it. Genesis, NetworkID, and hashing are unchanged. Miner and `/getblocktemplate` now use max(now, minimum valid timestamp). C3–C5 remain design-only; C4 stays at 25,000 and C5 is local policy.
 
 ### Security
 - Pinned `toolchain go1.27.3` in `go.mod` to remediate `GO-2026-6809` (`crypto/x509`) reported by `govulncheck`.

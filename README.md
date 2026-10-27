@@ -545,7 +545,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 ### v1.0.5 (Public Open Testnet -- Display Ticker, CLI Hardening & Release Prep) -- 2026-10-27
 
-Maintenance release. No consensus rule, genesis, NetworkID, or hashing change; existing testnet blocks remain valid.
+Hard-fork release. Timestamp rules C1/C2 (MTP-55, non-decreasing timestamps) activate at testnet block 8,000; all nodes must upgrade before then. Genesis, NetworkID, and hashing are unchanged, and existing testnet blocks remain valid.
 
 - **Testnet display ticker `tARMX`:** daemon, miner, GUI, and CLI help use the active ticker (display-only). `ARMX` remains the mainnet ticker.
 - **CLI standards:** non-zero exit codes on errors, JSON error output for `armsend -json`, warnings on stderr, deprecation notices for legacy aliases, and `-h`/`--help`.

@@ -47,6 +47,9 @@ type NetworkProfile struct {
 	IsMainnet                   bool     `json:"is_mainnet"`                     // [F3] Stable immutable network identity: strictly true only for Mainnet
 	ArmaxHashActivationHeight   int64    `json:"armaxhash_activation_height"`    // Block height where PoW switches to ArmaxHash v1 (-1 = disabled / SHA-256d)
 	ArmaxHashV2ActivationHeight int64    `json:"armaxhash_v2_activation_height"` // Block height where PoW switches to ArmaxHash v2 Stream-Fast (-1 = disabled)
+	// TimestampRulesActivationHeight is the first block height validated with the C1/C2 timestamp
+	// rules (MTP-55 and non-decreasing timestamps). A negative value disables the rules.
+	TimestampRulesActivationHeight int64 `json:"timestamp_rules_activation_height"`
 }
 
 var (
@@ -65,6 +68,8 @@ var (
 		CoinbaseMaturity:            100,
 		ArmaxHashActivationHeight:   -1,
 		ArmaxHashV2ActivationHeight: -1,
+		// Mainnet has not launched, so the C1/C2 timestamp rules apply from the first block.
+		TimestampRulesActivationHeight: 0,
 		DefaultSeeds: []string{
 			"id.armax-coin.cloud:" + MainnetP2PPort,
 			"armax-coin.cloud:" + MainnetP2PPort,
@@ -86,6 +91,8 @@ var (
 		CoinbaseMaturity:            10,
 		ArmaxHashActivationHeight:   520,  // Activated at block #520 on testnet
 		ArmaxHashV2ActivationHeight: 2500, // Hard fork activation at block #2500 on testnet
+		// Hard fork: C1/C2 timestamp rules (MTP-55, non-decreasing timestamps) from block #8000 on testnet.
+		TimestampRulesActivationHeight: 8000,
 		DefaultSeeds: []string{
 			"testnet-seed1.armax-coin.cloud:" + TestnetP2PPort,
 			"testnet-seed2.armax-coin.cloud:" + TestnetP2PPort,
@@ -106,6 +113,8 @@ var (
 		ArmaxHashActivationHeight:   -1,
 		ArmaxHashV2ActivationHeight: -1,
 		DefaultSeeds:                []string{},
+
+		TimestampRulesActivationHeight: -1,
 	}
 
 	// RegtestProfile defines private local regression testing profile [L4-8]
@@ -123,6 +132,8 @@ var (
 		ArmaxHashActivationHeight:   -1,
 		ArmaxHashV2ActivationHeight: -1,
 		DefaultSeeds:                []string{},
+
+		TimestampRulesActivationHeight: -1,
 	}
 )
 
@@ -139,6 +150,7 @@ var (
 	networkIDOverrideHook               func() string
 	armaxHashActivationHeightOverride   *int64 // nil means use network profile or env
 	armaxHashV2ActivationHeightOverride *int64 // nil means use network profile or env
+	timestampRulesHeightOverride        *int64 // nil means use network profile
 	testGlobalNetworkLock               sync.Mutex
 )
 
