@@ -26,6 +26,18 @@ type BalanceResponse struct {
 	NextNonce        int64  `json:"next_nonce"` // Unambiguous next transaction nonce
 }
 
+// exitError reports a fatal error and exits 1. In -json mode the error is a
+// JSON object on stdout so scripts can parse it; otherwise it is a "[-]" line on stderr.
+func exitError(jsonMode bool, msg string) {
+	if jsonMode {
+		out, _ := json.Marshal(map[string]interface{}{"status": "error", "error": msg})
+		fmt.Println(string(out))
+	} else {
+		fmt.Fprintln(os.Stderr, "[-] "+msg)
+	}
+	os.Exit(1)
+}
+
 func main() {
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	toPtr := flag.String("to", "", "Recipient wallet address (required, Bech32 armx1...)")
@@ -112,17 +124,14 @@ func main() {
 		}
 	}
 	if strings.EqualFold(netChoice, "regtest") && !isExplicit {
-		fmt.Fprintln(os.Stderr, "[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
-		os.Exit(1)
+		exitError(*jsonPtr, "regtest profile cannot be selected without explicit flag '-network regtest'")
 	}
 	cliNet, err := core.ResolveCLINetwork(netChoice)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[-] Invalid network profile '%s': %v\n", netChoice, err)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Invalid network profile '%s': %v", netChoice, err))
 	}
 	if err := core.SetNetwork(netChoice); err != nil {
-		fmt.Fprintf(os.Stderr, "[-] Failed to set network profile '%s': %v\n", netChoice, err)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Failed to set network profile '%s': %v", netChoice, err))
 	}
 	activeNet := core.GetActiveNetwork()
 
@@ -192,14 +201,12 @@ func main() {
 		txid := strings.TrimSpace(*decodePtr)
 		resp, err := httpGetAuth(fmt.Sprintf("%s/tx?hash=%s", daemonURL, txid))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Failed to query transaction from daemon: %v\n", err)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Failed to query transaction from daemon: %v", err))
 		}
 		defer resp.Body.Close()
 		data, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			fmt.Fprintf(os.Stderr, "[-] Transaction '%s' not found (HTTP %d)\n", txid, resp.StatusCode)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Transaction '%s' not found (HTTP %d)", txid, resp.StatusCode))
 		}
 		if *jsonPtr {
 			fmt.Println(string(data))
@@ -238,14 +245,12 @@ func main() {
 		txid := strings.TrimSpace(*confirmationsPtr)
 		resp, err := httpGetAuth(fmt.Sprintf("%s/tx?hash=%s", daemonURL, txid))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Failed to query transaction: %v\n", err)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Failed to query transaction: %v", err))
 		}
 		defer resp.Body.Close()
 		data, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			fmt.Fprintf(os.Stderr, "[-] Transaction '%s' not found in mempool or chain\n", txid)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Transaction '%s' not found in mempool or chain", txid))
 		}
 		var txInfo struct {
 			Status        string `json:"status"`
@@ -291,14 +296,12 @@ func main() {
 	if *mempoolPtr || *getMempoolInfoPtr {
 		resp, err := httpGetAuth(daemonURL + "/mempool")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Failed to query mempool from daemon (%s): %v\n", daemonURL, err)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Failed to query mempool from daemon (%s): %v", daemonURL, err))
 		}
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			fmt.Fprintf(os.Stderr, "[-] Failed to retrieve mempool from daemon (HTTP %d)\n", resp.StatusCode)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Failed to retrieve mempool from daemon (HTTP %d)", resp.StatusCode))
 		}
 		if *jsonPtr {
 			fmt.Println(string(body))
@@ -351,15 +354,13 @@ func main() {
 	} else if *amountPtr != "" {
 		parsed, err := core.ParseArmxDecimal(*amountPtr)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Invalid -amount '%s': %v\n", *amountPtr, err)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Invalid -amount '%s': %v", *amountPtr, err))
 		}
 		finalAmount = parsed
 	} else if *amountArmxPtr != "" {
 		parsed, err := core.ParseArmxDecimal(*amountArmxPtr)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Invalid -amount-armx '%s': %v\n", *amountArmxPtr, err)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Invalid -amount-armx '%s': %v", *amountArmxPtr, err))
 		}
 		finalAmount = parsed
 	}
@@ -371,8 +372,7 @@ func main() {
 	} else if *feePtr != "" {
 		parsedFee, err := core.ParseArmxDecimal(*feePtr)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Invalid -fee '%s': %v\n", *feePtr, err)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Invalid -fee '%s': %v", *feePtr, err))
 		}
 		userFee = parsedFee
 	}
@@ -392,20 +392,17 @@ func main() {
 	}
 
 	if !core.ValidateAddress(*toPtr) {
-		fmt.Fprintf(os.Stderr, "[-] Invalid recipient address '%s': must be canonical Bech32 (armx1...)\n", *toPtr)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Invalid recipient address '%s': must be canonical Bech32 (armx1...)", *toPtr))
 	}
 
 	passphrase, err := wallet.PromptPassphrase("ARMX_WALLET_PASSPHRASE", "Enter keystore passphrase: ")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "[-] Passphrase error:", err)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Passphrase error: %v", err))
 	}
 
 	w, err := wallet.DecryptAndLoadKeystore(passphrase, targetWalletFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[-] Failed to unlock wallet keystore '%s': %v\n", targetWalletFile, err)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Failed to unlock wallet keystore '%s': %v", targetWalletFile, err))
 	}
 
 	if !*jsonPtr {
@@ -413,16 +410,14 @@ func main() {
 	}
 	resp, err := httpGetAuth(fmt.Sprintf("%s/balance?address=%s", daemonURL, w.Address))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "[-] Failed to query daemon:", err)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Failed to query daemon: %v", err))
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	var balResp BalanceResponse
 	if err := json.Unmarshal(body, &balResp); err != nil {
-		fmt.Fprintln(os.Stderr, "[-] Invalid response from daemon:", string(body))
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Invalid response from daemon: %s", string(body)))
 	}
 
 	if !*jsonPtr {
@@ -450,8 +445,7 @@ func main() {
 	}
 
 	if err := tx.Sign(w.PrivateKey); err != nil {
-		fmt.Fprintln(os.Stderr, "[-] Post-quantum signature creation failed:", err)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Post-quantum signature creation failed: %v", err))
 	}
 
 	minRequiredFee := core.CalculateMinMempoolFee(tx.Size())
@@ -469,8 +463,7 @@ func main() {
 		}
 		tx.Fee = minRequiredFee
 		if err := tx.Sign(w.PrivateKey); err != nil {
-			fmt.Fprintln(os.Stderr, "[-] Re-signing failed:", err)
-			os.Exit(1)
+			exitError(*jsonPtr, fmt.Sprintf("Re-signing failed: %v", err))
 		}
 	}
 
@@ -481,14 +474,12 @@ func main() {
 	}
 	if availBal < totalCost {
 		if balResp.ImmatureBalance > 0 {
-			fmt.Fprintf(os.Stderr, "[-] Insufficient spendable balance: has %.8f %s spendable (%.8f %s immature < %d blocks), requires %.8f %s (amount %.8f + fee %.8f)\n",
+			exitError(*jsonPtr, fmt.Sprintf("Insufficient spendable balance: has %.8f %s spendable (%.8f %s immature < %d blocks), requires %.8f %s (amount %.8f + fee %.8f)",
 				float64(availBal)/1e8, core.ActiveTicker(), float64(balResp.ImmatureBalance)/1e8, core.ActiveTicker(), activeNet.CoinbaseMaturity,
-				float64(totalCost)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(tx.Fee)/1e8)
-		} else {
-			fmt.Fprintf(os.Stderr, "[-] Insufficient balance: has %.8f %s, requires %.8f %s (amount %.8f + fee %.8f)\n",
-				float64(availBal)/1e8, core.ActiveTicker(), float64(totalCost)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(tx.Fee)/1e8)
+				float64(totalCost)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(tx.Fee)/1e8))
 		}
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Insufficient balance: has %.8f %s, requires %.8f %s (amount %.8f + fee %.8f)",
+			float64(availBal)/1e8, core.ActiveTicker(), float64(totalCost)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(tx.Fee)/1e8))
 	}
 
 	// Handle Dry-Run Mode
@@ -530,8 +521,7 @@ func main() {
 
 	postResp, err := httpPostAuth(daemonURL+"/tx/new", "application/json", bytes.NewBuffer(txData))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "[-] Broadcast failed:", err)
-		os.Exit(1)
+		exitError(*jsonPtr, fmt.Sprintf("Broadcast failed: %v", err))
 	}
 	defer postResp.Body.Close()
 
