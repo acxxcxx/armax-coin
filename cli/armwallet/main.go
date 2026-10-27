@@ -23,10 +23,10 @@ const (
 func main() {
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	createPtr := flag.Bool("create", false, "Create a new quantum-safe wallet with 24-word recovery mnemonic")
-	newAddressPtr := flag.Bool("newaddress", false, "Create a new quantum-safe address/wallet (alias for -create)")
+	newAddressPtr := flag.Bool("newaddress", false, "Create a new quantum-safe address/wallet (deprecated alias for -create)")
 	restorePtr := flag.String("restore", "", "Restore wallet from BIP-39 mnemonic phrase (24 or 12 words)")
 	balancePtr := flag.String("balance", "", "Check balance of a specific wallet address")
-	getBalancePtr := flag.String("getbalance", "", "Check balance of a specific wallet address (alias for -balance)")
+	getBalancePtr := flag.String("getbalance", "", "Check balance of a specific wallet address (deprecated alias for -balance)")
 	addressPtr := flag.Bool("address", false, "Display address from encrypted keystore file")
 	listAddressesPtr := flag.Bool("listaddresses", false, "List all addresses available in keystore file")
 	backupPtr := flag.String("backup", "", "Safely backup wallet keystore file to specified destination path")
@@ -34,10 +34,10 @@ func main() {
 	rescanPtr := flag.Bool("rescan", false, "Rescan blockchain transactions for active wallet address")
 	getTxPtr := flag.String("gettransaction", "", "Display detailed transaction information for a given TXID")
 	mempoolPtr := flag.Bool("mempool", false, "Display unconfirmed transactions waiting in the daemon mempool")
-	getMempoolPtr := flag.Bool("getmempool", false, "Display unconfirmed transactions waiting in the daemon mempool (alias for -mempool)")
-	getMempoolInfoPtr := flag.Bool("getmempoolinfo", false, "Display unconfirmed transactions waiting in the daemon mempool (alias for -mempool)")
+	getMempoolPtr := flag.Bool("getmempool", false, "Display unconfirmed transactions waiting in the daemon mempool (deprecated alias for -mempool)")
+	getMempoolInfoPtr := flag.Bool("getmempoolinfo", false, "Display unconfirmed transactions waiting in the daemon mempool (deprecated alias for -mempool)")
 	filePtr := flag.String("file", DefaultWalletFile, "Wallet keystore file path (default: wallet.json)")
-	walletPtr := flag.String("wallet", "", "Wallet keystore file path (alias for -file)")
+	walletPtr := flag.String("wallet", "", "Wallet keystore file path (deprecated alias for -file)")
 	forcePtr := flag.Bool("force", false, "Force overwrite existing wallet file without creating backup [T15]")
 	daemonPtr := flag.String("daemon", "", "RPC daemon URL for balance queries (default: profile port)")
 	rpcUserPtr := flag.String("rpcuser", "", "Username for RPC authentication")
@@ -72,6 +72,19 @@ func main() {
 			if effP2PPort == "" {
 				effP2PPort = *p2pPortPtr
 			}
+		}
+	})
+
+	legacyAliases := map[string]string{
+		"newaddress":     "create",
+		"getbalance":     "balance",
+		"getmempool":     "mempool",
+		"getmempoolinfo": "mempool",
+		"wallet":         "file",
+	}
+	flag.Visit(func(f *flag.Flag) {
+		if repl, ok := legacyAliases[f.Name]; ok {
+			fmt.Fprintf(os.Stderr, "[!] Warning: -%s is a deprecated alias, please use -%s instead\n", f.Name, repl)
 		}
 	})
 

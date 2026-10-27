@@ -42,19 +42,19 @@ func main() {
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	toPtr := flag.String("to", "", "Recipient wallet address (required, Bech32 armx1...)")
 	amountPtr := flag.String("amount", "", "Amount to send in ARMX decimal string (e.g. '10.5' ARMX)")
-	amountArmxPtr := flag.String("amount-armx", "", "Amount to send in ARMX decimal string (alias for -amount)")
+	amountArmxPtr := flag.String("amount-armx", "", "Amount to send in ARMX decimal string (deprecated alias for -amount)")
 	amountArmoidsPtr := flag.Int64("amount-armoids", 0, "Amount to send in ARMX base units (Armoids, 1 ARMX = 10^8)")
 	feePtr := flag.String("fee", "", "Transaction miner fee in ARMX decimal string (e.g. '0.0001', default: auto)")
 	feeArmoidsPtr := flag.Int64("fee-armoids", 0, "Transaction miner fee in Armoids (default: 0 = automatic minimum fee)")
 	walletFilePtr := flag.String("wallet", "wallet.json", "Encrypted wallet keystore file path")
-	filePtr := flag.String("file", "", "Encrypted wallet keystore file path (alias for -wallet)")
+	filePtr := flag.String("file", "", "Encrypted wallet keystore file path (deprecated alias for -wallet)")
 	daemonPtr := flag.String("daemon", "", "RPC daemon node URL (default: profile port)")
 	rpcUserPtr := flag.String("rpcuser", "", "Username for RPC authentication")
 	rpcPasswordPtr := flag.String("rpcpassword", "", "Password for RPC authentication")
 	dryRunPtr := flag.Bool("dry-run", false, "Validate transaction parameters and balance without broadcasting to network")
 	estimateFeePtr := flag.Bool("estimatefee", false, "Calculate and display estimated minimum transaction fee")
 	mempoolPtr := flag.Bool("mempool", false, "Display unconfirmed transactions waiting in daemon mempool")
-	getMempoolInfoPtr := flag.Bool("getmempoolinfo", false, "Display unconfirmed transactions waiting in daemon mempool (alias for -mempool)")
+	getMempoolInfoPtr := flag.Bool("getmempoolinfo", false, "Display unconfirmed transactions waiting in daemon mempool (deprecated alias for -mempool)")
 	decodePtr := flag.String("decode", "", "Query and decode details of a transaction by TXID")
 	confirmationsPtr := flag.String("confirmations", "", "Query confirmation count for a given transaction TXID")
 	waitPtr := flag.Bool("wait", false, "Wait until transaction is included in a block with at least 1 confirmation")
@@ -89,6 +89,17 @@ func main() {
 			if effP2PPort == "" {
 				effP2PPort = *p2pPortPtr
 			}
+		}
+	})
+
+	legacyAliases := map[string]string{
+		"amount-armx":    "amount",
+		"getmempoolinfo": "mempool",
+		"file":           "wallet",
+	}
+	flag.Visit(func(f *flag.Flag) {
+		if repl, ok := legacyAliases[f.Name]; ok {
+			fmt.Fprintf(os.Stderr, "[!] Warning: -%s is a deprecated alias, please use -%s instead\n", f.Name, repl)
 		}
 	})
 
