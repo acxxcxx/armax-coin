@@ -5,6 +5,8 @@ package main
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/acxxcxx/armax-coin/core"
 )
 
 // TestGUIBalanceResponseGetConfirmed verifies GetConfirmed logic
@@ -42,9 +44,19 @@ func TestGUIStatsResponseJSON(t *testing.T) {
 
 // TestGUIFormatArmx verifies decimal formatting
 func TestGUIFormatArmx(t *testing.T) {
+	prev := activeNetwork
+	defer func() { activeNetwork = prev }()
+
+	activeNetwork = core.MainnetProfile
 	str := formatArmx(6000000000)
 	if str != "60.00000000 ARMX" {
 		t.Fatalf("Expected '60.00000000 ARMX', got '%s'", str)
+	}
+
+	activeNetwork = core.TestnetProfile
+	str = formatArmx(6000000000)
+	if str != "60.00000000 tARMX" {
+		t.Fatalf("Expected '60.00000000 tARMX' on testnet, got '%s'", str)
 	}
 }
 
@@ -183,6 +195,10 @@ func TestGUIAddressBookModel_OutOfBounds(t *testing.T) {
 
 // TestGUIFormatArmx_EdgeCases verifies decimal precision across minimum and zero amounts
 func TestGUIFormatArmx_EdgeCases(t *testing.T) {
+	prev := activeNetwork
+	defer func() { activeNetwork = prev }()
+	activeNetwork = core.MainnetProfile
+
 	cases := []struct {
 		armoids  int64
 		expected string

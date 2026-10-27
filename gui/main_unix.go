@@ -781,7 +781,7 @@ func handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment;filename=armax_transactions.csv")
 
-	w.Write([]byte("Index,Type,Amount_ARMX,Height,TXID,Timestamp\n"))
+	w.Write([]byte(fmt.Sprintf("Index,Type,Amount_%s,Height,TXID,Timestamp\n", core.TickerForNetworkID(core.ActiveNetwork.NetworkID))))
 	for i, r := range records {
 		txType := "Received"
 		if r.Tx.Sender == "COINBASE" {
@@ -803,7 +803,8 @@ func handleExportCSV(w http.ResponseWriter, r *http.Request) {
 // Embedded Web UI HTML/CSS/JavaScript
 func handleWebUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(webUIHTML))
+	ticker := core.TickerForNetworkID(core.ActiveNetwork.NetworkID)
+	w.Write([]byte(strings.ReplaceAll(webUIHTML, "{{TICKER}}", ticker)))
 }
 
 const webUIHTML = `<!DOCTYPE html>
@@ -917,7 +918,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
 
 <nav class="tabs">
   <button class="tab-btn active" onclick="switchTab('overview')"> Overview</button>
-  <button class="tab-btn" onclick="switchTab('send')"> Send ARMX</button>
+  <button class="tab-btn" onclick="switchTab('send')"> Send {{TICKER}}</button>
   <button class="tab-btn" onclick="switchTab('receive')"> Receive</button>
   <button class="tab-btn" onclick="switchTab('miner')"> CPU Miner</button>
   <button class="tab-btn" onclick="switchTab('transactions')"> Transactions</button>
@@ -931,8 +932,8 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
   <section id="tab-overview" class="tab-pane active">
     <div class="card">
       <div class="card-title"> Wallet Balance & Primary Account</div>
-      <div class="balance-big" id="lblBalanceMain">0.00000000 ARMX</div>
-      <div class="balance-sub" id="lblBalanceSub">Spendable: 0.00000000 ARMX | Immature Rewards: 0.00000000 ARMX | Total: 0.00000000 ARMX</div>
+      <div class="balance-big" id="lblBalanceMain">0.00000000 {{TICKER}}</div>
+      <div class="balance-sub" id="lblBalanceSub">Spendable: 0.00000000 {{TICKER}} | Immature Rewards: 0.00000000 {{TICKER}} | Total: 0.00000000 {{TICKER}}</div>
       <div class="addr-box">
         <input type="text" class="addr-input" id="lblOverviewAddr" readonly value="Loading address...">
         <button class="btn btn-secondary" onclick="copyText(document.getElementById('lblOverviewAddr').value)"> Copy</button>
@@ -960,7 +961,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
   <!-- TAB 2: SEND -->
   <section id="tab-send" class="tab-pane">
     <div class="card">
-      <div class="card-title"> Send ARMX (Post-Quantum Signed Transaction)</div>
+      <div class="card-title"> Send {{TICKER}} (Post-Quantum Signed Transaction)</div>
       <div class="form-group">
         <label class="form-label">Recipient Address (Bech32 armx1...):</label>
         <div style="display:flex; gap:10px;">
@@ -971,11 +972,11 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
 
       <div class="grid-2">
         <div class="form-group">
-          <label class="form-label">Amount (ARMX):</label>
+          <label class="form-label">Amount ({{TICKER}}):</label>
           <input type="text" class="form-control" id="txtSendAmount" placeholder="0.00000000" oninput="updateSendTotal()">
         </div>
         <div class="form-group">
-          <label class="form-label">Miner Fee (ARMX):</label>
+          <label class="form-label">Miner Fee ({{TICKER}}):</label>
           <input type="text" class="form-control" id="txtSendFee" value="0.00010000" oninput="updateSendTotal()">
           <div class="presets">
             <button class="preset-btn" onclick="setFee('0.00025000')"> Fast</button>
@@ -991,7 +992,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
       </div>
 
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px;">
-        <span style="font-size:14px; color:var(--text-muted);">Estimated Total Outflow: <b id="lblSendTotal" style="color:var(--text-main)">0.00000000 ARMX</b></span>
+        <span style="font-size:14px; color:var(--text-muted);">Estimated Total Outflow: <b id="lblSendTotal" style="color:var(--text-main)">0.00000000 {{TICKER}}</b></span>
         <button class="btn" onclick="executeSendTransaction()"> Sign & Broadcast Transaction</button>
       </div>
 
@@ -1003,7 +1004,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
   <section id="tab-receive" class="tab-pane">
     <div class="card">
       <div class="card-title"> Receiving Address & QR URI</div>
-      <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">Share this Bech32 address to receive ARMX payments or mining payouts.</p>
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">Share this Bech32 address to receive {{TICKER}} payments or mining payouts.</p>
       <div class="addr-box">
         <input type="text" class="addr-input" id="txtReceiveAddr" readonly value="">
         <button class="btn btn-secondary" onclick="copyText(document.getElementById('txtReceiveAddr').value)"> Copy</button>
@@ -1055,7 +1056,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
         <div class="info-row"><span class="info-label">Current Mining Hashrate:</span><span class="info-val" id="lblLiveHashrate" style="color:#38bdf8; font-size:16px;">0.00 H/s (IDLE)</span></div>
         <div class="info-row"><span class="info-label">Active Mining Duration:</span><span class="info-val" id="lblLiveDuration">00:00:00</span></div>
         <div class="info-row"><span class="info-label">Blocks Mined This Session:</span><span class="info-val" id="lblSessionBlocks">0 blocks</span></div>
-        <div class="info-row"><span class="info-label">Session Rewards Earned:</span><span class="info-val" id="lblSessionRewards">0.00000000 ARMX</span></div>
+        <div class="info-row"><span class="info-label">Session Rewards Earned:</span><span class="info-val" id="lblSessionRewards">0.00000000 {{TICKER}}</span></div>
       </div>
     </div>
 
@@ -1088,7 +1089,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
           <thead>
             <tr>
               <th>Type</th>
-              <th>Amount (ARMX)</th>
+              <th>Amount ({{TICKER}})</th>
               <th>Height</th>
               <th>TXID</th>
               <th>Timestamp</th>
@@ -1276,7 +1277,7 @@ function copyText(val) {
 
 function formatArmx(armoids) {
   const d = (armoids / 100000000).toFixed(8);
-  return d + " ARMX";
+  return d + " {{TICKER}}";
 }
 
 function formatHashrate(hps) {
@@ -1320,7 +1321,7 @@ async function fetchStats() {
     const diagD = document.getElementById('lblDiagDiff');
     if (diagD) diagD.innerText = "Difficulty " + (s.difficulty || 3) + " (LWMA-1 N=60)";
     const diagS = document.getElementById('lblDiagSupply');
-    if (diagS && s.circulating_supply !== undefined) diagS.innerText = Number(s.circulating_supply).toFixed(8) + " ARMX";
+    if (diagS && s.circulating_supply !== undefined) diagS.innerText = Number(s.circulating_supply).toFixed(8) + " {{TICKER}}";
   } catch(e) {
     const diagStatus = document.getElementById('lblDiagStatus');
     if (diagStatus) diagStatus.innerText = "Disconnected / Unreachable";
@@ -1525,7 +1526,7 @@ function setFee(val) {
 function updateSendTotal() {
   const amt = parseFloat(document.getElementById('txtSendAmount').value) || 0;
   const fee = parseFloat(document.getElementById('txtSendFee').value) || 0;
-  document.getElementById('lblSendTotal').innerText = (amt + fee).toFixed(8) + " ARMX";
+  document.getElementById('lblSendTotal').innerText = (amt + fee).toFixed(8) + " {{TICKER}}";
 }
 
 async function executeSendTransaction() {
@@ -1539,7 +1540,7 @@ async function executeSendTransaction() {
     alert("Please enter recipient address and amount.");
     return;
   }
-  if (!confirm("Confirm sending " + amt + " ARMX (Fee: " + fee + " ARMX) to " + to + "?")) return;
+  if (!confirm("Confirm sending " + amt + " {{TICKER}} (Fee: " + fee + " {{TICKER}}) to " + to + "?")) return;
 
   box.style.display = 'block';
   box.style.background = '#1e293b';

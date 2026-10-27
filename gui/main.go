@@ -910,10 +910,10 @@ func exportTransactionsCSV(mw *walk.MainWindow) {
 	defer file.Close()
 
 	var buf bytes.Buffer
-	buf.WriteString("Index,Type,Amount_ARMX,Block_Height,TXID,Date_Time\r\n")
+	buf.WriteString(fmt.Sprintf("Index,Type,Amount_%s,Block_Height,TXID,Date_Time\r\n", armxTicker()))
 	for _, it := range txModel.allItems {
 		cleanType := strings.ReplaceAll(it.Type, ",", " ")
-		cleanAmt := strings.TrimSuffix(strings.ReplaceAll(it.Amount, ",", ""), " ARMX")
+		cleanAmt := strings.TrimSuffix(strings.ReplaceAll(it.Amount, ",", ""), " "+armxTicker())
 		buf.WriteString(fmt.Sprintf("%d,%s,%s,%s,%s,%s\r\n",
 			it.Index, cleanType, cleanAmt, it.Height, it.TxID, it.Timestamp))
 	}
@@ -1103,8 +1103,12 @@ func updateReceiveQRCode(addr string) {
 	}
 }
 
+func armxTicker() string {
+	return core.TickerForNetworkID(activeNetwork.NetworkID)
+}
+
 func formatArmx(armoids int64) string {
-	return core.FormatArmxDecimal(armoids) + " ARMX"
+	return core.FormatArmxDecimal(armoids) + " " + armxTicker()
 }
 
 func main() {
@@ -1389,12 +1393,12 @@ func main() {
 								Children: []Widget{
 									Label{
 										AssignTo: &lblBalanceMain,
-										Text:     "0.00000000 ARMX",
+										Text:     "0.00000000 " + armxTicker(),
 										Font:     Font{Family: "Segoe UI", PointSize: 18, Bold: true},
 									},
 									Label{
 										AssignTo: &lblBalanceArmoids,
-										Text:     "Spendable: 0.00000000 ARMX | Immature Rewards: 0.00000000 ARMX | Total: 0.00000000 ARMX",
+										Text:     "Spendable: 0.00000000 " + armxTicker() + " | Immature Rewards: 0.00000000 " + armxTicker() + " | Total: 0.00000000 " + armxTicker(),
 										Font:     Font{Family: "Segoe UI", PointSize: 9},
 									},
 									VSpacer{Size: 6},
@@ -1476,7 +1480,7 @@ func main() {
 					// TAB 2: SEND
 					// ==========================================
 					{
-						Title:  "Send ARMX",
+						Title:  "Send " + armxTicker(),
 						Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}},
 						Children: []Widget{
 							GroupBox{
@@ -1503,7 +1507,7 @@ func main() {
 										},
 									},
 									VSpacer{Size: 6},
-									Label{Text: "Amount (ARMX):"},
+									Label{Text: "Amount (" + armxTicker() + "):"},
 									Composite{
 										Layout: HBox{MarginsZero: true},
 										Children: []Widget{
@@ -1529,7 +1533,7 @@ func main() {
 										},
 									},
 									VSpacer{Size: 6},
-									Label{Text: "Miner Transaction Fee (ARMX):"},
+									Label{Text: "Miner Transaction Fee (" + armxTicker() + "):"},
 									Composite{
 										Layout: HBox{MarginsZero: true},
 										Children: []Widget{
@@ -1566,7 +1570,7 @@ func main() {
 									VSpacer{Size: 4},
 									Label{
 										AssignTo: &lblSendTotalPreview,
-										Text:     "Total deduction: 0.00010000 ARMX",
+										Text:     "Total deduction: 0.00010000 " + armxTicker(),
 										Font:     Font{Family: "Segoe UI", PointSize: 9, Bold: true},
 									},
 									VSpacer{Size: 6},
@@ -1605,7 +1609,7 @@ func main() {
 					// TAB 3: RECEIVE
 					// ==========================================
 					{
-						Title:  "Receive ARMX",
+						Title:  "Receive " + armxTicker(),
 						Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}},
 						Children: []Widget{
 							GroupBox{
@@ -1613,7 +1617,7 @@ func main() {
 								Layout: VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}},
 								Children: []Widget{
 									Label{
-										Text: "Share this address or scan the QR barcode to receive ARMX:",
+										Text: "Share this address or scan the QR barcode to receive " + armxTicker() + ":",
 									},
 									LineEdit{
 										AssignTo: &leReceiveAddress,
@@ -1918,7 +1922,7 @@ func main() {
 									Label{AssignTo: &lblMiningBlocks, Text: "0 blocks"},
 
 									Label{Text: "Session Rewards Earned:"},
-									Label{AssignTo: &lblMiningRewards, Text: "0.00000000 ARMX", Font: Font{Family: "Segoe UI", PointSize: 10, Bold: true}},
+									Label{AssignTo: &lblMiningRewards, Text: "0.00000000 " + armxTicker(), Font: Font{Family: "Segoe UI", PointSize: 10, Bold: true}},
 
 									Label{Text: "Network Target Difficulty:"},
 									Label{AssignTo: &lblMiningDiff, Text: "Difficulty 3 (LWMA-1 N=60)"},
@@ -1967,7 +1971,7 @@ func main() {
 								},
 								Columns: []TableViewColumn{
 									{Title: "Type", Width: 120},
-									{Title: "Amount (ARMX)", Width: 150},
+									{Title: "Amount (" + armxTicker() + ")", Width: 150},
 									{Title: "Block Height", Width: 95},
 									{Title: "TXID / Hash", Width: 280},
 									{Title: "Date & Time", Width: 160},
@@ -2156,7 +2160,7 @@ func main() {
 									Label{AssignTo: &lblDiagDifficulty, Text: "Difficulty 3 (LWMA-1 N=60)"},
 
 									Label{Text: "Circulating Supply:"},
-									Label{AssignTo: &lblDiagSupply, Text: "0.00000000 ARMX"},
+									Label{AssignTo: &lblDiagSupply, Text: "0.00000000 " + armxTicker()},
 
 									Label{Text: "P2P Transport Security:"},
 									Label{Text: "TLS 1.3 Active (TOFU Certificate Pinning Enforced)", Font: Font{Bold: true}},
@@ -2381,7 +2385,7 @@ func refreshNodeAndWallet(mw *walk.MainWindow, lblBal, lblArmoids, lblH, lblP, l
 					lblDiagMempool.SetText(fmt.Sprintf("%d unconfirmed transactions", mempoolCount))
 				}
 				if lblDiagSupply != nil {
-					lblDiagSupply.SetText(fmt.Sprintf("%.8f ARMX", stats.CirculatingSupply))
+					lblDiagSupply.SetText(fmt.Sprintf("%.8f %s", stats.CirculatingSupply, armxTicker()))
 				}
 
 				// If block height changed, mempool changed, or confirmed balance changed, refresh transaction table

@@ -592,7 +592,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"symbol":                        "ARMX",
+			"symbol":                        core.TickerForNetworkID(core.NetworkID()),
 			"circulating_supply":            circulatingCoins,
 			"total_supply":                  circulatingCoins,
 			"max_supply":                    maxCoins,
