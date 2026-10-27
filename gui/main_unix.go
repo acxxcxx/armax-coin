@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/acxxcxx/armax-coin/core"
+	"github.com/acxxcxx/armax-coin/node"
 	"github.com/acxxcxx/armax-coin/wallet"
 )
 
@@ -556,6 +557,16 @@ func handleMineStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Load RPC auth cookie so /mine is authorized (node rejects anonymous mining)
+	var authUser, authPass string
+	if data, err := os.ReadFile(node.GetRPCAuthCookiePath()); err == nil {
+		parts := strings.Split(strings.TrimSpace(string(data)), ":")
+		if len(parts) == 2 {
+			authUser = parts[0]
+			authPass = parts[1]
+		}
+	}
+
 	// Start coordinated mining worker
 	go func() {
 		client := &http.Client{}
@@ -580,6 +591,9 @@ func handleMineStart(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			req.Header.Set("Content-Type", "application/json")
+			if authUser != "" && authPass != "" {
+				req.SetBasicAuth(authUser, authPass)
+			}
 
 			resp, err := client.Do(req)
 			cancel()
