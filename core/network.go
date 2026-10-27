@@ -33,18 +33,18 @@ const (
 
 // NetworkProfile encapsulates network-specific parameters and ports [C-33, TASK P1, L3-4]
 type NetworkProfile struct {
-	Name                      string   `json:"name"`
-	NetworkID                 string   `json:"network_id"`
-	P2PPort                   string   `json:"p2p_port"`
-	RPCPort                   string   `json:"rpc_port"`
-	ZMQPort                   string   `json:"zmq_port"`
-	StratumPort               string   `json:"stratum_port"`
-	P2PMagic                  string   `json:"p2p_magic"`
-	PowLimitHex               string   `json:"pow_limit_hex"`           // Minimum difficulty ceiling / maximum allowed target [L3-4]
-	ArmaxHashPowLimitHex      string   `json:"armaxhash_pow_limit_hex"` // Initial bootstrap target ceiling when ArmaxHash activates
-	DefaultSeeds              []string `json:"default_seeds"`
+	Name                        string   `json:"name"`
+	NetworkID                   string   `json:"network_id"`
+	P2PPort                     string   `json:"p2p_port"`
+	RPCPort                     string   `json:"rpc_port"`
+	ZMQPort                     string   `json:"zmq_port"`
+	StratumPort                 string   `json:"stratum_port"`
+	P2PMagic                    string   `json:"p2p_magic"`
+	PowLimitHex                 string   `json:"pow_limit_hex"`           // Minimum difficulty ceiling / maximum allowed target [L3-4]
+	ArmaxHashPowLimitHex        string   `json:"armaxhash_pow_limit_hex"` // Initial bootstrap target ceiling when ArmaxHash activates
+	DefaultSeeds                []string `json:"default_seeds"`
 	CoinbaseMaturity            int      `json:"coinbase_maturity"`
-	IsMainnet                   bool     `json:"is_mainnet"`                      // [F3] Stable immutable network identity: strictly true only for Mainnet
+	IsMainnet                   bool     `json:"is_mainnet"`                     // [F3] Stable immutable network identity: strictly true only for Mainnet
 	ArmaxHashActivationHeight   int64    `json:"armaxhash_activation_height"`    // Block height where PoW switches to ArmaxHash v1 (-1 = disabled / SHA-256d)
 	ArmaxHashV2ActivationHeight int64    `json:"armaxhash_v2_activation_height"` // Block height where PoW switches to ArmaxHash v2 Stream-Fast (-1 = disabled)
 }
@@ -95,13 +95,13 @@ var (
 
 	// SoakProfile defines local test profile with 16-bit target (Difficulty 4) for soak/chaos testing [L3-5]
 	SoakProfile = NetworkProfile{
-		Name:                      "soak",
-		NetworkID:                 "ARMX-SOAK-1",
-		P2PPort:                   "29335",
-		RPCPort:                   "29333",
-		P2PMagic:                  "ARMX_SOAK",
-		PowLimitHex:               "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-		ArmaxHashPowLimitHex:      "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 4 bootstrap
+		Name:                        "soak",
+		NetworkID:                   "ARMX-SOAK-1",
+		P2PPort:                     "29335",
+		RPCPort:                     "29333",
+		P2PMagic:                    "ARMX_SOAK",
+		PowLimitHex:                 "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		ArmaxHashPowLimitHex:        "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 4 bootstrap
 		CoinbaseMaturity:            100,
 		ArmaxHashActivationHeight:   -1,
 		ArmaxHashV2ActivationHeight: -1,

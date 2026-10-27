@@ -136,9 +136,19 @@ func NewBlockchainWithStoragePath(difficulty int, storagePath string) (*Blockcha
 	return bc, nil
 }
 
-// NewBlockchain initializes a new blockchain or loads an existing chain from local storage [F4]
-// NewBlockchain initializes a new blockchain or loads an existing chain from local storage [F4]
+// NewBlockchain initializes a blockchain or loads an existing chain from local storage,
+// and panics if storage cannot be opened. Production entry points should use OpenBlockchain [F4]
 func NewBlockchain(difficulty int) *Blockchain {
+	bc, err := OpenBlockchain(difficulty)
+	if err != nil {
+		panic(err.Error())
+	}
+	return bc
+}
+
+// OpenBlockchain initializes a new blockchain or loads an existing chain from local storage,
+// returning an error instead of panicking when the database cannot be opened [F4]
+func OpenBlockchain(difficulty int) (*Blockchain, error) {
 	var bc *Blockchain
 	var err error
 
@@ -146,7 +156,7 @@ func NewBlockchain(difficulty int) *Blockchain {
 	for i := 0; i < 20; i++ {
 		bc, err = NewBlockchainWithError(difficulty)
 		if err == nil {
-			return bc
+			return bc, nil
 		}
 		if strings.Contains(err.Error(), "timeout") {
 			time.Sleep(250 * time.Millisecond)
@@ -180,13 +190,13 @@ func NewBlockchain(difficulty int) *Blockchain {
 		}
 		bc.State.CoinbaseMaturity = mat
 		_ = bc.CreateGenesisBlock()
-		return bc
+		return bc, nil
 	}
 
 	if err != nil {
-		panic(fmt.Sprintf("FATAL: failed to initialize blockchain database: %v", err))
+		return nil, fmt.Errorf("FATAL: failed to initialize blockchain database: %w", err)
 	}
-	return bc
+	return bc, nil
 }
 
 // MustNewBlockchain initializes a new blockchain or panics on error (intended for test fixtures) [F4]

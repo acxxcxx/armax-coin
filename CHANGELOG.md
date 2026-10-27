@@ -5,6 +5,20 @@ All notable changes to the **Armaxcoin** (`armax-coin`) project will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- Pinned `toolchain go1.27.3` in `go.mod` to remediate `GO-2026-6809` (`crypto/x509`) reported by `govulncheck`.
+
+### Changed
+- Added `core.OpenBlockchain` and `node.RunServerWithConfig`, which return errors instead of panicking. `armcoind` and the GUI now exit with a clear message on database or startup failures. `core.NewBlockchain` and `node.StartServerWithConfig` keep their panicking behavior for existing callers and tests.
+- Clarified why the P2P client TLS config skips chain verification (peer authentication is done by TOFU pinning).
+- `go mod tidy` now lists direct imports as direct requirements.
+- Documentation: Go 1.27.3+ guidance, mainnet-readiness gate status table, and cross-references between overlapping testnet/release guides.
+
+### Tests
+- Added in-process tests for the miner RPC helpers (`fetchBlockTemplate`, `submitSolvedBlock`), `armwallet` balance rendering, and `RunServerWithConfig` error handling.
+
 ## [v1.0.4] - 2026-10-27
 
 ### Added

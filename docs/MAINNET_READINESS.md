@@ -18,6 +18,16 @@ test may be used to waive a gate.
   committed atomically with owner-only permissions where the platform supports
   them.
 
+## Gate status (update with evidence links on every release)
+
+| # | Gate | Status |
+|---|---|---|
+| 1 | Independent cryptography and consensus audit | Not started |
+| 2 | Sustained adversarial public testnet report | In progress (nightly soak CI; no published report) |
+| 3 | Reproducible artifacts, signed provenance/SBOM, vulnerability scan, race detector, fuzzing | Partial: `staticcheck`, `govulncheck`, `-race`, and fuzzing run in CI; no signed SBOM or provenance yet |
+| 4 | Incident-response runbook, key-rotation procedure, upgrade/rollback policy | Partial: disclosure contact in `SECURITY.md`; runbook and rollback policy pending |
+| 5 | Hardware-signing design review | Not implemented |
+
 ## Mandatory independent evidence before mainnet
 
 1. An independent, public cryptography and consensus audit covering block

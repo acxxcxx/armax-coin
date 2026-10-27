@@ -1,6 +1,6 @@
 # Armaxcoin Open Testnet Publication & Release Checklist
 
-This checklist defines the formal verification gates and operational procedures required before tagging, packaging, and publishing an official release of `armax-coin`.
+This checklist defines the formal verification gates and operational procedures required before tagging, packaging, and publishing an official release of `armax-coin`. Build and artifact details live in [RELEASE.md](RELEASE.md).
 
 ---
 

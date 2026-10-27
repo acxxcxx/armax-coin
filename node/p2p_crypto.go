@@ -222,7 +222,10 @@ func EnsureNodeTLSConfig(dataDir ...string) (*tls.Config, error) {
 
 func init() {
 	clientTLSConf = &tls.Config{
-		InsecureSkipVerify: true, // Opportunistic P2P transport (self-signed, unauthenticated TLS 1.3) [N-08]
+		// The handshake is deliberately not chain-verified: nodes use self-signed identities.
+		// Peer authentication is performed after the handshake by TOFU fingerprint pinning
+		// (see PeerServer P2PTOFU); without TOFU the transport is encryption-only [N-08].
+		InsecureSkipVerify: true,
 		MinVersion:         tls.VersionTLS13,
 	}
 }

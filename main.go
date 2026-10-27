@@ -217,7 +217,12 @@ func main() {
 		if bc != nil {
 			return bc
 		}
-		bc = core.NewBlockchain(3)
+		var openErr error
+		bc, openErr = core.OpenBlockchain(3)
+		if openErr != nil {
+			fmt.Printf("[-] %v\n", openErr)
+			os.Exit(1)
+		}
 		if bc.StoragePath == "IN_MEMORY" && !*testFlag && activeNet.Name != "regtest" {
 			fmt.Printf("[-] FATAL: Failed to access persistent database on disk. Operating in-memory is prohibited in production to prevent data loss.\n")
 			os.Exit(1)
@@ -586,7 +591,10 @@ func main() {
 			}
 		}
 
-		node.StartServerWithConfig(bc, cfg)
+		if err := node.RunServerWithConfig(bc, cfg); err != nil {
+			fmt.Printf("[-] %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

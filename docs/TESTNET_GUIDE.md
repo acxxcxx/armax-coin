@@ -2,6 +2,8 @@
 
 Welcome to the public open testnet for **Armaxcoin** (`armax-coin`). This guide provides complete, step-by-step instructions for setting up a node, generating a post-quantum wallet, syncing the blockchain, and testing transactions.
 
+> **See also:** [TESTNET.md](TESTNET.md) covers seed-node and operator infrastructure; this guide covers end-user setup.
+
 > [!WARNING]
 > **TESTNET WARNING:**  
 > The Armaxcoin public testnet is an experimental environment for development and security testing. Testnet coins (`ARMX`) hold **no monetary value**, cannot be traded for fiat or real assets, and carry no guarantee of conversion to mainnet assets. Chain state may be reset if critical consensus issues are identified.

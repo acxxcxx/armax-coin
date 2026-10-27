@@ -293,61 +293,61 @@ type serverCycle struct {
 }
 
 type PeerServer struct {
-	Port               string
-	netIDVal           atomic.Pointer[string] // Single synchronized source of truth for runtime queries [C-33]
-	DataDir            string                 // Custom instance data directory for isolated peer storage [P1-A]
-	peerStorePath      string                 // [P1-A] Resolved immutable peer store path
-	peerStoreInitErr   error                  // [P1-A] Peer store directory creation / path error
-	Peers              []string
-	newPeers           map[string]*PeerInfo // [N-16] Untried peer candidates
-	triedPeers         map[string]*PeerInfo // [N-16] Handshake verified peers
-	Lock               sync.RWMutex
-	Blockchain         *core.Blockchain
-	MaxPeers           int
-	ActiveConns        int32
-	connLock           sync.Mutex
-	subnetConns        map[string]int
-	DHT                *RoutingTable // Kademlia DHT routing table for decentralized peer discovery
-	seenLock           sync.Mutex
-	seenTxs            map[string]time.Time
-	seenBlks           map[string]time.Time
-	negativeBlks       map[string]time.Time // [T2] Bounded negative cache of invalid block digests
-	syncCooldowns      map[string]time.Time // [T3] Peer IP -> last sync trigger time
-	relayLock          sync.Mutex
-	relayedTxs         map[string]map[string]time.Time
-	syncMu             sync.Mutex
-	syncingHosts       map[string]bool
-	expectedChains     map[string]time.Time // [N-04] tracks requested chains to reject unsolicited CHAIN_RESPONSE
-	orphanLock         sync.Mutex
-	orphanBlocks       map[string]*orphanBlockEntry // [N-06, N-17] orphan block buffer keyed by Block.Hash
-	orphanTxs          map[string]*orphanTxEntry    // [N-17] out-of-order pending transactions pool
-	lastOrphanScan     time.Time                    // [T5] Timestamp of last top-level orphan tx scan
-	DisableSubnetLimit bool                         // [N-12] Allow multiple connections from same subnet (LAN/testnet)
-	AllowPrivatePeers  bool                         // [N-05, N-16] Allow loopback and private IP addresses (LAN/testnet)
-	RequireTLS         bool                         // [N-08] Require strict TLS 1.3
-	P2PTOFU            bool                         // [F1] Enable Trust-On-First-Use (TOFU) TLS certificate fingerprint pinning
-	tlsConfig          *tls.Config                  // Instance TLS config for concurrent safety
-	peerStoreCorrupted bool                         // [Phase 5, Follow-up Point 4] Fail-closed flag when peer store file is corrupt
-	savePeersLock      sync.Mutex                   // [P1 Final Blocker] Serializes peer-store snapshot -> marshal -> write -> sync -> rename transactions
-	tofuLock           sync.Mutex                   // [P1 Final Fix] Serializes first-contact TOFU pinning per peer address
-	pendingTOFU        map[string]*pendingPin       // [P1 Final Fix] In-flight first-contact persistence attempts per peer
-	failedPins         map[string]string            // [P1 Final Fix] peerAddr -> cert fingerprint that failed persistence; prevents silent repinning
-	banLock            sync.RWMutex                 // [N-15] Ban and rate limit mutex
-	banScores          map[string]int               // [N-15] Misbehavior ban scores per IP
-	bannedIPs          map[string]time.Time         // [N-15] Active IP bans and expiry
-	rateTrackers       map[string]*peerRateTracker  // [N-15] Token bucket and endpoint trackers
+	Port                 string
+	netIDVal             atomic.Pointer[string] // Single synchronized source of truth for runtime queries [C-33]
+	DataDir              string                 // Custom instance data directory for isolated peer storage [P1-A]
+	peerStorePath        string                 // [P1-A] Resolved immutable peer store path
+	peerStoreInitErr     error                  // [P1-A] Peer store directory creation / path error
+	Peers                []string
+	newPeers             map[string]*PeerInfo // [N-16] Untried peer candidates
+	triedPeers           map[string]*PeerInfo // [N-16] Handshake verified peers
+	Lock                 sync.RWMutex
+	Blockchain           *core.Blockchain
+	MaxPeers             int
+	ActiveConns          int32
+	connLock             sync.Mutex
+	subnetConns          map[string]int
+	DHT                  *RoutingTable // Kademlia DHT routing table for decentralized peer discovery
+	seenLock             sync.Mutex
+	seenTxs              map[string]time.Time
+	seenBlks             map[string]time.Time
+	negativeBlks         map[string]time.Time // [T2] Bounded negative cache of invalid block digests
+	syncCooldowns        map[string]time.Time // [T3] Peer IP -> last sync trigger time
+	relayLock            sync.Mutex
+	relayedTxs           map[string]map[string]time.Time
+	syncMu               sync.Mutex
+	syncingHosts         map[string]bool
+	expectedChains       map[string]time.Time // [N-04] tracks requested chains to reject unsolicited CHAIN_RESPONSE
+	orphanLock           sync.Mutex
+	orphanBlocks         map[string]*orphanBlockEntry // [N-06, N-17] orphan block buffer keyed by Block.Hash
+	orphanTxs            map[string]*orphanTxEntry    // [N-17] out-of-order pending transactions pool
+	lastOrphanScan       time.Time                    // [T5] Timestamp of last top-level orphan tx scan
+	DisableSubnetLimit   bool                         // [N-12] Allow multiple connections from same subnet (LAN/testnet)
+	AllowPrivatePeers    bool                         // [N-05, N-16] Allow loopback and private IP addresses (LAN/testnet)
+	RequireTLS           bool                         // [N-08] Require strict TLS 1.3
+	P2PTOFU              bool                         // [F1] Enable Trust-On-First-Use (TOFU) TLS certificate fingerprint pinning
+	tlsConfig            *tls.Config                  // Instance TLS config for concurrent safety
+	peerStoreCorrupted   bool                         // [Phase 5, Follow-up Point 4] Fail-closed flag when peer store file is corrupt
+	savePeersLock        sync.Mutex                   // [P1 Final Blocker] Serializes peer-store snapshot -> marshal -> write -> sync -> rename transactions
+	tofuLock             sync.Mutex                   // [P1 Final Fix] Serializes first-contact TOFU pinning per peer address
+	pendingTOFU          map[string]*pendingPin       // [P1 Final Fix] In-flight first-contact persistence attempts per peer
+	failedPins           map[string]string            // [P1 Final Fix] peerAddr -> cert fingerprint that failed persistence; prevents silent repinning
+	banLock              sync.RWMutex                 // [N-15] Ban and rate limit mutex
+	banScores            map[string]int               // [N-15] Misbehavior ban scores per IP
+	bannedIPs            map[string]time.Time         // [N-15] Active IP bans and expiry
+	rateTrackers         map[string]*peerRateTracker  // [N-15] Token bucket and endpoint trackers
 	BlockRangeBurst      float64                      // Configurable burst for GET_BLOCK_RANGE (token-bucket limiter; default 120.0)
 	BlockRangeRefillRate float64                      // Configurable refill rate/sec for GET_BLOCK_RANGE (default 20.0)
-	listener           net.Listener                 // [T-06] Active TCP listener
-	quitChan           chan struct{}                // [T-06] Shutdown signal channel
-	stopLock           sync.Mutex
-	outboundMu         sync.Mutex
-	outboundSessions   map[string]*outboundPeerSession
-	inflightDials      map[string]*inflightPeerDial
-	reachabilityMu     sync.Mutex
-	unreachablePeers   map[string]time.Time
-	probingPeers       map[string]bool
-	announcedPeers     map[string]time.Time
+	listener             net.Listener                 // [T-06] Active TCP listener
+	quitChan             chan struct{}                // [T-06] Shutdown signal channel
+	stopLock             sync.Mutex
+	outboundMu           sync.Mutex
+	outboundSessions     map[string]*outboundPeerSession
+	inflightDials        map[string]*inflightPeerDial
+	reachabilityMu       sync.Mutex
+	unreachablePeers     map[string]time.Time
+	probingPeers         map[string]bool
+	announcedPeers       map[string]time.Time
 
 	// lifecycleLock protects against store path/network transitions racing with active TOFU operations [P1-A Lifecycle Race Fix].
 	//

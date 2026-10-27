@@ -4,7 +4,7 @@
 
 Armaxcoin implements post-quantum cryptography conforming to NIST FIPS 204 (ML-DSA-65). It utilizes the standard library package `crypto/mldsa`.
 
-- **Minimum Required Go Version:** **Go 1.27+** (as pinned in `go.mod` and verified in CI).
+- **Minimum Required Go Version:** **Go 1.27+** (as pinned in `go.mod` and verified in CI). Build releases with **Go 1.27.3 or newer**: earlier 1.27.x toolchains are affected by `GO-2026-6809` (`crypto/x509`). `go.mod` declares `toolchain go1.27.3`.
 - **CGO Requirement:** `CGO_ENABLED=0` for pure Go deterministic cross-platform compilation of `armcoind`, `armminer`, `armsend`, and `armwallet`.
 - **Platform Architecture Support:**
   - `linux/amd64` (Standard x86_64 servers and desktops)

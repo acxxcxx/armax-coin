@@ -6,7 +6,7 @@ This document describes the compilation process, toolchain requirements, cross-c
 
 ## 1. Prerequisites
 
-- **Go Toolchain:** Go `1.27` or higher is strictly required.
+- **Go Toolchain:** Go `1.27` or higher is strictly required; use `1.27.3` or newer (fixes `GO-2026-6809`, `crypto/x509`).
   - Reason: Armaxcoin relies on the Go standard library package `crypto/mldsa` (implementing NIST FIPS 204 Module-Lattice-Based Digital Signature Algorithm ML-DSA-65).
   - Check your compiler version:
     ```bash

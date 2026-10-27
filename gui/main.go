@@ -1218,7 +1218,11 @@ func main() {
 
 	// 1. Start embedded node if not already running on port
 	if !isNodeOnline(rpcURL) {
-		bc := core.NewBlockchain(3)
+		bc, openErr := core.OpenBlockchain(3)
+		if openErr != nil {
+			fmt.Printf("[-] %v\n", openErr)
+			os.Exit(1)
+		}
 		bc.CoinbaseMaturity = activeNetwork.CoinbaseMaturity
 		cfg, err := node.LoadConfig("armax.conf")
 		if err != nil {

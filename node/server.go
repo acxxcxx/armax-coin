@@ -1319,10 +1319,27 @@ func ValidateRPCBind(cfg *Config) error {
 	return nil
 }
 
-// StartServerWithConfig initializes and runs the P2P engine and HTTP RPC daemon using Config [N-18]
+// errFatalStartup marks startup failures that StartServerWithConfig escalates to a panic.
+var errFatalStartup = errors.New("fatal startup error")
+
+// StartServerWithConfig runs the node and panics on fatal startup errors.
+// New callers should prefer RunServerWithConfig, which returns the error instead.
 func StartServerWithConfig(bc *core.Blockchain, cfg *Config) {
+	err := RunServerWithConfig(bc, cfg)
+	if err == nil {
+		return
+	}
+	if errors.Is(err, errFatalStartup) {
+		panic(err.Error())
+	}
+	fmt.Printf("[-] Server terminated with error: %v\n", err)
+}
+
+// RunServerWithConfig initializes and runs the P2P engine and HTTP RPC daemon using Config [N-18].
+// It blocks until the server stops and returns an error on startup or serve failure.
+func RunServerWithConfig(bc *core.Blockchain, cfg *Config) error {
 	if err := ValidateRPCBind(cfg); err != nil {
-		panic(fmt.Sprintf("FATAL RPC SECURITY REFUSAL: %v", err))
+		return fmt.Errorf("%w: FATAL RPC SECURITY REFUSAL: %v", errFatalStartup, err)
 	}
 
 	if cfg != nil && cfg.MiningThreads > 0 && bc.MiningThreads <= 0 {
@@ -1330,7 +1347,7 @@ func StartServerWithConfig(bc *core.Blockchain, cfg *Config) {
 	}
 	peerServer, serverCfg, err := InitServerFromConfig(bc, cfg)
 	if err != nil {
-		panic(fmt.Sprintf("FATAL CONFIGURATION ERROR: %v", err))
+		return fmt.Errorf("%w: FATAL CONFIGURATION ERROR: %v", errFatalStartup, err)
 	}
 	go peerServer.StartServer()
 
@@ -1338,7 +1355,7 @@ func StartServerWithConfig(bc *core.Blockchain, cfg *Config) {
 	limiter := newIPRateLimiter()
 	if err := InitRPCAuth(cfg.RPCUser, cfg.RPCPassword); err != nil {
 		if (cfg.RPCUser == "" || cfg.RPCPassword == "") && !AllowInsecureLocalhost {
-			panic(fmt.Sprintf("FATAL RPC SECURITY ERROR: failed to write RPC cookie and no rpc_user/rpc_password configured: %v", err))
+			return fmt.Errorf("%w: FATAL RPC SECURITY ERROR: failed to write RPC cookie and no rpc_user/rpc_password configured: %v", errFatalStartup, err)
 		}
 		fmt.Printf("[RPC] Warning: failed to persist RPC auth cookie: %v\n", err)
 	}
@@ -1406,8 +1423,9 @@ func StartServerWithConfig(bc *core.Blockchain, cfg *Config) {
 		serveErr = server.ListenAndServe()
 	}
 	if serveErr != nil && serveErr != http.ErrServerClosed {
-		fmt.Printf("[-] Server terminated with error: %v\n", serveErr)
+		return serveErr
 	}
+	return nil
 }
 
 // StartServer starts the RPC Daemon HTTP server, Web Server, and P2P Network Engine (backward compatibility wrapper)

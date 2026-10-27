@@ -93,7 +93,9 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 - **Reference Guides:**
   - [Build Guide & Reproducible Instructions](docs/BUILD.md)
   - [Launch Checklist & Gate Procedures](docs/LAUNCH_CHECKLIST.md)
-  - [Seed Node Operations & Systemd Guide](docs/TESTNET.md)
+  - [Seed Node Operations & Systemd Guide](docs/TESTNET.md) (operator view); [Open Testnet Guide](docs/TESTNET_GUIDE.md) (end-user view)
+  - [Mainnet Readiness Gate](docs/MAINNET_READINESS.md)
+  - Internal / historical records: [Repository Cleanup](docs/CLEANUP_REPO.md), [ArmaxHash Migration Audit](docs/ARMAXHASH_MIGRATION_AUDIT.md), [Soak Report](docs/SOAK_REPORT.md)
 
 ---
 
