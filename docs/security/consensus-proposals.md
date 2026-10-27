@@ -1,6 +1,7 @@
 # Armaxcoin Consensus Improvement Proposals (AIP / C1–C5)
 
 **Status:** PROPOSED -- DESIGN ONLY (DO NOT MERGE INTO ACTIVE CODE WITHOUT MAINTAINER APPROVAL)  
+**Implementation status (v1.0.5):** None of C1–C5 is implemented. The active code enforces MTP-11 and a 2-hour future-time limit (`core/consensus.go`); MTP-55 and the other rules below are proposals only.  
 **Target Network:** `ARMX-TESTNET-1` and Future `ARMX-MAINNET-1`  
 **Author:** Armaxcoin Core Security & Consensus Engineering  
 **Date:** October 2026  
@@ -19,8 +20,8 @@ In accordance with strict consensus safety protocols, **these proposals MUST NOT
 
 | Proposal ID | Title | Consensus Subsystem | Fork Type | Target Activation |
 |---|---|---|---|---|
-| **C1** | Extended MTP Window & Parent-Relative Timestamp Bound | Header Timestamp Validation | Hard Fork | Proposed Block #15,000 |
-| **C2** | Nondecreasing Timestamps for LWMA-1 | LWMA Difficulty Calculation | Hard Fork | Proposed Block #15,000 |
+| **C1** | Extended MTP Window & Parent-Relative Timestamp Bound | Header Timestamp Validation | Hard Fork | Proposed Block #6,500 |
+| **C2** | Nondecreasing Timestamps for LWMA-1 | LWMA Difficulty Calculation | Hard Fork | Proposed Block #6,500 |
 | **C3** | ML-DSA-65 Canonicality & Cross-Network Replay Audit | Cryptographic Verification | Audit / possible rule change | No activation proposed |
 | **C4** | Transaction Time-To-Live (TTL / Expiry Height) | Mempool & Transaction Structure | Hard Fork | Proposed Block #25,000 |
 | **C5** | Reorg Depth Limit & Coinbase Maturity Invariant | Fork Resolution & State Replay | Local policy | No activation proposed |
@@ -64,7 +65,7 @@ func ValidateBlockTimestampC1(b *Block, prev *Block, chainHistory []Block) error
 ```
 
 ### 3. Migration & Activation Plan
-- **Activation Gate:** Block height activation (`ActivationHeight_C1 = 15000`).
+- **Activation Gate:** Block height activation (`ActivationHeight_C1 = 6500`).
 - For `b.Index < ActivationHeight_C1`: Evaluate legacy MTP-11.
 - For `b.Index >= ActivationHeight_C1`: Strictly enforce MTP-55.
 
@@ -101,10 +102,10 @@ if b.Index >= ActivationHeight_C2 {
 Optionally require `b.Timestamp >= prev.Timestamp + 1` for strictly increasing timestamps. The selected rule and its effect on valid historical timestamps must be tested before adoption.
 
 ### 3. Migration & Activation Plan
-- Combined with Proposal C1 at `ActivationHeight = 15000`.
+- Combined with Proposal C1 at `ActivationHeight = 6500`.
 
 ### 4. Backward Compatibility
-- **Hard Fork:** Blocks with `Timestamp < prev.Timestamp` (valid under legacy rules) are rejected by upgraded nodes. Historical blocks (0..14999) remain valid under legacy rules.
+- **Hard Fork:** Blocks with `Timestamp < prev.Timestamp` (valid under legacy rules) are rejected by upgraded nodes. Historical blocks (0..6499) remain valid under legacy rules.
 
 ### 5. Test Plan
 - Regression test submitting candidate block with `Timestamp == prev.Timestamp - 1` (rejected post-activation, accepted pre-activation).
@@ -213,8 +214,8 @@ const (
 
 | Milestone | Target Testnet Height | Target Date | Scope |
 |---|---|---|---|
-| **Phase 1** | Block #15,000 | Q1 2027 | C1 (MTP-55), C2 (Monotonic Time), C5 (Reorg Depth Clamp) |
-| **Phase 2** | No activation proposed | Q2 2027 | C3 (ML-DSA-65 Encoding and Cross-Network Replay Audit) |
+| **Phase 1** | Block #6,500 | Q1 2027 | C1 (MTP-55), C2 (Monotonic Time) |
+| **Phase 2** | No activation proposed | Q2 2027 | C3 (ML-DSA-65 Encoding and Cross-Network Replay Audit), C5 (Reorg Depth Policy, local node policy, not height-gated) |
 | **Phase 3** | Block #25,000 | Q3 2027 | C4 (Transaction Expiry Height / TTL) |
 
 *Document compiled in strict accordance with Armaxcoin Security Audit Guidelines.*

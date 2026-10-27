@@ -1,7 +1,7 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.4` (Public Open Testnet)<br>
+**Current Release:** `v1.0.5` (Public Open Testnet)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
@@ -111,29 +111,29 @@ Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](ht
 #### On Linux / ARM64:
 ```bash
 # Download package and checksum
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.4/armax-v1.0.4-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.4/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.5/armax-v1.0.5-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.5/SHA256SUMS
 
 # Verify checksum integrity
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
-tar -xzf armax-v1.0.4-linux-amd64.tar.gz
+tar -xzf armax-v1.0.5-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet
 ```
 
 #### On Windows (PowerShell):
 ```powershell
 # Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.4-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.5-windows-amd64.zip
 
 # Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.4-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.5-windows-amd64.zip"
 ```
 
 #### Release Verification
 To verify the authenticity and integrity of a release:
-1. **Commit & Tag Matching:** Confirm that the release tag matches the official commit history (`git tag -v v1.0.4` or verifying commit history).
+1. **Commit & Tag Matching:** Confirm that the release tag matches the official commit history (`git tag -v v1.0.5` or verifying commit history).
 2. **Checksum Integrity:** Verify downloaded archive hashes against the published `SHA256SUMS` manifest using `sha256sum --check --ignore-missing SHA256SUMS`.
 3. **Security Scope of Unsigned Checksums:** Note that checksums hosted directly alongside binaries protect against accidental network corruption, but do not provide cryptographic defense if the hosting infrastructure itself is compromised. Reproducible source compilation (`go build -trimpath ...`) matching the tagged commit provides independent binary verification.
 
@@ -542,6 +542,21 @@ Armaxcoin is strategically architected across 7 core pillars:
 ---
 
 ## Release History & Changelog
+
+### v1.0.5 (Public Open Testnet -- Display Ticker, CLI Hardening & Release Prep) -- 2026-10-27
+
+Maintenance release. No consensus rule, genesis, NetworkID, or hashing change; existing testnet blocks remain valid.
+
+- **Testnet display ticker `tARMX`:** daemon, miner, GUI, and CLI help use the active ticker (display-only). `ARMX` remains the mainnet ticker.
+- **CLI standards:** non-zero exit codes on errors, JSON error output for `armsend -json`, warnings on stderr, deprecation notices for legacy aliases, and `-h`/`--help`.
+- **Fixes:** Unix GUI miner RPC authentication (HTTP 401) and missing TXID in the Unix GUI transactions tab.
+- **Security:** pinned `toolchain go1.27.3` (`GO-2026-6809`); fail-fast startup errors instead of panics.
+- **Note:** `v1.0.2` was never released; the version sequence goes `v1.0.1` to `v1.0.3`.
+- Consensus proposals C1–C5 remain design-only (`docs/security/consensus-proposals.md`).
+
+See [CHANGELOG.md](CHANGELOG.md) for details.
+
+---
 
 ### v1.0.4 (Public Open Testnet -- Structured Diagnostics & Consensus Hardening) -- 2026-10-27
 

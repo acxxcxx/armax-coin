@@ -1182,7 +1182,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
 </main>
 
 <footer class="statusbar">
-  <div>Armaxcoin Core Desktop Web GUI v1.0.4 | Post-Quantum ML-DSA-65</div>
+  <div>Armaxcoin Core Desktop Web GUI v1.0.5 | Post-Quantum ML-DSA-65</div>
   <div id="lblStatusbarSummary">Node: Connected | Ready</div>
 </footer>
 

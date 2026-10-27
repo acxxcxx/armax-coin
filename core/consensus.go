@@ -10,7 +10,7 @@ import (
 
 const (
 	// Version defines the canonical software and consensus protocol release version [R-10]
-	Version = "1.0.4"
+	Version = "1.0.5"
 
 	// MaxReorganizationDepth defines the maximum depth of reorganization allowed (prevents deep 51% history overwrites, 720 blocks = ~1 day at 120s) [D-05]
 	MaxReorganizationDepth = 720

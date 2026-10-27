@@ -4,12 +4,13 @@
 # Armaxcoin Release Verification & Dry-Run Test Suite (Linux / macOS / ARM64)
 # ==============================================================================
 # Usage:
-#   ./scripts/verify-release.sh [BIN_DIR]
+#   ./scripts/verify-release.sh [BIN_DIR] [EXPECTED_VERSION]   (default: v1.0.5)
 # ==============================================================================
 
 set -euo pipefail
 
 BIN_DIR="${1:-.}"
+EXPECTED_VERSION="${2:-v1.0.5}"
 echo "=================================================="
 echo " ARMAXCOIN - RELEASE VERIFICATION & DRY-RUN"
 echo "=================================================="
@@ -44,7 +45,7 @@ fi
 echo "[+] Verifying -version output across binaries..."
 for bin in "${ARMCOIND}" "${ARMMINER}" "${ARMSEND}" "${ARMWALLET}"; do
     out=$("${bin}" -version 2>&1 || true)
-    if [[ ! "${out}" =~ "v1.0.4" ]]; then
+    if [[ ! "${out}" == *"${EXPECTED_VERSION}"* ]]; then
         echo "[-] Version check failed for ${bin}: ${out}"
         exit 1
     fi
@@ -97,7 +98,7 @@ ADDRESS_A=$(grep -oE "armx1[a-z0-9]+" <<< "${CREATE_OUT}" | head -n 1)
 echo "[OK] Wallet A created with address: ${ADDRESS_A}"
 
 # Extract 24 words mnemonic
-MNEMONIC=$(grep -E '([a-z]+\s+){23}[a-z]+' <<< "${CREATE_OUT}" | head -n 1 | tr -d '\r')
+MNEMONIC=$(grep -E '([a-z]+\s+){23}[a-z]+' <<< "${CREATE_OUT}" | head -n 1 | tr -d '\r"' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
 if [ -n "${MNEMONIC}" ]; then
     echo "[+] Restoring wallet from 24-word mnemonic phrase..."
     RESTORE_OUT=$("${ARMWALLET}" -network testnet -restore "${MNEMONIC}" -file "${WALLET_A_RESTORE}" 2>&1)

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.5] - 2026-10-27
+
+> **Note:** `v1.0.2` was never released or tagged. The release sequence is `v1.0.0`, `v1.0.1`, `v1.0.3`, `v1.0.4`, `v1.0.5`.
+
+### Version
+- Bumped the protocol/software version to `1.0.5` (`core/consensus.go`, GUI footer, Windows manifest, `scripts/build-release.ps1`). `scripts/verify-release.sh` now takes the expected version as an optional second argument (default `v1.0.5`) and strips the surrounding quotes from the printed recovery phrase, which previously made its mnemonic-restore step fail.
+- No consensus rule, genesis, NetworkID, or hashing change. Consensus proposals C1–C5 remain design-only; the proposal document now states this explicitly, uses activation height 6,500 for C1/C2, and lists C5 as local policy.
+
 ### Security
 - Pinned `toolchain go1.27.3` in `go.mod` to remediate `GO-2026-6809` (`crypto/x509`) reported by `govulncheck`.
 
