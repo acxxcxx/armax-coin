@@ -209,7 +209,7 @@ Output includes:
 
 ### 6. Send Testnet Transactions
 
-Transfer testnet coins to another address (requires sufficient spendable balance). Amounts and fees are specified in **tARMX** by default on testnet (**ARMX** on mainnet) (with raw base unit options `-amount-armoids` and `-fee-armoids` available):
+Transfer testnet coins to another address (requires sufficient spendable balance). Amounts and fees are specified in **tARMX** by default on testnet (**ARMX** on mainnet). Raw base unit options `-amount-armoids` and `-fee-armoids` are also available:
 
 ```bash
 # Linux / macOS / ARM64 (transfer 10 tARMX with automatic minimum fee)

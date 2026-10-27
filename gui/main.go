@@ -1114,7 +1114,7 @@ func formatArmx(armoids int64) string {
 func main() {
 	fmt.Println("==================================================")
 	fmt.Println("WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited")
-	fmt.Println("  ARMAXCOIN (ARMX) - DESKTOP GUI WALLET")
+	fmt.Printf("  ARMAXCOIN (%s) - DESKTOP GUI WALLET\n", core.ActiveTicker())
 	fmt.Println("==================================================")
 
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L4-1]")
@@ -2579,7 +2579,7 @@ func sendTransaction(mw *walk.MainWindow, leTo, leAmt, leFee, lePass *walk.LineE
 
 	amtArmoids, err := core.ParseArmxDecimal(amtStr)
 	if err != nil || amtArmoids <= 0 {
-		walk.MsgBox(mw, "Invalid Amount", fmt.Sprintf("Invalid ARMX amount: %v", err), walk.MsgBoxIconError)
+		walk.MsgBox(mw, "Invalid Amount", fmt.Sprintf("Invalid %s amount: %v", armxTicker(), err), walk.MsgBoxIconError)
 		return
 	}
 

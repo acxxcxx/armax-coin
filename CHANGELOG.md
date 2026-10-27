@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified why the P2P client TLS config skips chain verification (peer authentication is done by TOFU pinning).
 - `go mod tidy` now lists direct imports as direct requirements.
 - Documentation: Go 1.27.3+ guidance, mainnet-readiness gate status table, and cross-references between overlapping testnet/release guides.
+- Testnet display ticker is now `tARMX` in the daemon, miner, and GUI banners and messages (via `core.ActiveTicker()`). This is display-only: NetworkID, genesis, hashing, serialization, and consensus rules are unchanged, so no hard fork is required and existing testnet blocks remain valid. `ARMX` remains the mainnet ticker.
+- The miner's fee line in the daemon self-test now shows base units (`Armoids`) instead of `ARMX`, because the value is in Armoids.
 
 ### CLI
 - `armwallet` commands exit non-zero (1) on errors; previously failures printed `[-]` and exited 0.

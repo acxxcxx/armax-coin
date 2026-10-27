@@ -76,7 +76,7 @@ On Windows (PowerShell):
 Expected startup output:
 ```text
 ==================================================
- ARMAXCOIN (ARMX) - DAEMON & P2P NODE
+ ARMAXCOIN (tARMX) - DAEMON & P2P NODE
 ==================================================
 [+] Network Profile  : TESTNET
 [+] Blockchain Height: ...

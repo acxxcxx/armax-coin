@@ -197,7 +197,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprint(os.Stderr, `armwallet - create, inspect and back up ARMX wallets
+	fmt.Fprint(os.Stderr, `armwallet - create, inspect and back up wallets
 
 Usage:
   armwallet -create [-wallet <FILE>]                     create a wallet with a 24-word mnemonic

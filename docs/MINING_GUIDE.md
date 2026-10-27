@@ -29,9 +29,9 @@ ArmaxHash v2 is active from block #2500 on testnet. It uses chained BLAKE2b with
 
 ## 2. Tokenomics & Block Rewards
 
-- **Initial Block Reward:** `60.00000000 ARMX` per block.
+- **Initial Block Reward:** `60.00000000 tARMX` per block on testnet (`ARMX` on mainnet, which is locked).
 - **Halving Interval:** Every `1,050,000` blocks (~4 years at 120-second target block time).
-- **Hard Supply Ceiling:** `126,000,000.00000000 ARMX` maximum supply.
+- **Hard Supply Ceiling:** `126,000,000.00000000 tARMX` maximum testnet supply.
 - **Target Block Time:** `120` seconds (2 minutes).
 - **Difficulty Adjustment:** **LWMA-1** (Linear Weighted Moving Average, window $N=60$ blocks).
 - **Coinbase Maturity:** 10 confirmations on Testnet (100 blocks on Mainnet) before mined rewards can be spent.
@@ -90,7 +90,7 @@ The following is illustrative; actual hashrate and log details depend on the nod
 
 ```text
 ==================================================
- ARMAXCOIN (ARMX) - MULTI-THREADED MINER
+ ARMAXCOIN (tARMX) - MULTI-THREADED MINER
 ==================================================
 [+] Network Profile  : TESTNET
 [+] Miner Address    : armx1...
@@ -98,7 +98,7 @@ The following is illustrative; actual hashrate and log details depend on the nod
 [+] Target RPC Node  : http://127.0.0.1:19333
 [+] Algorithm Active : armaxhash-v2 (Stream-Fast Chained BLAKE2b)
 ==================================================
-[10:35:10] [*] Mining Block #2550 (armaxhash-v2) | Prev: 0029b3104e12... | Txs: 1 | Diff: 4.0000 | Reward: 60 ARMX
+[10:35:10] [*] Mining Block #2550 (armaxhash-v2) | Prev: 0029b3104e12... | Txs: 1 | Diff: 4.0000 | Reward: 60 tARMX
 [10:35:20] [ Mining] Block #2550 | 4 threads | 5.82 MH/s (Total: 58200000 hashes, 10s)
 [10:35:45] [OK BLOCK SOLVED!] Height #2550 | Hash: 0000b48f129c1e... | Nonce: 4920148 | Diff: 4
 ```

@@ -432,7 +432,7 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 
 	amtArmoids, err := core.ParseArmxDecimal(req.Amount)
 	if err != nil || amtArmoids <= 0 {
-		http.Error(w, "Invalid ARMX amount", http.StatusBadRequest)
+		http.Error(w, "Invalid amount", http.StatusBadRequest)
 		return
 	}
 

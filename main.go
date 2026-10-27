@@ -272,7 +272,7 @@ func main() {
 		}
 		fmt.Printf("[!] RPC Daemon     : OFFLINE (%v)\n", err)
 		chain := getBC()
-		fmt.Printf("[OK] Local Database : %d blocks indexed (Circulating: %d ARMX)\n", len(chain.Chain), chain.GetCirculatingSupply()/core.CoinUnit)
+		fmt.Printf("[OK] Local Database : %d blocks indexed (Circulating: %d %s)\n", len(chain.Chain), chain.GetCirculatingSupply()/core.CoinUnit, core.ActiveTicker())
 		return
 	}
 
@@ -289,8 +289,8 @@ func main() {
 				fmt.Printf("  Total Blocks      : %v\n", stats["blocks"])
 				fmt.Printf("  Difficulty        : %v\n", stats["difficulty"])
 				fmt.Printf("  Total Chainwork   : %v\n", stats["chainwork"])
-				fmt.Printf("  Circulating Supply: %v ARMX\n", stats["circulating_supply"])
-				fmt.Printf("  Max Supply        : %v ARMX\n", stats["max_supply"])
+				fmt.Printf("  Circulating Supply: %v %s\n", stats["circulating_supply"], core.ActiveTicker())
+				fmt.Printf("  Max Supply        : %v %s\n", stats["max_supply"], core.ActiveTicker())
 				fmt.Printf("  Mempool Size      : %v txs\n", stats["mempool_size"])
 				fmt.Printf("  Active Peers      : %v\n", stats["peers_active"])
 				fmt.Printf("  Best Block Hash   : %v\n", stats["latest_hash"])
@@ -312,8 +312,8 @@ func main() {
 		fmt.Printf("  Total Blocks      : %d\n", len(chain.Chain))
 		fmt.Printf("  Difficulty        : %d\n", chain.Difficulty)
 		fmt.Printf("  Total Chainwork   : %s\n", chain.GetTotalChainwork().String())
-		fmt.Printf("  Circulating Supply: %d ARMX\n", chain.GetCirculatingSupply()/core.CoinUnit)
-		fmt.Printf("  Max Supply        : %d ARMX\n", core.MaxSupply/core.CoinUnit)
+		fmt.Printf("  Circulating Supply: %d %s\n", chain.GetCirculatingSupply()/core.CoinUnit, core.ActiveTicker())
+		fmt.Printf("  Max Supply        : %d %s\n", core.MaxSupply/core.CoinUnit, core.ActiveTicker())
 		if len(chain.Chain) > 0 {
 			fmt.Printf("  Best Block Hash   : %s\n", chain.GetLatestBlock().Hash)
 		}
@@ -462,14 +462,14 @@ func main() {
 	if *daemonFlag && !*testFlag {
 		bc = getBC()
 		fmt.Println("==================================================")
-		fmt.Println(" ARMAXCOIN (ARMX) - DAEMON & P2P NODE")
+		fmt.Printf(" ARMAXCOIN (%s) - DAEMON & P2P NODE\n", core.ActiveTicker())
 		fmt.Println("==================================================")
 		fmt.Printf("[+] Network Profile  : %s\n", strings.ToUpper(activeNet.Name))
 		topHeight := 0
 		if len(bc.Chain) > 0 {
 			topHeight = len(bc.Chain) - 1
 		}
-		fmt.Printf("[+] Blockchain Height: %d (blocks: %d, Supply: %d / %d ARMX)\n", topHeight, len(bc.Chain), bc.GetCirculatingSupply()/core.CoinUnit, core.MaxSupply/core.CoinUnit)
+		fmt.Printf("[+] Blockchain Height: %d (blocks: %d, Supply: %d / %d %s)\n", topHeight, len(bc.Chain), bc.GetCirculatingSupply()/core.CoinUnit, core.MaxSupply/core.CoinUnit, core.ActiveTicker())
 
 		// Load configuration
 		cfg, err := node.LoadConfig(*configFlag)
@@ -600,9 +600,9 @@ func main() {
 
 	bc = getBC()
 	fmt.Println("==================================================")
-	fmt.Println(" ARMAXCOIN (ARMX) - SELF-TEST & DEMO SUITE")
+	fmt.Printf(" ARMAXCOIN (%s) - SELF-TEST & DEMO SUITE\n", core.ActiveTicker())
 	fmt.Println("==================================================")
-	fmt.Printf("[+] Blockchain active. Block count: %d (Supply: %d / %d ARMX)\n", len(bc.Chain), bc.GetCirculatingSupply()/core.CoinUnit, core.MaxSupply/core.CoinUnit)
+	fmt.Printf("[+] Blockchain active. Block count: %d (Supply: %d / %d %s)\n", len(bc.Chain), bc.GetCirculatingSupply()/core.CoinUnit, core.MaxSupply/core.CoinUnit, core.ActiveTicker())
 
 	// 2. Generate user and miner wallets
 	w1, err := wallet.NewWallet()
@@ -645,10 +645,10 @@ func main() {
 	}
 	fmt.Printf("[OK] Block #%d successfully mined!\n", minedBlock.Index)
 	fmt.Printf("    Hash: %s\n", minedBlock.Hash)
-	fmt.Printf("    Miner Balance: %d ARMX\n", bc.GetBalance(minerWallet.Address)/core.CoinUnit)
+	fmt.Printf("    Miner Balance: %d %s\n", bc.GetBalance(minerWallet.Address)/core.CoinUnit, core.ActiveTicker())
 
 	// 4. Construct and sign transaction from Miner to W1
-	fmt.Println("\n[~] Transferring 20 ARMX from Miner to Wallet W1 (with ML-DSA-65 Signature, Fee & Nonce)...")
+	fmt.Printf("\n[~] Transferring 20 %s from Miner to Wallet W1 (with ML-DSA-65 Signature, Fee & Nonce)...\n", core.ActiveTicker())
 	tx := core.Transaction{
 		Sender:    minerWallet.Address,
 		SenderPub: minerWallet.PublicKey,
@@ -668,7 +668,7 @@ func main() {
 		fmt.Printf("[-] Transaction rejected: %s\n", msg)
 		return
 	}
-	fmt.Printf("[OK] %s (Nonce: #%d, Fee: %d ARMX)\n", msg, tx.Nonce, tx.Fee)
+	fmt.Printf("[OK] %s (Nonce: #%d, Fee: %d Armoids)\n", msg, tx.Nonce, tx.Fee)
 
 	// 5. Miner mines block #2 to confirm mempool transactions
 	fmt.Println("\n[~] Miner mining block #2 to confirm transactions...")
@@ -692,10 +692,10 @@ func main() {
 	fmt.Println("\n==================================================")
 	fmt.Println(" FINAL BALANCES AFTER TEST SUITE:")
 	fmt.Println("==================================================")
-	fmt.Printf("  Miner Balance : %d ARMX (100 rewards + 1 fee collected - 21 sent)\n", bc.GetBalance(minerWallet.Address)/core.CoinUnit)
-	fmt.Printf("  W1 Balance    : %d ARMX (Received transfer)\n", bc.GetBalance(w1.Address)/core.CoinUnit)
-	fmt.Printf("  W2 Balance    : %d ARMX\n", bc.GetBalance(w2.Address)/core.CoinUnit)
-	fmt.Printf("  Circulating   : %d / %d ARMX\n", bc.GetCirculatingSupply()/core.CoinUnit, core.MaxSupply/core.CoinUnit)
+	fmt.Printf("  Miner Balance : %d %s (100 rewards + 1 fee collected - 21 sent)\n", bc.GetBalance(minerWallet.Address)/core.CoinUnit, core.ActiveTicker())
+	fmt.Printf("  W1 Balance    : %d %s (Received transfer)\n", bc.GetBalance(w1.Address)/core.CoinUnit, core.ActiveTicker())
+	fmt.Printf("  W2 Balance    : %d %s\n", bc.GetBalance(w2.Address)/core.CoinUnit, core.ActiveTicker())
+	fmt.Printf("  Circulating   : %d / %d %s\n", bc.GetCirculatingSupply()/core.CoinUnit, core.MaxSupply/core.CoinUnit, core.ActiveTicker())
 	fmt.Println("==================================================")
 	fmt.Println("Tip: Run as full daemon with optional background miner:")
 	fmt.Printf("  go run main.go -daemon -port %s -p2p %s -mine\n", core.MainnetRPCPort, core.MainnetP2PPort)

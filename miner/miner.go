@@ -57,7 +57,7 @@ type SubmitBlockResponse struct {
 func main() {
 	fmt.Println("==================================================")
 	fmt.Println("ARMAX ALPHA TESTNET - no economic value, unaudited")
-	fmt.Println("ARMAXCOIN (ARMX) - AUTOMATIC CPU MINER CLIENT")
+	fmt.Printf("ARMAXCOIN (%s) - AUTOMATIC CPU MINER CLIENT\n", core.ActiveTicker())
 	fmt.Println("==================================================")
 
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
@@ -314,7 +314,7 @@ func main() {
 		fmt.Printf("  Previous Block    : %s\n", tmpl.PreviousBlockHash)
 		fmt.Printf("  Difficulty        : %.4f\n", tmpl.Difficulty)
 		fmt.Printf("  Target Hash Bound : %s\n", tmpl.Target)
-		fmt.Printf("  Block Reward      : %.8f ARMX (%d Armoids)\n", float64(tmpl.CoinbaseValue)/1e8, tmpl.CoinbaseValue)
+		fmt.Printf("  Block Reward      : %.8f %s (%d Armoids)\n", float64(tmpl.CoinbaseValue)/1e8, core.ActiveTicker(), tmpl.CoinbaseValue)
 		fmt.Printf("  Mempool Tx Count  : %d transaction(s)\n", len(tmpl.Transactions))
 		fmt.Println("==================================================")
 		return
@@ -480,8 +480,8 @@ func main() {
 		}
 
 		algo := candidateBlock.PoWAlgorithm()
-		fmt.Printf("[%s] [*] Mining Block #%d (%s) | Prev: %s... | Txs: %d | Diff: %.4f | Reward: %d ARMX\n",
-			time.Now().Format("15:04:05"), tmpl.Height, algo, tmpl.PreviousBlockHash[:12], len(txs), tmpl.Difficulty, tmpl.CoinbaseValue/core.CoinUnit)
+		fmt.Printf("[%s] [*] Mining Block #%d (%s) | Prev: %s... | Txs: %d | Diff: %.4f | Reward: %d %s\n",
+			time.Now().Format("15:04:05"), tmpl.Height, algo, tmpl.PreviousBlockHash[:12], len(txs), tmpl.Difficulty, tmpl.CoinbaseValue/core.CoinUnit, core.ActiveTicker())
 
 		roundCtx, cancelRound := context.WithCancel(context.Background())
 		solutionChan := make(chan core.Block, 1)
@@ -615,8 +615,8 @@ func main() {
 				fmt.Printf("[%s] [- STALE/ERROR] Submission notice from %s: %v\n",
 					time.Now().Format("15:04:05"), activeDaemon, err)
 			} else if res.Status == "accepted" {
-				fmt.Printf("[%s] [OK ACCEPTED] Block #%d accepted by node %s | Hash: %s | Reward: %d ARMX\n",
-					time.Now().Format("15:04:05"), res.Height, activeDaemon, hashPrefix, tmpl.CoinbaseValue/core.CoinUnit)
+				fmt.Printf("[%s] [OK ACCEPTED] Block #%d accepted by node %s | Hash: %s | Reward: %d %s\n",
+					time.Now().Format("15:04:05"), res.Height, activeDaemon, hashPrefix, tmpl.CoinbaseValue/core.CoinUnit, core.ActiveTicker())
 			} else {
 				fmt.Printf("[%s] [- REJECTED] Block #%d rejected by %s: %s\n",
 					time.Now().Format("15:04:05"), solvedBlock.Index, activeDaemon, res.Message)

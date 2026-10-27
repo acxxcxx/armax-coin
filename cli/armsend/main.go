@@ -39,7 +39,7 @@ func exitError(jsonMode bool, msg string) {
 }
 
 func printUsage() {
-	fmt.Fprint(os.Stderr, `armsend - send ARMX coins and query transactions
+	fmt.Fprint(os.Stderr, `armsend - send coins and query transactions
 
 Usage:
   armsend -to <ADDRESS> -amount <DECIMAL> [-fee <DECIMAL>] [-wallet <FILE>]
