@@ -1,5 +1,5 @@
 [center]
-[size=24pt][b]ARMAXCOIN (ARMX)[/b][/size]
+[size=24pt][b]ARMAXCOIN TESTNET (tARMX)[/b][/size]
 [size=14pt][b]Proof-of-Work Layer-1 Blockchain with Post-Quantum Signatures (NIST FIPS 204, ML-DSA-65)[/b][/size]
 [size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.4)[/b][/size]
 [/center]
@@ -124,7 +124,7 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 # Query spendable and confirmed balance
 ./armwallet -balance <YOUR_ARMX_ADDRESS>
 
-# Send testnet coins (e.g. 10.0 ARMX with 0.00015 ARMX fee)
+# Send testnet coins (e.g. 10.0 tARMX with 0.00015 tARMX fee)
 ./armsend -to <RECIPIENT_ADDRESS> -amount 10.0 -fee 0.00015 -wallet testnet_wallet.json
 [/code]
 [i]Note: Freshly mined coinbase rewards require 10 confirmations to mature before becoming spendable.[/i]
@@ -138,7 +138,7 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 [*] [b]RPC Isolation:[/b] RPC daemon binds strictly to [font=monospace]127.0.0.1[/font]. Mutating endpoints require local cookie authentication ([font=monospace]armax.cookie[/font]) or HTTP Basic Auth. Binding to external interfaces requires explicit TLS certificates and credentials.
 [*] [b]Low Bootstrap Hashrate & 51% Risk:[/b] During early testnet testing with few active miners, the network is susceptible to 51% hashrate spikes. Reorganizations are bounded by consensus to 720 blocks (~24 hours).
 [*] [b]ARM Single-Board Computers:[/b] ML-DSA-65 modular polynomial arithmetic introduces measurable verification latency on low-power ARM single-board computers (Raspberry Pi 3/4).
-[*] [b]No Economic Promises:[/b] ARMX is an experimental open-source protocol. There is no promise of future monetary value, exchange listing, airdrop, or financial return.
+[*] [b]No Economic Promises:[/b] Testnet coins (tARMX) have no economic value. The ARMX protocol is an experimental open-source protocol. There is no promise of future monetary value, exchange listing, airdrop, or financial return.
 [/list]
 
 [hr]

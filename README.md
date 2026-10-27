@@ -209,13 +209,13 @@ Output includes:
 
 ### 6. Send Testnet Transactions
 
-Transfer testnet coins to another address (requires sufficient spendable balance). Amounts and fees are specified in **ARMX** by default (with raw base unit options `-amount-armoids` and `-fee-armoids` available):
+Transfer testnet coins to another address (requires sufficient spendable balance). Amounts and fees are specified in **tARMX** by default on testnet (**ARMX** on mainnet) (with raw base unit options `-amount-armoids` and `-fee-armoids` available):
 
 ```bash
-# Linux / macOS / ARM64 (transfer 10 ARMX with automatic minimum fee)
+# Linux / macOS / ARM64 (transfer 10 tARMX with automatic minimum fee)
 ./armsend -to <RECIPIENT_ADDRESS> -amount 10 -wallet my_testnet_wallet.json
 
-# With explicit fee in ARMX and pre-flight dry-run validation (no broadcast):
+# With explicit fee in tARMX and pre-flight dry-run validation (no broadcast):
 ./armsend -to <RECIPIENT_ADDRESS> -amount 10.5 -fee 0.0001 -dry-run
 
 # Windows
@@ -321,10 +321,10 @@ The build script generates 5 binaries in the root directory:
 
 ### 3. Sending Transactions via CLI (`armsend`)
 ```bash
-# Send 20 ARMX with automatic minimum relay fee
+# Send 20 tARMX with automatic minimum relay fee
 ./armsend -network testnet -to <RECIPIENT_ADDRESS> -amount 20.0 -wallet testnet_wallet.json
 
-# Send with explicit miner fee in ARMX:
+# Send with explicit miner fee in tARMX:
 ./armsend -network testnet -to <RECIPIENT_ADDRESS> -amount 10.5 -fee 0.0001 -wallet testnet_wallet.json
 
 # Validate transaction parameters, balance, and signature without broadcasting (dry run):

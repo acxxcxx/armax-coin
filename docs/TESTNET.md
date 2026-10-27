@@ -244,4 +244,4 @@ To prevent sybil attacks, resource draining, and spam without introducing comple
      -amount-armoids 100000000 \
      -fee-armoids 11000
    ```
-  *(Sends 1.0 ARMX [100,000,000 Armoids] with a fee of 11,000 Armoids).*
+  *(Sends 1.0 tARMX [100,000,000 Armoids] with a fee of 11,000 Armoids).*
