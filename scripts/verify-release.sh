@@ -123,8 +123,19 @@ echo ""
 
 # 8. Send transaction test
 echo "[+] Testing transaction execution between wallets..."
-"${ARMSEND}" -network testnet -daemon "http://127.0.0.1:${RPC_PORT}" -wallet "${WALLET_A}" -to "${ADDRESS_B}" -amount 100000000 -fee 1000 || true
-echo "[OK] armsend executed successfully."
+# The isolated wallet is unfunded, so the only accepted failure is "Insufficient balance".
+# Any other non-zero exit fails the release check.
+SEND_RC=0
+SEND_OUT=$("${ARMSEND}" -network testnet -daemon "http://127.0.0.1:${RPC_PORT}" -wallet "${WALLET_A}" -to "${ADDRESS_B}" -amount 100000000 -fee 1000 2>&1) || SEND_RC=$?
+echo "${SEND_OUT}"
+if [ "${SEND_RC}" -eq 0 ]; then
+    echo "[OK] armsend executed successfully."
+elif [[ "${SEND_OUT}" == *"Insufficient balance"* ]]; then
+    echo "[OK] armsend rejected unfunded transfer as expected (Insufficient balance)."
+else
+    echo "[-] armsend failed unexpectedly (exit ${SEND_RC})."
+    exit 1
+fi
 
 # 9. Query balance
 echo "[+] Querying balance via armwallet CLI..."
