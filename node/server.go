@@ -1258,6 +1258,7 @@ func InitServerFromConfig(bc *core.Blockchain, cfg *Config) (*PeerServer, *Serve
 			peerServer.AddPeer(resolvedPeer)
 		}
 	}
+	peerServer.SetSeedPeers(cfg.SeedPeers)
 
 	serverCfg := &ServerConfig{
 		NetworkID:   targetNetID,

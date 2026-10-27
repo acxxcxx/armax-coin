@@ -317,6 +317,9 @@ type PeerServer struct {
 	relayedTxs           map[string]map[string]time.Time
 	syncMu               sync.Mutex
 	syncingHosts         map[string]bool
+	seedMu               sync.RWMutex
+	seedPeers            []string             // configured seeds (host:port or DNS name), re-dialed after isolation
+	seedAddrs            map[string]struct{}  // resolved seed addresses, never evicted from the peer store
 	expectedChains       map[string]time.Time // [N-04] tracks requested chains to reject unsolicited CHAIN_RESPONSE
 	orphanLock           sync.Mutex
 	orphanBlocks         map[string]*orphanBlockEntry // [N-06, N-17] orphan block buffer keyed by Block.Hash
@@ -607,6 +610,54 @@ func (p *PeerServer) clearPeerUnreachable(addr string) {
 	defer p.reachabilityMu.Unlock()
 	if p.unreachablePeers != nil {
 		delete(p.unreachablePeers, addr)
+	}
+}
+
+func (p *PeerServer) clearAllPeerUnreachable() {
+	p.reachabilityMu.Lock()
+	defer p.reachabilityMu.Unlock()
+	p.unreachablePeers = nil
+}
+
+// SetSeedPeers records the configured seed list so the node can re-dial it after
+// losing connectivity. Seeds are protected from eviction and are re-added on demand.
+func (p *PeerServer) SetSeedPeers(seeds []string) {
+	p.seedMu.Lock()
+	p.seedPeers = append([]string(nil), seeds...)
+	p.seedMu.Unlock()
+	p.ReseedPeers()
+}
+
+func (p *PeerServer) isSeedPeer(addr string) bool {
+	p.seedMu.RLock()
+	defer p.seedMu.RUnlock()
+	_, ok := p.seedAddrs[addr]
+	return ok
+}
+
+// ReseedPeers (re)resolves the configured seeds and puts them back in the address book,
+// clearing any unreachable cooldown on them.
+func (p *PeerServer) ReseedPeers() {
+	p.seedMu.RLock()
+	seeds := append([]string(nil), p.seedPeers...)
+	p.seedMu.RUnlock()
+	if len(seeds) == 0 {
+		return
+	}
+	for _, seed := range seeds {
+		if p.isShuttingDown() {
+			return
+		}
+		for _, addr := range ResolveDNSSeed(seed) {
+			p.seedMu.Lock()
+			if p.seedAddrs == nil {
+				p.seedAddrs = make(map[string]struct{})
+			}
+			p.seedAddrs[addr] = struct{}{}
+			p.seedMu.Unlock()
+			p.clearPeerUnreachable(addr)
+			_ = p.AddPeer(addr)
+		}
 	}
 }
 
@@ -2159,6 +2210,10 @@ func (p *PeerServer) RecordPeerFailure(addr string) error {
 
 	info.Failures++
 	evicted := false
+	if info.Failures >= MaxPeerFailures && p.isSeedPeer(addr) {
+		// Seeds are the node's only way back after an outage: keep them in the address book.
+		info.Failures = MaxPeerFailures - 1
+	}
 	if info.Failures >= MaxPeerFailures {
 		// Evict dead peer [N-16]
 		if inTried {
@@ -2795,6 +2850,14 @@ func (p *PeerServer) startSyncWorker(cycle *serverCycle) {
 	for {
 		select {
 		case <-syncTicker.C:
+			// Isolated (empty address book) or periodic refresh: re-dial seeds so a node that lost
+			// its internet link rejoins the network without a restart.
+			if len(p.GetPeers()) == 0 {
+				p.clearAllPeerUnreachable()
+				p.ReseedPeers()
+			} else if syncCycle%4 == 3 {
+				p.ReseedPeers()
+			}
 			p.SyncBestPeer()
 			syncCycle++
 			if syncCycle%2 == 0 {
@@ -4352,6 +4415,9 @@ func (p *PeerServer) RelayTransaction(
 	}
 }
 
+// lastDeepReorgWarn rate-limits the stale-branch error to once per 5 minutes (unix seconds).
+var lastDeepReorgWarn int64
+
 // SyncBestPeer discovers which peer has the highest chainwork and initiates sync only with that best peer [N-09, N-16]
 func (p *PeerServer) SyncBestPeer() {
 	if p.Blockchain == nil || p.isShuttingDown() {
@@ -4368,6 +4434,13 @@ func (p *PeerServer) SyncBestPeer() {
 	p.Blockchain.Lock.RUnlock()
 
 	var mu sync.Mutex
+	var failedPeers []string
+	succeeded := 0
+	markFailed := func(addr string) {
+		mu.Lock()
+		failedPeers = append(failedPeers, addr)
+		mu.Unlock()
+	}
 	var bestPeer string
 	bestChainwork := new(big.Int).Set(localChainwork)
 	bestHeight := localLatest.Index
@@ -4393,9 +4466,7 @@ func (p *PeerServer) SyncBestPeer() {
 					return
 				}
 				debugLogf("[SYNC] GET_HEIGHT failed peer=%s err=%v", peerAddr, err)
-				if rerr := p.RecordPeerFailure(peerAddr); rerr != nil {
-					core.LogDebug(core.LogCategoryNet, "Failed to persist peer store on failure for %s: %v", peerAddr, rerr)
-				}
+				markFailed(peerAddr)
 				return
 			}
 			if resp == nil || resp.Type != "HEIGHT_RESPONSE" {
@@ -4425,6 +4496,7 @@ func (p *PeerServer) SyncBestPeer() {
 			}
 
 			mu.Lock()
+			succeeded++
 			if peerCW.Cmp(bestChainwork) > 0 || (peerCW.Cmp(bestChainwork) == 0 && hr.Height > bestHeight) {
 				bestChainwork = peerCW
 				bestHeight = hr.Height
@@ -4434,6 +4506,17 @@ func (p *PeerServer) SyncBestPeer() {
 		}(peer)
 	}
 	wg.Wait()
+
+	// If every peer failed, our own connectivity is the likely culprit: do not punish the peers.
+	if succeeded > 0 {
+		for _, addr := range failedPeers {
+			if rerr := p.RecordPeerFailure(addr); rerr != nil {
+				core.LogDebug(core.LogCategoryNet, "Failed to persist peer store on failure for %s: %v", addr, rerr)
+			}
+		}
+	} else if len(failedPeers) > 0 {
+		core.LogWarn(core.LogCategorySync, "No peer answered (%d tried): network connectivity lost? Will keep retrying.", len(failedPeers))
+	}
 
 	if bestPeer != "" {
 		p.RequestChainSync(bestPeer)
@@ -4583,6 +4666,12 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 
 		// Reorg depth check before downloading blocks
 		if (localLatest.Index - ancestorHeight) > core.MaxReorganizationDepth {
+			if now := time.Now().Unix(); now-atomic.LoadInt64(&lastDeepReorgWarn) >= 300 {
+				atomic.StoreInt64(&lastDeepReorgWarn, now)
+				core.LogError(core.LogCategorySync,
+					"Peer %s has more chainwork but forks %d blocks deep (limit %d): this node is on a stale branch and will NOT reorganize automatically. Stop the node and restart with -resync to rebuild from the network.",
+					peerAddress, localLatest.Index-ancestorHeight, core.MaxReorganizationDepth)
+			}
 			fmt.Printf("[P2P] [!] Rejected deep reorganization from peer %s (depth %d > limit %d)\n",
 				peerAddress, localLatest.Index-ancestorHeight, core.MaxReorganizationDepth)
 			return

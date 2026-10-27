@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped the protocol/software version to `1.0.5` (`core/consensus.go`, GUI footer, Windows manifest, `scripts/build-release.ps1`). `scripts/verify-release.sh` now takes the expected version as an optional second argument (default `v1.0.5`) and strips the surrounding quotes from the printed recovery phrase, which previously made its mnemonic-restore step fail.
 - **HARD FORK at block 8,000 (testnet): all nodes and miners MUST upgrade to v1.0.5 before the tip reaches 8,000.** Implements C1 (block timestamp must exceed the median of the last 55 blocks, MTP-55) and C2 (timestamp must not be earlier than the parent). Below height 8,000 the legacy MTP-11 rule applies, so existing testnet blocks stay valid and sync from genesis is unchanged. The activation height must not be changed once the tip has passed it. Genesis, NetworkID, and hashing are unchanged. Miner and `/getblocktemplate` now use max(now, minimum valid timestamp). C3–C5 remain design-only; C4 stays at 25,000 and C5 is local policy.
 
+### Fixed
+- **Node never rejoined after a connectivity loss.** After an outage of ~45 s every peer (including the configured seeds) was evicted from the address book after 3 failed sync rounds and marked unreachable for 15 minutes; seeds were only read at startup, so the node stayed isolated and could mine a private branch until restarted. Now: seeds are never evicted and are re-dialed (DNS re-resolved) every ~60 s and immediately whenever the address book is empty; if every peer fails in the same round (local link down) no peer is penalized.
+- A node on a stale branch more than `MaxReorganizationDepth` (720) blocks deep now logs an explicit error (rate-limited) telling the operator to restart with `-resync`, instead of silently refusing.
+
 ### Security
 - Pinned `toolchain go1.27.3` in `go.mod` to remediate `GO-2026-6809` (`crypto/x509`) reported by `govulncheck`.
 
