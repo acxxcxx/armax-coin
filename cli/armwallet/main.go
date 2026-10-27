@@ -21,6 +21,7 @@ const (
 )
 
 func main() {
+	flag.Usage = printUsage
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	createPtr := flag.Bool("create", false, "Create a new quantum-safe wallet with 24-word recovery mnemonic")
 	newAddressPtr := flag.Bool("newaddress", false, "Create a new quantum-safe address/wallet (deprecated alias for -create)")
@@ -190,21 +191,37 @@ func main() {
 	} else if *mempoolPtr || *getMempoolPtr || *getMempoolInfoPtr {
 		showMempool(daemonURL, httpGetAuth)
 	} else {
-		fmt.Fprintln(os.Stderr, "Usage:")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -create [-wallet <FILE>]                            (Create new wallet with 24-word mnemonic)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -newaddress [-wallet <FILE>]                        (Create new wallet address)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -restore \"WORDS\" [-wallet <FILE>]                   (Restore wallet from mnemonic)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -address [-wallet <FILE>]                           (Display address from keystore)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -listaddresses [-wallet <FILE>]                     (List addresses in keystore)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -balance <ADDRESS> [-daemon <URL>]                  (Check wallet balance via daemon)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -getbalance <ADDRESS> [-daemon <URL>]               (Check wallet balance via daemon)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -mempool [-daemon <URL>]                            (Display unconfirmed transactions in mempool)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -gettransaction <TXID> [-daemon <URL>]              (View transaction details)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -backup <DEST_FILE> [-wallet <FILE>]                (Safely backup wallet keystore)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -walletcheck [-wallet <FILE>]                       (Verify keystore decryption and integrity)")
-		fmt.Fprintln(os.Stderr, "  ./armwallet -rescan [-wallet <FILE>]                            (Rescan transaction history)")
+		printUsage()
 		os.Exit(2)
 	}
+}
+
+func printUsage() {
+	fmt.Fprint(os.Stderr, `armwallet - create, inspect and back up ARMX wallets
+
+Usage:
+  armwallet -create [-wallet <FILE>]                     create a wallet with a 24-word mnemonic
+  armwallet -restore "WORDS" [-wallet <FILE>]            restore a wallet from a mnemonic
+  armwallet -address | -listaddresses [-wallet <FILE>]   show addresses in the keystore
+  armwallet -walletcheck [-wallet <FILE>]                verify keystore decryption and integrity
+  armwallet -backup <DEST_FILE> [-wallet <FILE>]         back up the keystore safely
+  armwallet -balance <ADDRESS> [-daemon <URL>]           check balance via the daemon
+  armwallet -gettransaction <TXID> [-daemon <URL>]       show transaction details
+  armwallet -mempool [-daemon <URL>]                     show unconfirmed transactions
+  armwallet -rescan [-wallet <FILE>]                     rescan transaction history
+
+Environment:
+  ARMX_NETWORK            network profile (testnet, mainnet)
+  ARMX_WALLET_PASSPHRASE  keystore passphrase (skips the prompt)
+  ARMX_DATA_DIR           data directory
+
+Examples:
+  armwallet -create -wallet my.json
+  armwallet -balance armx1... -daemon http://127.0.0.1:18340
+
+Flags:
+`)
+	flag.PrintDefaults()
 }
 
 func getPassphrase(confirm bool) (string, error) {

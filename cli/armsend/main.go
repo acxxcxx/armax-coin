@@ -38,7 +38,36 @@ func exitError(jsonMode bool, msg string) {
 	os.Exit(1)
 }
 
+func printUsage() {
+	fmt.Fprint(os.Stderr, `armsend - send ARMX coins and query transactions
+
+Usage:
+  armsend -to <ADDRESS> -amount <DECIMAL> [-fee <DECIMAL>] [-wallet <FILE>]
+  armsend -to <ADDRESS> -amount-armoids <N> [-fee-armoids <N>] [-wallet <FILE>]
+  armsend -mempool | -decode <TXID> | -confirmations <TXID> | -estimatefee | -info | -version
+
+Sending:    -to, -amount, -amount-armoids, -fee, -fee-armoids, -dry-run, -wait
+Connection: -network, -daemon, -rpcport, -p2pport, -rpcuser, -rpcpassword, -datadir
+Output:     -json (machine-readable; errors are JSON objects on stdout)
+
+Environment:
+  ARMX_NETWORK            network profile (testnet, mainnet)
+  ARMX_WALLET_PASSPHRASE  keystore passphrase (skips the prompt)
+  ARMX_DATA_DIR           data directory
+
+Examples:
+  armsend -to armx1... -amount 10.5
+  armsend -to armx1... -amount 10.5 -fee 0.0001 -dry-run
+  armsend -mempool
+  armsend -decode <TXID>
+
+Flags:
+`)
+	flag.PrintDefaults()
+}
+
 func main() {
+	flag.Usage = printUsage
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	toPtr := flag.String("to", "", "Recipient wallet address (required, Bech32 armx1...)")
 	amountPtr := flag.String("amount", "", "Amount to send in ARMX decimal string (e.g. '10.5' ARMX)")
@@ -383,16 +412,7 @@ func main() {
 	}
 
 	if *toPtr == "" || finalAmount <= 0 {
-		fmt.Fprintln(os.Stderr, "Usage:")
-		fmt.Fprintln(os.Stderr, "  ./armsend -to <RECIPIENT_ADDR> -amount <ARMX_DECIMAL> [-fee <ARMX_FEE>] [-wallet <FILE>]")
-		fmt.Fprintln(os.Stderr, "  ./armsend -to <RECIPIENT_ADDR> -amount-armoids <ARMOIDS> [-fee-armoids <FEE>] [-wallet <FILE>]")
-		fmt.Fprintln(os.Stderr, "  ./armsend -mempool [-daemon <URL>]")
-		fmt.Fprintln(os.Stderr, "\nExamples:")
-		fmt.Fprintln(os.Stderr, "  ./armsend -to armx1... -amount 10.5")
-		fmt.Fprintln(os.Stderr, "  ./armsend -to armx1... -amount 10.5 -fee 0.0001 -dry-run")
-		fmt.Fprintln(os.Stderr, "  ./armsend -mempool")
-		fmt.Fprintln(os.Stderr, "  ./armsend -decode <TXID>")
-		fmt.Fprintln(os.Stderr, "  ./armsend -confirmations <TXID>")
+		printUsage()
 		os.Exit(2)
 	}
 
