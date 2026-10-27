@@ -625,7 +625,7 @@ func (p *PeerServer) SetSeedPeers(seeds []string) {
 	p.seedMu.Lock()
 	p.seedPeers = append([]string(nil), seeds...)
 	p.seedMu.Unlock()
-	p.ReseedPeers()
+	p.reseedPeers(true)
 }
 
 func (p *PeerServer) isSeedPeer(addr string) bool {
@@ -638,6 +638,11 @@ func (p *PeerServer) isSeedPeer(addr string) bool {
 // ReseedPeers (re)resolves the configured seeds and puts them back in the address book,
 // clearing any unreachable cooldown on them.
 func (p *PeerServer) ReseedPeers() {
+	p.reseedPeers(false)
+}
+
+// reseedPeers prints the resolved addresses only when verbose (first call at startup).
+func (p *PeerServer) reseedPeers(verbose bool) {
 	p.seedMu.RLock()
 	seeds := append([]string(nil), p.seedPeers...)
 	p.seedMu.RUnlock()
@@ -648,7 +653,7 @@ func (p *PeerServer) ReseedPeers() {
 		if p.isShuttingDown() {
 			return
 		}
-		for _, addr := range ResolveDNSSeed(seed) {
+		for _, addr := range resolveDNSSeed(seed, verbose) {
 			p.seedMu.Lock()
 			if p.seedAddrs == nil {
 				p.seedAddrs = make(map[string]struct{})
@@ -3534,6 +3539,11 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 
 // ResolveDNSSeed resolves a domain-based or IP-based seed address (host:port) with timeout [N-11]
 func ResolveDNSSeed(seedAddr string) []string {
+	return resolveDNSSeed(seedAddr, true)
+}
+
+// resolveDNSSeed resolves a seed; quiet callers (periodic re-seeding) skip the console line.
+func resolveDNSSeed(seedAddr string, verbose bool) []string {
 	seedAddr = strings.TrimSpace(seedAddr)
 	if seedAddr == "" {
 		return nil
@@ -3554,7 +3564,9 @@ func ResolveDNSSeed(seedAddr string) []string {
 		return []string{seedAddr}
 	}
 
-	fmt.Printf("[DNS Seed] Resolved '%s' to %d peer address(es): %v\n", host, len(ips), ips)
+	if verbose {
+		fmt.Printf("[DNS Seed] Resolved '%s' to %d peer address(es): %v\n", host, len(ips), ips)
+	}
 
 	var results []string
 	seen := make(map[string]bool)

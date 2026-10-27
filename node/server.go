@@ -1253,11 +1253,7 @@ func InitServerFromConfig(bc *core.Blockchain, cfg *Config) (*PeerServer, *Serve
 	peerServer.P2PTOFU = cfg.P2PTOFU // [F1]
 	peerServer.AllowPrivatePeers = isPrivatePeersAllowedForNetwork(targetNetID)
 
-	for _, peer := range cfg.SeedPeers {
-		for _, resolvedPeer := range ResolveDNSSeed(peer) {
-			peerServer.AddPeer(resolvedPeer)
-		}
-	}
+	// SetSeedPeers resolves (and logs) the seeds once and adds them to the address book.
 	peerServer.SetSeedPeers(cfg.SeedPeers)
 
 	serverCfg := &ServerConfig{
