@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Node never rejoined after a connectivity loss.** After an outage of ~45 s every peer (including the configured seeds) was evicted from the address book after 3 failed sync rounds and marked unreachable for 15 minutes; seeds were only read at startup, so the node stayed isolated and could mine a private branch until restarted. Now: seeds are never evicted and are re-dialed (DNS re-resolved) every ~60 s and immediately whenever the address book is empty; if every peer fails in the same round (local link down) no peer is penalized.
+- Seed re-resolution runs silently; only the startup resolve prints `[DNS Seed]` lines, so `armcoind.log` is no longer flooded every minute.
 - A node on a stale branch more than `MaxReorganizationDepth` (720) blocks deep now logs an explicit error (rate-limited) telling the operator to restart with `-resync`, instead of silently refusing.
 
 ### Security
@@ -27,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified why the P2P client TLS config skips chain verification (peer authentication is done by TOFU pinning).
 - `go mod tidy` now lists direct imports as direct requirements.
 - Documentation: Go 1.27.3+ guidance, mainnet-readiness gate status table, and cross-references between overlapping testnet/release guides.
-- Testnet display ticker is now `tARMX` in the daemon, miner, and GUI banners and messages (via `core.ActiveTicker()`). This is display-only: NetworkID, genesis, hashing, serialization, and consensus rules are unchanged, so no hard fork is required and existing testnet blocks remain valid. `ARMX` remains the mainnet ticker.
+- Testnet display ticker is now `tARMX` in the daemon, miner, and GUI banners and messages (via `core.ActiveTicker()`). The ticker change itself is display-only: NetworkID, genesis, hashing, and serialization are unchanged, so existing testnet blocks remain valid (the separate C1/C2 timestamp hard fork is described under Version). `ARMX` remains the mainnet ticker.
 - The miner's fee line in the daemon self-test now shows base units (`Armoids`) instead of `ARMX`, because the value is in Armoids.
 
 ### CLI

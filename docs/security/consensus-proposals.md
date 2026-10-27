@@ -1,7 +1,7 @@
 # Armaxcoin Consensus Improvement Proposals (AIP / C1–C5)
 
-**Status:** PROPOSED -- DESIGN ONLY (DO NOT MERGE INTO ACTIVE CODE WITHOUT MAINTAINER APPROVAL)  
-**Implementation status (v1.0.5):** C1 and C2 are **implemented in v1.0.5** (`core/timestamp_rules.go`), activating at testnet block 8,000 (mainnet: from block 1). C3–C5 are not implemented. Below the activation height the legacy MTP-11 rule and 2-hour future-time limit apply.  
+**Status:** C1/C2 IMPLEMENTED IN v1.0.5; C3–C5 PROPOSED -- DESIGN ONLY (DO NOT MERGE INTO ACTIVE CODE WITHOUT MAINTAINER APPROVAL)  
+**Implementation status (v1.0.5):** C1 and C2 are **implemented in v1.0.5** (`core/timestamp_rules.go`), activating at testnet block 8,000 (mainnet: from genesis, activation height 0). C3–C5 are not implemented. Below the activation height the legacy MTP-11 rule and 2-hour future-time limit apply.  
 **Target Network:** `ARMX-TESTNET-1` and Future `ARMX-MAINNET-1`  
 **Author:** Armaxcoin Core Security & Consensus Engineering  
 **Date:** October 2026  
