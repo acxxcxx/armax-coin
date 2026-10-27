@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTickerForNetworkID(t *testing.T) {
 	cases := []struct {
@@ -30,5 +33,21 @@ func TestTickerDoesNotChangeConsensusIdentity(t *testing.T) {
 	}
 	if Bech32HRP != "armx" {
 		t.Fatalf("address HRP changed: %s", Bech32HRP)
+	}
+}
+
+// Mainnet cannot be selected yet (SetNetwork rejects it), so mainnet mapping is
+// covered by TestTickerForNetworkID; this test checks the active-profile path.
+func TestActiveTickerFollowsSelectedNetwork(t *testing.T) {
+	defer func() { _ = SetNetwork("testnet") }()
+
+	if err := SetNetwork("testnet"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ActiveTicker(); got != "tARMX" {
+		t.Fatalf("testnet ticker = %q, want tARMX", got)
+	}
+	if line := NetworkWarningLine(); !strings.Contains(line, "ALPHA TESTNET") {
+		t.Fatalf("testnet warning line = %q", line)
 	}
 }

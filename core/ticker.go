@@ -16,3 +16,16 @@ func TickerForNetworkID(netID string) string {
 	}
 	return TestnetTicker
 }
+
+// ActiveTicker returns the display ticker for the currently selected network profile.
+func ActiveTicker() string {
+	return TickerForNetworkID(GetActiveNetwork().NetworkID)
+}
+
+// NetworkWarningLine returns the banner warning that matches the active network.
+func NetworkWarningLine() string {
+	if ActiveTicker() == MainnetTicker {
+		return "WARNING  ARMAXCOIN MAINNET - transactions use real economic value. Verify addresses and amounts."
+	}
+	return "WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited"
+}

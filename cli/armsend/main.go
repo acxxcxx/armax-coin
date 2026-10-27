@@ -112,23 +112,25 @@ func main() {
 		}
 	}
 	if strings.EqualFold(netChoice, "regtest") && !isExplicit {
-		fmt.Println("[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
+		fmt.Fprintln(os.Stderr, "[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
 		os.Exit(1)
 	}
 	cliNet, err := core.ResolveCLINetwork(netChoice)
 	if err != nil {
-		fmt.Printf("[-] Invalid network profile '%s': %v\n", netChoice, err)
+		fmt.Fprintf(os.Stderr, "[-] Invalid network profile '%s': %v\n", netChoice, err)
 		os.Exit(1)
 	}
 	if err := core.SetNetwork(netChoice); err != nil {
-		fmt.Printf("[-] Failed to set network profile '%s': %v\n", netChoice, err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to set network profile '%s': %v\n", netChoice, err)
 		os.Exit(1)
 	}
 	activeNet := core.GetActiveNetwork()
 
-	fmt.Println("==================================================")
-	fmt.Println("WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited")
-	fmt.Println("==================================================")
+	if !*jsonPtr {
+		fmt.Println("==================================================")
+		fmt.Println(core.NetworkWarningLine())
+		fmt.Println("==================================================")
+	}
 
 	if *infoPtr {
 		fmt.Printf("[+] Network Profile  : %s (%s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID)
@@ -190,13 +192,13 @@ func main() {
 		txid := strings.TrimSpace(*decodePtr)
 		resp, err := httpGetAuth(fmt.Sprintf("%s/tx?hash=%s", daemonURL, txid))
 		if err != nil {
-			fmt.Printf("[-] Failed to query transaction from daemon: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[-] Failed to query transaction from daemon: %v\n", err)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
 		data, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			fmt.Printf("[-] Transaction '%s' not found (HTTP %d)\n", txid, resp.StatusCode)
+			fmt.Fprintf(os.Stderr, "[-] Transaction '%s' not found (HTTP %d)\n", txid, resp.StatusCode)
 			os.Exit(1)
 		}
 		if *jsonPtr {
@@ -223,8 +225,8 @@ func main() {
 		fmt.Printf("  Block Index    : #%d (Hash: %s)\n", txInfo.BlockIndex, txInfo.BlockHash)
 		fmt.Printf("  Sender         : %s\n", txInfo.Tx.Sender)
 		fmt.Printf("  Recipient      : %s\n", txInfo.Tx.Recipient)
-		fmt.Printf("  Amount         : %.8f ARMX (%d Armoids)\n", float64(txInfo.Tx.Amount)/1e8, txInfo.Tx.Amount)
-		fmt.Printf("  Miner Fee      : %.8f ARMX (%d Armoids)\n", float64(txInfo.Tx.Fee)/1e8, txInfo.Tx.Fee)
+		fmt.Printf("  Amount         : %.8f %s (%d Armoids)\n", float64(txInfo.Tx.Amount)/1e8, core.ActiveTicker(), txInfo.Tx.Amount)
+		fmt.Printf("  Miner Fee      : %.8f %s (%d Armoids)\n", float64(txInfo.Tx.Fee)/1e8, core.ActiveTicker(), txInfo.Tx.Fee)
 		fmt.Printf("  Nonce          : #%d\n", txInfo.Tx.Nonce)
 		fmt.Printf("  Size           : %d bytes\n", txInfo.Tx.Size())
 		fmt.Println("==================================================")
@@ -236,13 +238,13 @@ func main() {
 		txid := strings.TrimSpace(*confirmationsPtr)
 		resp, err := httpGetAuth(fmt.Sprintf("%s/tx?hash=%s", daemonURL, txid))
 		if err != nil {
-			fmt.Printf("[-] Failed to query transaction: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[-] Failed to query transaction: %v\n", err)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
 		data, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			fmt.Printf("[-] Transaction '%s' not found in mempool or chain\n", txid)
+			fmt.Fprintf(os.Stderr, "[-] Transaction '%s' not found in mempool or chain\n", txid)
 			os.Exit(1)
 		}
 		var txInfo struct {
@@ -280,7 +282,7 @@ func main() {
 		fmt.Println(" TRANSACTION FEE ESTIMATE:")
 		fmt.Println("==================================================")
 		fmt.Printf("  Estimated Payload Size : ~%d bytes (Post-Quantum ML-DSA-65)\n", typicalTxSize)
-		fmt.Printf("  Estimated Minimum Fee  : %.8f ARMX (%d Armoids)\n", float64(estFee)/1e8, estFee)
+		fmt.Printf("  Estimated Minimum Fee  : %.8f %s (%d Armoids)\n", float64(estFee)/1e8, core.ActiveTicker(), estFee)
 		fmt.Println("==================================================")
 		return
 	}
@@ -289,13 +291,13 @@ func main() {
 	if *mempoolPtr || *getMempoolInfoPtr {
 		resp, err := httpGetAuth(daemonURL + "/mempool")
 		if err != nil {
-			fmt.Printf("[-] Failed to query mempool from daemon (%s): %v\n", daemonURL, err)
+			fmt.Fprintf(os.Stderr, "[-] Failed to query mempool from daemon (%s): %v\n", daemonURL, err)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != http.StatusOK {
-			fmt.Printf("[-] Failed to retrieve mempool from daemon (HTTP %d)\n", resp.StatusCode)
+			fmt.Fprintf(os.Stderr, "[-] Failed to retrieve mempool from daemon (HTTP %d)\n", resp.StatusCode)
 			os.Exit(1)
 		}
 		if *jsonPtr {
@@ -337,8 +339,7 @@ func main() {
 
 	if !*jsonPtr {
 		fmt.Println("==================================================")
-		fmt.Println("WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited")
-		fmt.Println(" ARMAXCOIN (ARMX) - POST-QUANTUM TRANSACTION SENDER")
+		fmt.Println(" ARMAXCOIN (" + core.ActiveTicker() + ") - POST-QUANTUM TRANSACTION SENDER")
 		fmt.Println("==================================================")
 		fmt.Printf("[+] Target Network   : %s (%s, RPC: %s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID, activeNet.RPCPort)
 	}
@@ -350,14 +351,14 @@ func main() {
 	} else if *amountPtr != "" {
 		parsed, err := core.ParseArmxDecimal(*amountPtr)
 		if err != nil {
-			fmt.Printf("[-] Invalid -amount '%s': %v\n", *amountPtr, err)
+			fmt.Fprintf(os.Stderr, "[-] Invalid -amount '%s': %v\n", *amountPtr, err)
 			os.Exit(1)
 		}
 		finalAmount = parsed
 	} else if *amountArmxPtr != "" {
 		parsed, err := core.ParseArmxDecimal(*amountArmxPtr)
 		if err != nil {
-			fmt.Printf("[-] Invalid -amount-armx '%s': %v\n", *amountArmxPtr, err)
+			fmt.Fprintf(os.Stderr, "[-] Invalid -amount-armx '%s': %v\n", *amountArmxPtr, err)
 			os.Exit(1)
 		}
 		finalAmount = parsed
@@ -370,40 +371,40 @@ func main() {
 	} else if *feePtr != "" {
 		parsedFee, err := core.ParseArmxDecimal(*feePtr)
 		if err != nil {
-			fmt.Printf("[-] Invalid -fee '%s': %v\n", *feePtr, err)
+			fmt.Fprintf(os.Stderr, "[-] Invalid -fee '%s': %v\n", *feePtr, err)
 			os.Exit(1)
 		}
 		userFee = parsedFee
 	}
 
 	if *toPtr == "" || finalAmount <= 0 {
-		fmt.Println("Usage:")
-		fmt.Println("  ./armsend -to <RECIPIENT_ADDR> -amount <ARMX_DECIMAL> [-fee <ARMX_FEE>] [-wallet <FILE>]")
-		fmt.Println("  ./armsend -to <RECIPIENT_ADDR> -amount-armoids <ARMOIDS> [-fee-armoids <FEE>] [-wallet <FILE>]")
-		fmt.Println("  ./armsend -mempool [-daemon <URL>]")
-		fmt.Println("\nExamples:")
-		fmt.Println("  ./armsend -to armx1... -amount 10.5")
-		fmt.Println("  ./armsend -to armx1... -amount 10.5 -fee 0.0001 -dry-run")
-		fmt.Println("  ./armsend -mempool")
-		fmt.Println("  ./armsend -decode <TXID>")
-		fmt.Println("  ./armsend -confirmations <TXID>")
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "Usage:")
+		fmt.Fprintln(os.Stderr, "  ./armsend -to <RECIPIENT_ADDR> -amount <ARMX_DECIMAL> [-fee <ARMX_FEE>] [-wallet <FILE>]")
+		fmt.Fprintln(os.Stderr, "  ./armsend -to <RECIPIENT_ADDR> -amount-armoids <ARMOIDS> [-fee-armoids <FEE>] [-wallet <FILE>]")
+		fmt.Fprintln(os.Stderr, "  ./armsend -mempool [-daemon <URL>]")
+		fmt.Fprintln(os.Stderr, "\nExamples:")
+		fmt.Fprintln(os.Stderr, "  ./armsend -to armx1... -amount 10.5")
+		fmt.Fprintln(os.Stderr, "  ./armsend -to armx1... -amount 10.5 -fee 0.0001 -dry-run")
+		fmt.Fprintln(os.Stderr, "  ./armsend -mempool")
+		fmt.Fprintln(os.Stderr, "  ./armsend -decode <TXID>")
+		fmt.Fprintln(os.Stderr, "  ./armsend -confirmations <TXID>")
+		os.Exit(2)
 	}
 
 	if !core.ValidateAddress(*toPtr) {
-		fmt.Printf("[-] Invalid recipient address '%s': must be canonical Bech32 (armx1...)\n", *toPtr)
+		fmt.Fprintf(os.Stderr, "[-] Invalid recipient address '%s': must be canonical Bech32 (armx1...)\n", *toPtr)
 		os.Exit(1)
 	}
 
 	passphrase, err := wallet.PromptPassphrase("ARMX_WALLET_PASSPHRASE", "Enter keystore passphrase: ")
 	if err != nil {
-		fmt.Println("[-] Passphrase error:", err)
+		fmt.Fprintln(os.Stderr, "[-] Passphrase error:", err)
 		os.Exit(1)
 	}
 
 	w, err := wallet.DecryptAndLoadKeystore(passphrase, targetWalletFile)
 	if err != nil {
-		fmt.Printf("[-] Failed to unlock wallet keystore '%s': %v\n", targetWalletFile, err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to unlock wallet keystore '%s': %v\n", targetWalletFile, err)
 		os.Exit(1)
 	}
 
@@ -412,7 +413,7 @@ func main() {
 	}
 	resp, err := httpGetAuth(fmt.Sprintf("%s/balance?address=%s", daemonURL, w.Address))
 	if err != nil {
-		fmt.Println("[-] Failed to query daemon:", err)
+		fmt.Fprintln(os.Stderr, "[-] Failed to query daemon:", err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
@@ -420,13 +421,13 @@ func main() {
 	body, _ := io.ReadAll(resp.Body)
 	var balResp BalanceResponse
 	if err := json.Unmarshal(body, &balResp); err != nil {
-		fmt.Println("[-] Invalid response from daemon:", string(body))
+		fmt.Fprintln(os.Stderr, "[-] Invalid response from daemon:", string(body))
 		os.Exit(1)
 	}
 
 	if !*jsonPtr {
 		fmt.Printf("[+] Sender Address     : %s\n", w.Address)
-		fmt.Printf("[+] Available Balance  : %.8f ARMX (%d Armoids)\n", float64(balResp.PendingBalance)/1e8, balResp.PendingBalance)
+		fmt.Printf("[+] Available Balance  : %.8f %s (%d Armoids)\n", float64(balResp.PendingBalance)/1e8, core.ActiveTicker(), balResp.PendingBalance)
 		fmt.Printf("[+] Current Nonce      : #%d\n", balResp.PendingNonce)
 	}
 
@@ -449,7 +450,7 @@ func main() {
 	}
 
 	if err := tx.Sign(w.PrivateKey); err != nil {
-		fmt.Println("[-] Post-quantum signature creation failed:", err)
+		fmt.Fprintln(os.Stderr, "[-] Post-quantum signature creation failed:", err)
 		os.Exit(1)
 	}
 
@@ -457,18 +458,18 @@ func main() {
 	if userFee < minRequiredFee {
 		if userFee == 0 {
 			if !*jsonPtr {
-				fmt.Printf("[+] Automatic fee applied: %.8f ARMX (%d Armoids for %d bytes)\n",
-					float64(minRequiredFee)/1e8, minRequiredFee, tx.Size())
+				fmt.Printf("[+] Automatic fee applied: %.8f %s (%d Armoids for %d bytes)\n",
+					float64(minRequiredFee)/1e8, core.ActiveTicker(), minRequiredFee, tx.Size())
 			}
 		} else {
 			if !*jsonPtr {
-				fmt.Printf("[!] User fee (%.8f ARMX) below minimum relay fee. Automatically upgraded to: %.8f ARMX (%d Armoids for %d bytes)\n",
-					float64(userFee)/1e8, float64(minRequiredFee)/1e8, minRequiredFee, tx.Size())
+				fmt.Printf("[!] User fee (%.8f %s) below minimum relay fee. Automatically upgraded to: %.8f %s (%d Armoids for %d bytes)\n",
+					float64(userFee)/1e8, core.ActiveTicker(), float64(minRequiredFee)/1e8, core.ActiveTicker(), minRequiredFee, tx.Size())
 			}
 		}
 		tx.Fee = minRequiredFee
 		if err := tx.Sign(w.PrivateKey); err != nil {
-			fmt.Println("[-] Re-signing failed:", err)
+			fmt.Fprintln(os.Stderr, "[-] Re-signing failed:", err)
 			os.Exit(1)
 		}
 	}
@@ -480,12 +481,12 @@ func main() {
 	}
 	if availBal < totalCost {
 		if balResp.ImmatureBalance > 0 {
-			fmt.Printf("[-] Insufficient spendable balance: has %.8f ARMX spendable (%.8f ARMX immature < %d blocks), requires %.8f ARMX (amount %.8f + fee %.8f)\n",
-				float64(availBal)/1e8, float64(balResp.ImmatureBalance)/1e8, activeNet.CoinbaseMaturity,
-				float64(totalCost)/1e8, float64(finalAmount)/1e8, float64(tx.Fee)/1e8)
+			fmt.Fprintf(os.Stderr, "[-] Insufficient spendable balance: has %.8f %s spendable (%.8f %s immature < %d blocks), requires %.8f %s (amount %.8f + fee %.8f)\n",
+				float64(availBal)/1e8, core.ActiveTicker(), float64(balResp.ImmatureBalance)/1e8, core.ActiveTicker(), activeNet.CoinbaseMaturity,
+				float64(totalCost)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(tx.Fee)/1e8)
 		} else {
-			fmt.Printf("[-] Insufficient balance: has %.8f ARMX, requires %.8f ARMX (amount %.8f + fee %.8f)\n",
-				float64(availBal)/1e8, float64(totalCost)/1e8, float64(finalAmount)/1e8, float64(tx.Fee)/1e8)
+			fmt.Fprintf(os.Stderr, "[-] Insufficient balance: has %.8f %s, requires %.8f %s (amount %.8f + fee %.8f)\n",
+				float64(availBal)/1e8, core.ActiveTicker(), float64(totalCost)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(tx.Fee)/1e8)
 		}
 		os.Exit(1)
 	}
@@ -513,8 +514,8 @@ func main() {
 		fmt.Printf("  TXID / Hash    : %s\n", tx.HashHex())
 		fmt.Printf("  Sender         : %s\n", tx.Sender)
 		fmt.Printf("  Recipient      : %s\n", tx.Recipient)
-		fmt.Printf("  Amount         : %.8f ARMX (%d Armoids)\n", float64(tx.Amount)/1e8, tx.Amount)
-		fmt.Printf("  Miner Fee      : %.8f ARMX (%d Armoids)\n", float64(tx.Fee)/1e8, tx.Fee)
+		fmt.Printf("  Amount         : %.8f %s (%d Armoids)\n", float64(tx.Amount)/1e8, core.ActiveTicker(), tx.Amount)
+		fmt.Printf("  Miner Fee      : %.8f %s (%d Armoids)\n", float64(tx.Fee)/1e8, core.ActiveTicker(), tx.Fee)
 		fmt.Printf("  Nonce          : #%d\n", tx.Nonce)
 		fmt.Printf("  Payload Size   : %d bytes (ML-DSA-65 quantum-safe)\n", tx.Size())
 		fmt.Println("  Broadcast      : SKIPPED (dry-run mode: no transaction broadcast)")
@@ -529,7 +530,7 @@ func main() {
 
 	postResp, err := httpPostAuth(daemonURL+"/tx/new", "application/json", bytes.NewBuffer(txData))
 	if err != nil {
-		fmt.Println("[-] Broadcast failed:", err)
+		fmt.Fprintln(os.Stderr, "[-] Broadcast failed:", err)
 		os.Exit(1)
 	}
 	defer postResp.Body.Close()
@@ -545,7 +546,7 @@ func main() {
 			fmt.Println(string(out))
 		} else {
 			fmt.Println("==================================================")
-			fmt.Printf("[-] Transaction rejected by node (HTTP %d):\n", postResp.StatusCode)
+			fmt.Fprintf(os.Stderr, "[-] Transaction rejected by node (HTTP %d):\n", postResp.StatusCode)
 			fmt.Printf("    %s\n", string(respBytes))
 			fmt.Println("==================================================")
 		}
@@ -572,8 +573,8 @@ func main() {
 		fmt.Printf("   TXID / Hash : %s\n", txHash)
 		fmt.Printf("   Sender      : %s\n", tx.Sender)
 		fmt.Printf("   Recipient   : %s\n", tx.Recipient)
-		fmt.Printf("   Amount      : %.8f ARMX (%d Armoids)\n", float64(tx.Amount)/1e8, tx.Amount)
-		fmt.Printf("   Miner Fee   : %.8f ARMX (%d Armoids)\n", float64(tx.Fee)/1e8, tx.Fee)
+		fmt.Printf("   Amount      : %.8f %s (%d Armoids)\n", float64(tx.Amount)/1e8, core.ActiveTicker(), tx.Amount)
+		fmt.Printf("   Miner Fee   : %.8f %s (%d Armoids)\n", float64(tx.Fee)/1e8, core.ActiveTicker(), tx.Fee)
 		fmt.Printf("   Nonce       : #%d\n", tx.Nonce)
 		fmt.Printf("   Size        : %d bytes (ML-DSA-65 NIST FIPS 204)\n", tx.Size())
 		fmt.Printf("   Timestamp   : %s\n", time.Now().Format("2006-01-02 15:04:05"))

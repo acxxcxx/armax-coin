@@ -35,7 +35,7 @@ func TestCheckBalanceRendersAccountDetails(t *testing.T) {
 	defer srv.Close()
 
 	out := captureStdout(t, func() { checkBalance("armx1test", srv.URL, http.Get) })
-	for _, want := range []string{"armx1test", "1.50000000 ARMX", "Next TX Nonce: #3"} {
+	for _, want := range []string{"armx1test", "1.50000000 tARMX", "Next TX Nonce: #3"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

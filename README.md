@@ -55,7 +55,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Difficulty Algorithm** | LWMA-1 (Linear Weighted Moving Average) | Continuous 256-bit numerical target adjusted per block across 60-block window; dynamic floor down to Difficulty 1 for ArmaxHash |
 | **Candidate Block Extraction** | `/getblocktemplate` JSON RPC | Bounded block candidate endpoint (MaxBlockTransactions - 1) for external miners |
 | **RPC Security** | Loopback Binding & Cookie/Basic Auth | Mutation endpoints strictly require auth/cookie or `-rpcuser`/`-rpcpassword`; `-rpcinsecure-localhost` flag; /chain bounded to 50 blocks |
-| **Ticker** | `ARMX` (mainnet). Testnet GUI and explorer display `tARMX`; CLI output still prints `ARMX` | Display label only. Not consensus. Network ID and on-chain values are unchanged |
+| **Ticker** | `ARMX` (mainnet). Testnet GUI, explorer, and CLI (`armsend`, `armwallet`) display `tARMX` | Display label only. Not consensus. Network ID and on-chain values are unchanged |
 | **Initial Block Reward** | 60 ARMX (6,000,000,000 Armoids) | Awarded to miner via single coinbase transaction at index 0 |
 | **Halving Interval** | Every 1,050,000 blocks (~4 years) | Reward cuts in half ($60 \to 30 \to 15 \to \dots$ ARMX) |
 | **Maximum Total Supply** | 126,000,000 ARMX | Strict hard cap (12,600,000,000,000,000 Armoids, 8 decimal places; real theoretical emission: 125,999,999.874 ARMX) |
@@ -383,7 +383,7 @@ The build script generates 5 binaries in the root directory:
 All binaries implement standard, structured logging:
 - **`armcoind`**: Timestamped block receipts `YYYY/MM/DD HH:MM:SS [P2P] [OK] Block #N accepted from IP:port | hash: HASH... | txs: N | diff: N | dt: Ns`.
 - **`armminer`**: Real-time hashrate formatting (`%.2f H/s` when $< 1000$ H/s, `%.2f kH/s` when $\ge 1000$ H/s), detailed block solved logs with hash prefix, and clean stale block handling (HTTP 409).
-- **`armsend`**: Full transaction broadcast summary including TXID, Sender, Recipient, Amount in ARMX and Armoids, Fee, Nonce, Payload Size (ML-DSA-65 bytes), and Timestamp.
+- **`armsend`**: Full transaction broadcast summary including TXID, Sender, Recipient, Amount in the active ticker (`tARMX` on testnet, `ARMX` on mainnet) and Armoids, Fee, Nonce, Payload Size (ML-DSA-65 bytes), and Timestamp.
 - **`armwallet`**: Detailed account report separating Spendable, Immature Coinbase Rewards (with block confirmation countdown), Confirmed, and Pending Mempool amounts, with query timestamp.
 
 

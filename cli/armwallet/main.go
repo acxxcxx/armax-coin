@@ -101,16 +101,16 @@ func main() {
 		}
 	}
 	if strings.EqualFold(netChoice, "regtest") && !isExplicit {
-		fmt.Println("[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
+		fmt.Fprintln(os.Stderr, "[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
 		os.Exit(1)
 	}
 	cliNet, err := core.ResolveCLINetwork(netChoice)
 	if err != nil {
-		fmt.Printf("[-] Invalid network profile '%s': %v\n", netChoice, err)
+		fmt.Fprintf(os.Stderr, "[-] Invalid network profile '%s': %v\n", netChoice, err)
 		os.Exit(1)
 	}
 	if err := core.SetNetwork(netChoice); err != nil {
-		fmt.Printf("[-] Failed to set network profile '%s': %v\n", netChoice, err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to set network profile '%s': %v\n", netChoice, err)
 		os.Exit(1)
 	}
 	activeNet := core.GetActiveNetwork()
@@ -125,8 +125,8 @@ func main() {
 	}
 
 	fmt.Println("==================================================")
-	fmt.Println("WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited")
-	fmt.Println(" ARMAXCOIN (ARMX) - POST-QUANTUM CLI WALLET (ML-DSA-65)")
+	fmt.Println(core.NetworkWarningLine())
+	fmt.Printf(" ARMAXCOIN (%s) - POST-QUANTUM CLI WALLET (ML-DSA-65)\n", core.ActiveTicker())
 	fmt.Println("==================================================")
 	fmt.Printf("[+] Target Network   : %s (%s, RPC: %s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID, activeNet.RPCPort)
 
@@ -177,19 +177,20 @@ func main() {
 	} else if *mempoolPtr || *getMempoolPtr || *getMempoolInfoPtr {
 		showMempool(daemonURL, httpGetAuth)
 	} else {
-		fmt.Println("Usage:")
-		fmt.Println("  ./armwallet -create [-wallet <FILE>]                            (Create new wallet with 24-word mnemonic)")
-		fmt.Println("  ./armwallet -newaddress [-wallet <FILE>]                        (Create new wallet address)")
-		fmt.Println("  ./armwallet -restore \"WORDS\" [-wallet <FILE>]                   (Restore wallet from mnemonic)")
-		fmt.Println("  ./armwallet -address [-wallet <FILE>]                           (Display address from keystore)")
-		fmt.Println("  ./armwallet -listaddresses [-wallet <FILE>]                     (List addresses in keystore)")
-		fmt.Println("  ./armwallet -balance <ADDRESS> [-daemon <URL>]                  (Check wallet balance via daemon)")
-		fmt.Println("  ./armwallet -getbalance <ADDRESS> [-daemon <URL>]               (Check wallet balance via daemon)")
-		fmt.Println("  ./armwallet -mempool [-daemon <URL>]                            (Display unconfirmed transactions in mempool)")
-		fmt.Println("  ./armwallet -gettransaction <TXID> [-daemon <URL>]              (View transaction details)")
-		fmt.Println("  ./armwallet -backup <DEST_FILE> [-wallet <FILE>]                (Safely backup wallet keystore)")
-		fmt.Println("  ./armwallet -walletcheck [-wallet <FILE>]                       (Verify keystore decryption and integrity)")
-		fmt.Println("  ./armwallet -rescan [-wallet <FILE>]                            (Rescan transaction history)")
+		fmt.Fprintln(os.Stderr, "Usage:")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -create [-wallet <FILE>]                            (Create new wallet with 24-word mnemonic)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -newaddress [-wallet <FILE>]                        (Create new wallet address)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -restore \"WORDS\" [-wallet <FILE>]                   (Restore wallet from mnemonic)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -address [-wallet <FILE>]                           (Display address from keystore)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -listaddresses [-wallet <FILE>]                     (List addresses in keystore)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -balance <ADDRESS> [-daemon <URL>]                  (Check wallet balance via daemon)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -getbalance <ADDRESS> [-daemon <URL>]               (Check wallet balance via daemon)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -mempool [-daemon <URL>]                            (Display unconfirmed transactions in mempool)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -gettransaction <TXID> [-daemon <URL>]              (View transaction details)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -backup <DEST_FILE> [-wallet <FILE>]                (Safely backup wallet keystore)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -walletcheck [-wallet <FILE>]                       (Verify keystore decryption and integrity)")
+		fmt.Fprintln(os.Stderr, "  ./armwallet -rescan [-wallet <FILE>]                            (Rescan transaction history)")
+		os.Exit(2)
 	}
 }
 
@@ -213,19 +214,19 @@ func getPassphrase(confirm bool) (string, error) {
 func createWallet(filePath string, force bool) {
 	passphrase, err := getPassphrase(true)
 	if err != nil {
-		fmt.Println("[-] Error:", err)
+		fmt.Fprintln(os.Stderr, "[-] Error:", err)
 		return
 	}
 
 	w, err := wallet.NewWallet()
 	if err != nil {
-		fmt.Printf("[-] Failed to create wallet: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to create wallet: %v\n", err)
 		return
 	}
 
 	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
 	if err != nil {
-		fmt.Println("[-] Failed to save encrypted keystore:", err)
+		fmt.Fprintln(os.Stderr, "[-] Failed to save encrypted keystore:", err)
 		return
 	}
 
@@ -246,19 +247,19 @@ func createWallet(filePath string, force bool) {
 func restoreWallet(mnemonic, filePath string, force bool) {
 	passphrase, err := getPassphrase(true)
 	if err != nil {
-		fmt.Println("[-] Error:", err)
+		fmt.Fprintln(os.Stderr, "[-] Error:", err)
 		return
 	}
 
 	w, err := wallet.WalletFromMnemonic(mnemonic, "", 0)
 	if err != nil {
-		fmt.Printf("[-] Failed to restore wallet from mnemonic: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to restore wallet from mnemonic: %v\n", err)
 		return
 	}
 
 	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
 	if err != nil {
-		fmt.Println("[-] Failed to save encrypted keystore:", err)
+		fmt.Fprintln(os.Stderr, "[-] Failed to save encrypted keystore:", err)
 		return
 	}
 
@@ -277,13 +278,13 @@ func showAddress(filePath string) {
 func showAddresses(filePath string) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Printf("[-] Cannot read keystore file '%s': %v\n", filePath, err)
+		fmt.Fprintf(os.Stderr, "[-] Cannot read keystore file '%s': %v\n", filePath, err)
 		return
 	}
 
 	var ks wallet.KeystoreFile
 	if err := json.Unmarshal(data, &ks); err != nil {
-		fmt.Println("[-] Invalid keystore file format:", err)
+		fmt.Fprintln(os.Stderr, "[-] Invalid keystore file format:", err)
 		return
 	}
 
@@ -301,21 +302,21 @@ func showAddresses(filePath string) {
 func backupWallet(sourcePath, destPath string) {
 	data, err := os.ReadFile(sourcePath)
 	if err != nil {
-		fmt.Printf("[-] Failed to read wallet keystore '%s': %v\n", sourcePath, err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to read wallet keystore '%s': %v\n", sourcePath, err)
 		os.Exit(1)
 	}
 
 	// Validate source is valid keystore JSON without exposing secrets
 	var ks wallet.KeystoreFile
 	if err := json.Unmarshal(data, &ks); err != nil || ks.Address == "" {
-		fmt.Printf("[-] Refusing to backup corrupted keystore file '%s'\n", sourcePath)
+		fmt.Fprintf(os.Stderr, "[-] Refusing to backup corrupted keystore file '%s'\n", sourcePath)
 		os.Exit(1)
 	}
 
 	destDir := filepath.Dir(destPath)
 	if destDir != "" && destDir != "." {
 		if err := os.MkdirAll(destDir, 0700); err != nil {
-			fmt.Printf("[-] Cannot create target backup directory '%s': %v\n", destDir, err)
+			fmt.Fprintf(os.Stderr, "[-] Cannot create target backup directory '%s': %v\n", destDir, err)
 			os.Exit(1)
 		}
 	}
@@ -324,36 +325,36 @@ func backupWallet(sourcePath, destPath string) {
 	// existing good copy with partial ciphertext after an interruption.
 	tmp, err := os.CreateTemp(destDir, ".wallet-backup-*.tmp")
 	if err != nil {
-		fmt.Printf("[-] Backup failed: could not create temporary file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Backup failed: could not create temporary file: %v\n", err)
 		os.Exit(1)
 	}
 	tmpPath := tmp.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
 	if err := tmp.Chmod(0600); err != nil {
 		_ = tmp.Close()
-		fmt.Printf("[-] Backup failed: could not secure temporary file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Backup failed: could not secure temporary file: %v\n", err)
 		os.Exit(1)
 	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
-		fmt.Printf("[-] Backup failed: could not write temporary file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Backup failed: could not write temporary file: %v\n", err)
 		os.Exit(1)
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		fmt.Printf("[-] Backup failed: could not sync temporary file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Backup failed: could not sync temporary file: %v\n", err)
 		os.Exit(1)
 	}
 	if err := tmp.Close(); err != nil {
-		fmt.Printf("[-] Backup failed: could not close temporary file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Backup failed: could not close temporary file: %v\n", err)
 		os.Exit(1)
 	}
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		fmt.Printf("[-] Backup failed: could not write to destination file '%s': %v\n", destPath, err)
+		fmt.Fprintf(os.Stderr, "[-] Backup failed: could not write to destination file '%s': %v\n", destPath, err)
 		os.Exit(1)
 	}
 	if err := os.Chmod(destPath, 0600); err != nil {
-		fmt.Printf("[-] Backup failed: could not secure destination file '%s': %v\n", destPath, err)
+		fmt.Fprintf(os.Stderr, "[-] Backup failed: could not secure destination file '%s': %v\n", destPath, err)
 		os.Exit(1)
 	}
 
@@ -370,20 +371,20 @@ func backupWallet(sourcePath, destPath string) {
 func walletCheck(filePath string) {
 	passphrase, err := wallet.PromptPassphrase(PassphraseEnvVar, "Enter keystore passphrase to verify integrity: ")
 	if err != nil {
-		fmt.Println("[-] Passphrase prompt error:", err)
+		fmt.Fprintln(os.Stderr, "[-] Passphrase prompt error:", err)
 		os.Exit(1)
 	}
 
 	w, err := wallet.DecryptAndLoadKeystore(passphrase, filePath)
 	if err != nil {
 		fmt.Println("==================================================")
-		fmt.Printf("[-] WALLET INTEGRITY CHECK FAILED: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] WALLET INTEGRITY CHECK FAILED: %v\n", err)
 		fmt.Println("==================================================")
 		os.Exit(1)
 	}
 
 	if !core.ValidateAddress(w.Address) {
-		fmt.Println("[-] Wallet integrity check failed: stored address is not valid Bech32")
+		fmt.Fprintln(os.Stderr, "[-] Wallet integrity check failed: stored address is not valid Bech32")
 		os.Exit(1)
 	}
 
@@ -403,14 +404,14 @@ func showTransaction(txid string, daemonURL string, httpGet func(string) (*http.
 	fmt.Printf("[~] Querying transaction %s from daemon %s...\n", cleanTxid, daemonURL)
 	resp, err := httpGet(fmt.Sprintf("%s/tx?hash=%s", daemonURL, cleanTxid))
 	if err != nil {
-		fmt.Printf("[-] Failed to connect to daemon: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to connect to daemon: %v\n", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		fmt.Printf("[-] Transaction '%s' not found (HTTP %d)\n", cleanTxid, resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "[-] Transaction '%s' not found (HTTP %d)\n", cleanTxid, resp.StatusCode)
 		return
 	}
 
@@ -435,8 +436,8 @@ func showTransaction(txid string, daemonURL string, httpGet func(string) (*http.
 	fmt.Printf("  Block Index    : #%d (Hash: %s)\n", res.BlockIndex, res.BlockHash)
 	fmt.Printf("  Sender         : %s\n", res.Tx.Sender)
 	fmt.Printf("  Recipient      : %s\n", res.Tx.Recipient)
-	fmt.Printf("  Amount         : %.8f ARMX (%d Armoids)\n", float64(res.Tx.Amount)/1e8, res.Tx.Amount)
-	fmt.Printf("  Miner Fee      : %.8f ARMX (%d Armoids)\n", float64(res.Tx.Fee)/1e8, res.Tx.Fee)
+	fmt.Printf("  Amount         : %.8f %s (%d Armoids)\n", float64(res.Tx.Amount)/1e8, core.ActiveTicker(), res.Tx.Amount)
+	fmt.Printf("  Miner Fee      : %.8f %s (%d Armoids)\n", float64(res.Tx.Fee)/1e8, core.ActiveTicker(), res.Tx.Fee)
 	fmt.Printf("  Nonce          : #%d\n", res.Tx.Nonce)
 	fmt.Printf("  Size           : %d bytes (ML-DSA-65)\n", res.Tx.Size())
 	fmt.Println("==================================================")
@@ -445,19 +446,19 @@ func showTransaction(txid string, daemonURL string, httpGet func(string) (*http.
 func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http.Response, error)) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Printf("[-] Cannot read keystore file '%s': %v\n", filePath, err)
+		fmt.Fprintf(os.Stderr, "[-] Cannot read keystore file '%s': %v\n", filePath, err)
 		return
 	}
 	var ks wallet.KeystoreFile
 	if err := json.Unmarshal(data, &ks); err != nil {
-		fmt.Println("[-] Invalid keystore file format:", err)
+		fmt.Fprintln(os.Stderr, "[-] Invalid keystore file format:", err)
 		return
 	}
 
 	fmt.Printf("[*] Rescanning transactions for wallet address: %s...\n", ks.Address)
 	resp, err := httpGet(fmt.Sprintf("%s/history?address=%s", daemonURL, ks.Address))
 	if err != nil {
-		fmt.Printf("[-] Failed to query transaction history: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to query transaction history: %v\n", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -468,7 +469,7 @@ func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http
 		Transactions []core.Transaction `json:"transactions"`
 	}
 	if err := json.Unmarshal(body, &historyResp); err != nil {
-		fmt.Printf("[-] Failed to parse history response: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[-] Failed to parse history response: %v\n", err)
 		return
 	}
 
@@ -480,8 +481,8 @@ func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http
 		if tx.Sender == ks.Address {
 			role = "Sent"
 		}
-		fmt.Printf("  [%d] %s: %.8f ARMX | Nonce #%d | Fee: %d Armoids | TXID: %s\n",
-			i+1, role, float64(tx.Amount)/1e8, tx.Nonce, tx.Fee, tx.HashHex())
+		fmt.Printf("  [%d] %s: %.8f %s | Nonce #%d | Fee: %d Armoids | TXID: %s\n",
+			i+1, role, float64(tx.Amount)/1e8, core.ActiveTicker(), tx.Nonce, tx.Fee, tx.HashHex())
 	}
 	if len(historyResp.Transactions) == 0 {
 		fmt.Println("  (no transactions recorded yet for this address)")
@@ -493,14 +494,14 @@ func checkBalance(address string, daemonURL string, httpGet func(string) (*http.
 	fmt.Printf("[~] Connecting to daemon %s for address: %s...\n", daemonURL, address)
 	resp, err := httpGet(daemonURL + "/balance?address=" + address)
 	if err != nil {
-		fmt.Println("[-] Failed to connect to daemon (ensure armcoind is running):", err)
+		fmt.Fprintln(os.Stderr, "[-] Failed to connect to daemon (ensure armcoind is running):", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("[-] Failed to read daemon response:", err)
+		fmt.Fprintln(os.Stderr, "[-] Failed to read daemon response:", err)
 		return
 	}
 
@@ -531,12 +532,12 @@ func checkBalance(address string, daemonURL string, httpGet func(string) (*http.
 	fmt.Println("==================================================")
 	fmt.Printf("  Wallet Address    : %s\n", result.Address)
 	if result.ImmatureBalance > 0 {
-		fmt.Printf("  Spendable Balance : %.8f ARMX (%d Armoids)\n", float64(result.SpendableBalance)/1e8, result.SpendableBalance)
-		fmt.Printf("  Immature Rewards  : %.8f ARMX (%d Armoids) [< %d block confirmations]\n", float64(result.ImmatureBalance)/1e8, result.ImmatureBalance, result.CoinbaseMaturity)
-		fmt.Printf("  Total Confirmed   : %.8f ARMX (%d Armoids)\n", float64(result.Balance)/1e8, result.Balance)
+		fmt.Printf("  Spendable Balance : %.8f %s (%d Armoids)\n", float64(result.SpendableBalance)/1e8, core.ActiveTicker(), result.SpendableBalance)
+		fmt.Printf("  Immature Rewards  : %.8f %s (%d Armoids) [< %d block confirmations]\n", float64(result.ImmatureBalance)/1e8, core.ActiveTicker(), result.ImmatureBalance, result.CoinbaseMaturity)
+		fmt.Printf("  Total Confirmed   : %.8f %s (%d Armoids)\n", float64(result.Balance)/1e8, core.ActiveTicker(), result.Balance)
 	} else {
-		fmt.Printf("  Confirmed Balance : %.8f ARMX (%d Armoids)\n", float64(result.Balance)/1e8, result.Balance)
-		fmt.Printf("  Available Balance : %.8f ARMX (%d Armoids) [after pending mempool txs]\n", float64(result.PendingBalance)/1e8, result.PendingBalance)
+		fmt.Printf("  Confirmed Balance : %.8f %s (%d Armoids)\n", float64(result.Balance)/1e8, core.ActiveTicker(), result.Balance)
+		fmt.Printf("  Available Balance : %.8f %s (%d Armoids) [after pending mempool txs]\n", float64(result.PendingBalance)/1e8, core.ActiveTicker(), result.PendingBalance)
 	}
 	fmt.Printf("  Account Nonce     : #%d (Pending Nonce: #%d, Next TX Nonce: #%d)\n", result.Nonce, result.PendingNonce, nextNonce)
 	fmt.Printf("  Query Timestamp   : %s\n", time.Now().Format("2006-01-02 15:04:05"))
@@ -547,14 +548,14 @@ func showMempool(daemonURL string, httpGet func(string) (*http.Response, error))
 	fmt.Printf("[~] Querying mempool queue from daemon %s...\n", daemonURL)
 	resp, err := httpGet(daemonURL + "/mempool")
 	if err != nil {
-		fmt.Println("[-] Failed to connect to daemon (ensure armcoind is running):", err)
+		fmt.Fprintln(os.Stderr, "[-] Failed to connect to daemon (ensure armcoind is running):", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		fmt.Printf("[-] Failed to retrieve mempool from daemon (HTTP %d)\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "[-] Failed to retrieve mempool from daemon (HTTP %d)\n", resp.StatusCode)
 		return
 	}
 

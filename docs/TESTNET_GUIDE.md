@@ -15,7 +15,7 @@ Welcome to the public open testnet for **Armaxcoin** (`armax-coin`). This guide 
 | Parameter | Testnet Value | Note |
 |---|---|---|
 | **Network ID** | `ARMX-TESTNET-1` | Enforces network isolation from Mainnet/Regtest |
-| **Ticker (display)** | `tARMX` | GUI and explorer show `tARMX`. CLI output still prints `ARMX`. Mainnet uses `ARMX` |
+| **Ticker (display)** | `tARMX` | GUI, explorer, and CLI show `tARMX`. Mainnet uses `ARMX` |
 | **Default P2P Port** | `19335` | Used for peer-to-peer gossip & block streaming |
 | **Default RPC Port** | `19333` | Bound strictly to `127.0.0.1` (loopback only) |
 | **Target Block Time** | `120` seconds (2 minutes) | Controlled by LWMA-1 difficulty adjustment ($N=60$) |
