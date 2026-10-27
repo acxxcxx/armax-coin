@@ -79,17 +79,13 @@ func main() {
 	// Check deprecated flags with explicit warnings [L4-8]
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "port" {
-			if !*jsonPtr {
-				fmt.Println("[!] Warning: -port is deprecated, please use -rpcport instead")
-			}
+			fmt.Fprintln(os.Stderr, "[!] Warning: -port is deprecated, please use -rpcport instead")
 			if effRPCPort == "" {
 				effRPCPort = *portPtr
 			}
 		}
 		if f.Name == "p2p" {
-			if !*jsonPtr {
-				fmt.Println("[!] Warning: -p2p is deprecated, please use -p2pport instead")
-			}
+			fmt.Fprintln(os.Stderr, "[!] Warning: -p2p is deprecated, please use -p2pport instead")
 			if effP2PPort == "" {
 				effP2PPort = *p2pPortPtr
 			}
@@ -115,9 +111,7 @@ func main() {
 	if !isExplicit {
 		if envNet := os.Getenv("ARMX_NETWORK"); envNet != "" {
 			if strings.EqualFold(envNet, "regtest") {
-				if !*jsonPtr {
-					fmt.Println("[!] Note: regtest profile cannot be selected via environment variable. Please specify '-network regtest' explicitly.")
-				}
+				fmt.Fprintln(os.Stderr, "[!] Note: regtest profile cannot be selected via environment variable. Please specify '-network regtest' explicitly.")
 			} else {
 				netChoice = envNet
 			}
@@ -457,7 +451,7 @@ func main() {
 			}
 		} else {
 			if !*jsonPtr {
-				fmt.Printf("[!] User fee (%.8f %s) below minimum relay fee. Automatically upgraded to: %.8f %s (%d Armoids for %d bytes)\n",
+				fmt.Fprintf(os.Stderr, "[!] User fee (%.8f %s) below minimum relay fee. Automatically upgraded to: %.8f %s (%d Armoids for %d bytes)\n",
 					float64(userFee)/1e8, core.ActiveTicker(), float64(minRequiredFee)/1e8, core.ActiveTicker(), minRequiredFee, tx.Size())
 			}
 		}
@@ -576,8 +570,7 @@ func main() {
 	if *waitPtr {
 		waitStart := time.Now()
 		if !*jsonPtr {
-			fmt.Printf("[%s] [~] Waiting for transaction %s to be included in block...\n",
-				time.Now().Format("15:04:05"), txHash)
+			fmt.Printf("[~] Waiting for transaction %s to be included in block...\n", txHash)
 		}
 		for {
 			time.Sleep(3 * time.Second)

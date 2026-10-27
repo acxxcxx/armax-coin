@@ -62,13 +62,13 @@ func main() {
 	// Check deprecated flags with explicit warnings [L4-8]
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "port" {
-			fmt.Println("[!] Warning: -port is deprecated, please use -rpcport instead")
+			fmt.Fprintln(os.Stderr, "[!] Warning: -port is deprecated, please use -rpcport instead")
 			if effRPCPort == "" {
 				effRPCPort = *portPtr
 			}
 		}
 		if f.Name == "p2p" {
-			fmt.Println("[!] Warning: -p2p is deprecated, please use -p2pport instead")
+			fmt.Fprintln(os.Stderr, "[!] Warning: -p2p is deprecated, please use -p2pport instead")
 			if effP2PPort == "" {
 				effP2PPort = *p2pPortPtr
 			}
@@ -94,7 +94,7 @@ func main() {
 	if !isExplicit {
 		if envNet := os.Getenv("ARMX_NETWORK"); envNet != "" {
 			if strings.EqualFold(envNet, "regtest") {
-				fmt.Println("[!] Note: regtest profile cannot be selected via environment variable. Please specify '-network regtest' explicitly.")
+				fmt.Fprintln(os.Stderr, "[!] Note: regtest profile cannot be selected via environment variable. Please specify '-network regtest' explicitly.")
 			} else {
 				netChoice = envNet
 			}
@@ -455,7 +455,7 @@ func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http
 		os.Exit(1)
 	}
 
-	fmt.Printf("[*] Rescanning transactions for wallet address: %s...\n", ks.Address)
+	fmt.Printf("[~] Rescanning transactions for wallet address: %s...\n", ks.Address)
 	resp, err := httpGet(fmt.Sprintf("%s/history?address=%s", daemonURL, ks.Address))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Failed to query transaction history: %v\n", err)
