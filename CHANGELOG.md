@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `go mod tidy` now lists direct imports as direct requirements.
 - Documentation: Go 1.27.3+ guidance, mainnet-readiness gate status table, and cross-references between overlapping testnet/release guides.
 
+### CLI
+- `armwallet` commands exit non-zero (1) on errors; previously failures printed `[-]` and exited 0.
+- `armsend -json` prints fatal errors as `{"status":"error","error":"..."}` on stdout.
+- Deprecation and note warnings (`[!]`) go to stderr, so stdout stays clean for scripts. Progress lines use `[~]` consistently.
+- Legacy aliases still work but print a deprecation notice naming the replacement (`armwallet`: `-newaddress`, `-getbalance`, `-getmempool`, `-getmempoolinfo`, `-wallet`; `armsend`: `-amount-armx`, `-getmempoolinfo`, `-file`).
+- `-h` and `--help` show grouped usage, environment variables, and examples, and exit 0.
+
 ### Tests
 - Added in-process tests for the miner RPC helpers (`fetchBlockTemplate`, `submitSolvedBlock`), `armwallet` balance rendering, and `RunServerWithConfig` error handling.
 
