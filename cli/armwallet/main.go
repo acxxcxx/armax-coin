@@ -215,19 +215,19 @@ func createWallet(filePath string, force bool) {
 	passphrase, err := getPassphrase(true)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Error:", err)
-		return
+		os.Exit(1)
 	}
 
 	w, err := wallet.NewWallet()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Failed to create wallet: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Failed to save encrypted keystore:", err)
-		return
+		os.Exit(1)
 	}
 
 	fmt.Println("\n[OK] Post-quantum wallet successfully created and secured with Argon2id + AES-256-GCM!")
@@ -248,19 +248,19 @@ func restoreWallet(mnemonic, filePath string, force bool) {
 	passphrase, err := getPassphrase(true)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Error:", err)
-		return
+		os.Exit(1)
 	}
 
 	w, err := wallet.WalletFromMnemonic(mnemonic, "", 0)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Failed to restore wallet from mnemonic: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Failed to save encrypted keystore:", err)
-		return
+		os.Exit(1)
 	}
 
 	fmt.Println("\n[OK] Wallet successfully restored and encrypted with Argon2id!")
@@ -279,13 +279,13 @@ func showAddresses(filePath string) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Cannot read keystore file '%s': %v\n", filePath, err)
-		return
+		os.Exit(1)
 	}
 
 	var ks wallet.KeystoreFile
 	if err := json.Unmarshal(data, &ks); err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Invalid keystore file format:", err)
-		return
+		os.Exit(1)
 	}
 
 	fmt.Println("==================================================")
@@ -405,14 +405,14 @@ func showTransaction(txid string, daemonURL string, httpGet func(string) (*http.
 	resp, err := httpGet(fmt.Sprintf("%s/tx?hash=%s", daemonURL, cleanTxid))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Failed to connect to daemon: %v\n", err)
-		return
+		os.Exit(1)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "[-] Transaction '%s' not found (HTTP %d)\n", cleanTxid, resp.StatusCode)
-		return
+		os.Exit(1)
 	}
 
 	var res struct {
@@ -447,19 +447,19 @@ func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Cannot read keystore file '%s': %v\n", filePath, err)
-		return
+		os.Exit(1)
 	}
 	var ks wallet.KeystoreFile
 	if err := json.Unmarshal(data, &ks); err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Invalid keystore file format:", err)
-		return
+		os.Exit(1)
 	}
 
 	fmt.Printf("[*] Rescanning transactions for wallet address: %s...\n", ks.Address)
 	resp, err := httpGet(fmt.Sprintf("%s/history?address=%s", daemonURL, ks.Address))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Failed to query transaction history: %v\n", err)
-		return
+		os.Exit(1)
 	}
 	defer resp.Body.Close()
 
@@ -470,7 +470,7 @@ func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http
 	}
 	if err := json.Unmarshal(body, &historyResp); err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Failed to parse history response: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	fmt.Println("==================================================")
@@ -495,14 +495,14 @@ func checkBalance(address string, daemonURL string, httpGet func(string) (*http.
 	resp, err := httpGet(daemonURL + "/balance?address=" + address)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Failed to connect to daemon (ensure armcoind is running):", err)
-		return
+		os.Exit(1)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Failed to read daemon response:", err)
-		return
+		os.Exit(1)
 	}
 
 	var result struct {
@@ -549,14 +549,14 @@ func showMempool(daemonURL string, httpGet func(string) (*http.Response, error))
 	resp, err := httpGet(daemonURL + "/mempool")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Failed to connect to daemon (ensure armcoind is running):", err)
-		return
+		os.Exit(1)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "[-] Failed to retrieve mempool from daemon (HTTP %d)\n", resp.StatusCode)
-		return
+		os.Exit(1)
 	}
 
 	var txs []core.Transaction
