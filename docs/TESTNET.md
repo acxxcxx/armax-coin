@@ -4,6 +4,8 @@
 
 The Armaxcoin Public Testnet (`ARMX-TESTNET-1`) operates under isolated network parameters defined in `core/network.go`. Testnet nodes NEVER peer with or accept blocks from Mainnet.
 
+**Ticker:** The GUI and explorer display `tARMX` on testnet. CLI output still prints `ARMX`. Network ID, on-chain values, and addresses are unchanged.
+
 | Service | Port | Network Interface Binding | Firewall Policy |
 |---|---|---|---|
 | **P2P Gossip & Block Streaming** | **19335** | `0.0.0.0:19335` (All interfaces) | **ALLOW INBOUND** (Public TCP) |

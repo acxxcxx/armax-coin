@@ -8,7 +8,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 > [!WARNING]
 > **EXPERIMENTAL OPEN TESTNET NOTICE:**
-> Armaxcoin is experimental software under active development and has **not** undergone an independent third-party security audit. Testnet coins (`ARMX`) have **no monetary value**, no market liquidity, no guarantee of conversion, and no investment utility.
+> Armaxcoin is experimental software under active development and has **not** undergone an independent third-party security audit. Testnet coins (`tARMX`) have **no monetary value**, no market liquidity, no guarantee of conversion, and no investment utility.
 > The mainnet network (`ARMX-MAINNET-1`) is **locked** in source (`core.MainnetLaunched = false`). Invoking `-network mainnet` is strictly rejected by all binaries. All operations, mining, and testing are active on the **Public Testnet (`ARMX-TESTNET-1`)**.
 
 ---
@@ -55,6 +55,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Difficulty Algorithm** | LWMA-1 (Linear Weighted Moving Average) | Continuous 256-bit numerical target adjusted per block across 60-block window; dynamic floor down to Difficulty 1 for ArmaxHash |
 | **Candidate Block Extraction** | `/getblocktemplate` JSON RPC | Bounded block candidate endpoint (MaxBlockTransactions - 1) for external miners |
 | **RPC Security** | Loopback Binding & Cookie/Basic Auth | Mutation endpoints strictly require auth/cookie or `-rpcuser`/`-rpcpassword`; `-rpcinsecure-localhost` flag; /chain bounded to 50 blocks |
+| **Ticker** | `ARMX` (mainnet). Testnet GUI and explorer display `tARMX`; CLI output still prints `ARMX` | Display label only. Not consensus. Network ID and on-chain values are unchanged |
 | **Initial Block Reward** | 60 ARMX (6,000,000,000 Armoids) | Awarded to miner via single coinbase transaction at index 0 |
 | **Halving Interval** | Every 1,050,000 blocks (~4 years) | Reward cuts in half ($60 \to 30 \to 15 \to \dots$ ARMX) |
 | **Maximum Total Supply** | 126,000,000 ARMX | Strict hard cap (12,600,000,000,000,000 Armoids, 8 decimal places; real theoretical emission: 125,999,999.874 ARMX) |

@@ -24,7 +24,7 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 
 [color=red][b]CRITICAL EXPERIMENTAL TESTNET DISCLAIMER:[/b][/color]
 [list]
-[*] [b]Zero Economic Value:[/b] Testnet coins ([font=monospace]ARMX[/font]) carry [b]NO monetary value[/b], no investment utility, and no guarantee of exchange listing or token conversion.
+[*] [b]Zero Economic Value:[/b] Testnet coins ([font=monospace]tARMX[/font]) carry [b]NO monetary value[/b], no investment utility, and no guarantee of exchange listing or token conversion.
 [*] [b]Code Audit Status:[/b] The consensus engine, ArmaxHash implementation, and cryptographic integration are experimental and have [b]NOT yet undergone an independent third-party security audit[/b].
 [*] [b]State Reset Possibility:[/b] As an active development testnet, blockchain state may be reset if critical protocol flaws are discovered.
 [*] [b]Mainnet Status:[/b] Mainnet is [b]locked in source[/b] ([font=monospace]core.MainnetLaunched = false[/font]). Invoking [font=monospace]-network mainnet[/font] is strictly rejected by all binaries.
@@ -45,11 +45,11 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [*] [b]Digital Signatures:[/b] NIST FIPS 204 (ML-DSA-65) Post-Quantum Module-Lattice Signatures (pure, non-hybrid)
 [*] [b]Target Block Time:[/b] 120 seconds (2 minutes)
 [*] [b]Difficulty Retargeting:[/b] Continuous LWMA-1 ($N=60$ sliding evaluation window)
-[*] [b]Initial Block Reward:[/b] 60.00000000 ARMX (6,000,000,000 Armoids)
+[*] [b]Initial Block Reward:[/b] 60.00000000 tARMX (6,000,000,000 Armoids)
 [*] [b]Halving Interval:[/b] Every 1,050,000 blocks (~4.0 years on 120s cadence)
-[*] [b]Maximum Hard Cap:[/b] 126,000,000 ARMX (12,600,000,000,000,000 Armoids, 8 decimal places)
+[*] [b]Maximum Hard Cap:[/b] 126,000,000 tARMX (12,600,000,000,000,000 Armoids, 8 decimal places)
 [*] [b]Premine / Founder Allocation:[/b] [b]0% (Zero Premine, Zero ICO, Zero Developer Tax)[/b]
-[*] [b]Genesis Block Allocation:[/b] 60 ARMX burned to unspendable zero address ([font=monospace]armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd[/font])
+[*] [b]Genesis Block Allocation:[/b] 60 tARMX burned to unspendable zero address ([font=monospace]armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd[/font])
 [*] [b]Genesis Block Hash:[/b] [font=monospace]0000000dc84202e63a340a2439625fbf9cea5cb7b84119f93d52cff39f63a68b[/font]
 [*] [b]Genesis Merkle Root:[/b] [font=monospace]808a4007681dd123133bfe106b101d251ff0d2d023f600384394673bfc03768d[/font]
 [*] [b]Genesis Timestamp:[/b] 1710000001 (Nonce: 40,272,237)

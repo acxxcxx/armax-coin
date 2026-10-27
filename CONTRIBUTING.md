@@ -15,7 +15,7 @@ All contributors and community participants are expected to adhere to our [Code 
 ## 2. Experimental Status & Security Boundaries
 
 - **Experimental Software:** Armaxcoin is currently deployed in an open testnet phase (`ARMX-TESTNET-1`). It has not undergone an independent third-party security audit.
-- **No Financial Guarantees:** Testnet coins (`ARMX`) have no monetary value, no guarantee of conversion, and no financial utility.
+- **No Financial Guarantees:** Testnet coins (`tARMX`) have no monetary value, no guarantee of conversion, and no financial utility.
 - **Vulnerability Reporting:** Do **NOT** open public GitHub issues for security vulnerabilities, consensus bypasses, or denial-of-service vectors. Follow the responsible disclosure procedures defined in [SECURITY.md](SECURITY.md).
 
 ---
@@ -174,5 +174,5 @@ Contributions to Armaxcoin are entirely voluntary. Contributors are credited in 
 
 > [!IMPORTANT]
 > **No Financial or Token Compensation:**
-> Armaxcoin is an experimental Layer-1 open-source protocol on public testnet (`ARMX-TESTNET-1`). Testnet coins (`ARMX`) have no monetary value, no promise of conversion, and no investment utility. No tokens, airdrops, retroactive allocations, or financial bounties are offered or implied.
+> Armaxcoin is an experimental Layer-1 open-source protocol on public testnet (`ARMX-TESTNET-1`). Testnet coins (`tARMX`) have no monetary value, no promise of conversion, and no investment utility. No tokens, airdrops, retroactive allocations, or financial bounties are offered or implied.
 
