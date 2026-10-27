@@ -362,14 +362,50 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 		addr = activeAddress
 	}
 	client := http.Client{Timeout: 4 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("%s/history?address=%s", rpcURL, addr))
+	resp, err := client.Get(fmt.Sprintf("%s/history?address=%s", rpcURL, url.QueryEscape(addr)))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.Copy(w, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+		return
+	}
+
+	// The node omits the transaction hash from JSON (it is computed from fields),
+	// so add it here for the UI's TXID column and details view.
+	var records []struct {
+		BlockIndex int              `json:"block_index"`
+		Timestamp  int64            `json:"timestamp"`
+		Status     string           `json:"status"`
+		Tx         core.Transaction `json:"tx"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&records); err != nil {
+		http.Error(w, "Invalid history response from node", http.StatusBadGateway)
+		return
+	}
+	out := make([]map[string]interface{}, 0, len(records))
+	for _, rec := range records {
+		txBytes, err := json.Marshal(rec.Tx)
+		if err != nil {
+			continue
+		}
+		var txMap map[string]interface{}
+		if err := json.Unmarshal(txBytes, &txMap); err != nil {
+			continue
+		}
+		txMap["hash"] = rec.Tx.HashHex()
+		out = append(out, map[string]interface{}{
+			"block_index": rec.BlockIndex,
+			"timestamp":   rec.Timestamp,
+			"status":      rec.Status,
+			"tx":          txMap,
+		})
+	}
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func handleSend(w http.ResponseWriter, r *http.Request) {
