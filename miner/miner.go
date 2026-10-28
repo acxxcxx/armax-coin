@@ -1106,11 +1106,13 @@ func calculateStratumBlockHash(b *core.Block, powAlgo string) (string, error) {
 	}
 }
 
-// deriveSessionNonceBase converts extraNonce1 into a disjoint 63-bit starting nonce partition.
+// deriveSessionNonceBase converts extraNonce1 into a disjoint 52-bit starting nonce partition.
+// Clamped to 52 bits (0x000fffff << 32) so all generated nonces stay strictly within
+// IEEE-754 double precision safe integer range (Number.MAX_SAFE_INTEGER = 2^53 - 1).
 func deriveSessionNonceBase(extraNonce1 string) int64 {
 	if extraNonce1 != "" {
 		if v, err := strconv.ParseUint(extraNonce1, 16, 32); err == nil && v > 0 {
-			return int64(v&0x7fffffff) << 32
+			return int64(v&0x000fffff) << 32
 		}
 	}
 	var nonceBytes [4]byte

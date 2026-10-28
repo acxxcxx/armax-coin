@@ -25,6 +25,41 @@ type Message struct {
 	Payload   interface{} `json:"payload"`
 }
 
+// UnmarshalJSON implements custom JSON unmarshaling for Message that preserves
+// raw payload bytes without float64 precision loss for 64-bit nonces, timestamps, and amounts.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	type messageAlias struct {
+		NetworkID string          `json:"network_id"`
+		Type      string          `json:"type"`
+		Payload   json.RawMessage `json:"payload"`
+	}
+	var raw messageAlias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	m.NetworkID = raw.NetworkID
+	m.Type = raw.Type
+	m.Payload = raw.Payload
+	return nil
+}
+
+// PayloadBytes returns the payload as raw JSON bytes without float64 distortion.
+func (m *Message) PayloadBytes() ([]byte, error) {
+	if m == nil {
+		return nil, errors.New("nil message")
+	}
+	switch p := m.Payload.(type) {
+	case json.RawMessage:
+		return p, nil
+	case []byte:
+		return p, nil
+	case string:
+		return []byte(p), nil
+	default:
+		return json.Marshal(p)
+	}
+}
+
 // BlockRangeRequest represents a query for a range of blocks [FromIndex, ToIndex]
 type BlockRangeRequest struct {
 	FromIndex int `json:"from_index"`

@@ -4755,7 +4755,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 				}
 
 				var br BlockRangeResponse
-				chunkBytes, err := json.Marshal(rangeResp.Payload)
+				chunkBytes, err := rangeResp.PayloadBytes()
 				if err != nil {
 					core.LogWarn(
 						core.LogCategorySync,
