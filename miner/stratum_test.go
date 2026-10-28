@@ -239,9 +239,9 @@ func TestStratumDryRunAndEndToEndMiningSession(t *testing.T) {
 		t.Fatalf("testStratumPoolConnection failed: %v", err)
 	}
 
-	// 2. Test full mining session until 1 share is solved and accepted
+	// 2. Test full mining session until 10 shares are solved and accepted (with duplicate-nonce check)
 	stopChan := make(chan os.Signal, 1)
-	if err := runStratumMiningSession(stopChan, hostPort, poolAddr, "worker1", "x", 2, 60, 1); err != nil {
+	if err := runStratumMiningSession(stopChan, hostPort, poolAddr, "worker1", "x", 2, 60, 10); err != nil {
 		t.Fatalf("runStratumMiningSession failed: %v", err)
 	}
 

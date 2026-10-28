@@ -1279,6 +1279,8 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 	var (
 		stateMu        sync.RWMutex
 		extraNonce1    string
+		activeJobID    string
+		jobSeq         int64
 		shareDiff      = 1.0
 		shareTarget    = floatDifficultyToTarget(1.0)
 		activeCancel   context.CancelFunc
@@ -1340,6 +1342,10 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 
 	startJobWorkers := func(job *StratumJob) {
 		stateMu.Lock()
+		if activeJobID == job.JobID && activeCancel != nil {
+			stateMu.Unlock()
+			return
+		}
 		if activeCancel != nil {
 			activeCancel()
 		}
@@ -1353,11 +1359,13 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 		}
 		jobCtx, jobCancel := context.WithCancel(sessionCtx)
 		activeCancel = jobCancel
+		activeJobID = job.JobID
 		en1 := extraNonce1
 		curDiff := shareDiff
 		stateMu.Unlock()
 
-		baseNonce := deriveSessionNonceBase(en1)
+		seqOffset := (atomic.AddInt64(&jobSeq, 1) - 1) << 20
+		baseNonce := deriveSessionNonceBase(en1) + seqOffset
 		fmt.Printf("[%s] [Stratum Job] Height #%d (%s) | Job: %s | Pool Diff: %.4f\n",
 			time.Now().Format("15:04:05"), job.Height, job.PoWAlgo, job.JobID, curDiff)
 
