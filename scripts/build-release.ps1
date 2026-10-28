@@ -79,21 +79,24 @@ foreach ($t in $targets) {
         Write-Host "    -> armgui.exe (Windows Desktop GUI)"
         Copy-Item (Join-Path $root "gui/armgui.exe.manifest") $tempDist -ErrorAction SilentlyContinue
         Copy-Item (Join-Path $root "gui/armax_logo.ico") $tempDist -ErrorAction SilentlyContinue
-        Copy-Item (Join-Path $root "scripts/certs/armax-code-signing.cer") $tempDist -ErrorAction SilentlyContinue
-        Copy-Item (Join-Path $root "scripts/trust-publisher.ps1") $tempDist -ErrorAction SilentlyContinue
         go build -trimpath -ldflags "-s -w -H windowsgui -buildid=" -o (Join-Path $tempDist "armgui.exe") ./gui
         if (-not (Test-Path (Join-Path $tempDist "armgui.exe"))) { throw "Failed to build armgui.exe" }
 
-        # Authenticode sign Windows executables if signing_keys/armax-code-signing.pfx is available
+        # Authenticode sign and RFC 3161 timestamp Windows executables if PFX and WINDOWS_PFX_PASSWORD env var are provided
         $pfxFile = Join-Path $root "signing_keys/armax-code-signing.pfx"
-        $pfxPassFile = Join-Path $root "signing_keys/WINDOWS_PFX_PASSWORD.txt"
-        if ((Test-Path $pfxFile) -and (Test-Path $pfxPassFile)) {
-            Write-Host "    -> Signing Windows executables with Authenticode certificate..." -ForegroundColor Cyan
-            $pfxPassPlain = (Get-Content $pfxPassFile -Raw).Trim()
-            $pfxPassSec = ConvertTo-SecureString -String $pfxPassPlain -Force -AsPlainText
+        if ((Test-Path $pfxFile) -and (-not [string]::IsNullOrEmpty($env:WINDOWS_PFX_PASSWORD))) {
+            Write-Host "    -> Signing and timestamping Windows executables with Authenticode certificate..." -ForegroundColor Cyan
+            $pfxPassSec = ConvertTo-SecureString -String $env:WINDOWS_PFX_PASSWORD -Force -AsPlainText
             $signingCert = Get-PfxCertificate -FilePath $pfxFile -Password $pfxPassSec
             Get-ChildItem -Path $tempDist -Filter "*.exe" | ForEach-Object {
-                Set-AuthenticodeSignature -FilePath $_.FullName -Certificate $signingCert -HashAlgorithm SHA256 | Out-Null
+                $sigResult = Set-AuthenticodeSignature -FilePath $_.FullName -Certificate $signingCert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
+                if ($null -eq $sigResult.TimeStamperCertificate) {
+                    $sigResult = Set-AuthenticodeSignature -FilePath $_.FullName -Certificate $signingCert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.sectigo.com"
+                }
+                $verifySig = Get-AuthenticodeSignature -FilePath $_.FullName
+                if ($null -eq $verifySig.SignerCertificate -or $null -eq $verifySig.TimeStamperCertificate) {
+                    throw "Authenticode signature or RFC 3161 timestamp verification failed for $($_.Name)"
+                }
             }
         }
     } else {
@@ -145,7 +148,7 @@ foreach ($archive in ($archiveList | Sort-Object)) {
 $masterSumsFile = Join-Path $outPath "SHA256SUMS"
 [System.IO.File]::WriteAllLines($masterSumsFile, $masterHashes)
 
-# Copy public PGP key and sign SHA256SUMS if GPG key is available
+# Copy public PGP key to release_assets
 $pubPgpFile = Join-Path $root "scripts/certs/ARMAX-PGP-KEY.asc"
 if (Test-Path $pubPgpFile) {
     Copy-Item -Path $pubPgpFile -Destination (Join-Path $outPath "ARMAX-PGP-KEY.asc") -Force

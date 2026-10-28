@@ -133,11 +133,39 @@ Get-FileHash -Algorithm SHA256 .\armax-v1.0.5-windows-amd64.zip
 Get-Content .\SHA256SUMS | Select-String "armax-v1.0.5-windows-amd64.zip"
 ```
 
-#### Release Verification
-To verify the authenticity and integrity of a release:
-1. **Commit & Tag Matching:** Confirm that the release tag matches the official commit history (`git tag -v v1.0.5` or verifying commit history).
-2. **Checksum Integrity:** Verify downloaded archive hashes against the published `SHA256SUMS` manifest using `sha256sum --check --ignore-missing SHA256SUMS`.
-3. **Security Scope of Unsigned Checksums:** Note that checksums hosted directly alongside binaries protect against accidental network corruption, but do not provide cryptographic defense if the hosting infrastructure itself is compromised. Reproducible source compilation (`go build -trimpath ...`) matching the tagged commit provides independent binary verification.
+#### Verifying releases
+
+Release checksum manifests (`SHA256SUMS`) are detached-signed with the Armaxcoin Core PGP release key (`ARMAX-PGP-KEY.asc`). To verify the authenticity and integrity of a downloaded release:
+
+1. **Import the PGP public key and verify its fingerprint:**
+   ```bash
+   gpg --import ARMAX-PGP-KEY.asc
+   gpg --fingerprint dev@armax-coin.cloud
+   ```
+   Confirm that the primary key fingerprint matches the official Armaxcoin Core release signing key:
+   ```text
+   <YOUR_GPG_KEY_FINGERPRINT_HERE>
+   ```
+
+2. **Verify the detached PGP signature on `SHA256SUMS`:**
+   ```bash
+   gpg --verify SHA256SUMS.asc SHA256SUMS
+   ```
+   Ensure GPG reports a `Good signature from "Armaxcoin Core (Official Release Signing Key) <dev@armax-coin.cloud>"` before proceeding.
+
+3. **Verify the archive checksums:**
+   ```bash
+   sha256sum -c SHA256SUMS
+   # Or, if you only downloaded a single platform archive:
+   sha256sum --check --ignore-missing SHA256SUMS
+   ```
+
+4. **Windows Authenticode Signature Check (Optional):**
+   On Windows, you can also inspect the Authenticode signature and timestamp on any `.exe` binary using PowerShell:
+   ```powershell
+   Get-AuthenticodeSignature .\armgui.exe | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+   ```
+   > **Note:** Never import self-signed certificates into your Windows Root Certificate Store (`Cert:\CurrentUser\Root` or `Cert:\LocalMachine\Root`). Always rely on PGP verification of `SHA256SUMS.asc` and/or reproducible builds from source (`go build -trimpath ...`) for cryptographic authenticity.
 
 ### 2. Launch Testnet Node Daemon
 

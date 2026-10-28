@@ -2,8 +2,15 @@
 # scripts/generate-signing-keys.ps1
 # Generates 1-Year Windows Authenticode (.pfx/.cer) & GPG Release Signing Keys
 # Publisher: Armaxcoin Core <dev@armax-coin.cloud>
+#
+# SECURITY NOTES:
+# - Never writes passphrases to disk (no WINDOWS_PFX_PASSWORD.txt or GPG_PASSPHRASE.txt).
+# - Never prints private key material to stdout, stderr, or logs.
+# - Displays generated passphrases ONCE in an interactive terminal session only,
+#   instructing the operator to store them immediately in a password manager.
+# - Generates a GPG revocation certificate at signing_keys/gpg-revocation.asc.
 # ==============================================================================
-# Usage:
+# Usage (run manually in an interactive PowerShell terminal):
 #   .\scripts\generate-signing-keys.ps1
 # ==============================================================================
 
@@ -11,7 +18,8 @@
 param(
     [string]$PublisherName = "Armaxcoin Core",
     [string]$PublisherEmail = "dev@armax-coin.cloud",
-    [int]$ValidityYears = 1
+    [int]$ValidityYears = 1,
+    [switch]$NonInteractiveTest
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,7 +36,7 @@ Write-Host " ARMAXCOIN RELEASE SIGNING KEY GENERATOR ($ValidityYears-Year Validi
 Write-Host " Publisher : $PublisherName <$PublisherEmail>" -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 
-# 1. Generate random password for Windows Authenticode PFX
+# 1. Generate random password for Windows Authenticode PFX (in memory only)
 $rngBytes = New-Object byte[] 24
 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rngBytes)
 $pfxPasswordPlain = [Convert]::ToBase64String($rngBytes).Replace("+", "A").Replace("/", "B").Replace("=", "")
@@ -60,19 +68,18 @@ Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pfxPasswordSecur
 Export-Certificate -Cert $cert -FilePath $cerSecretPath | Out-Null
 Copy-Item -Path $cerSecretPath -Destination $cerPublicPath -Force
 
-# Remove private key from local Windows CertStore after exporting to PFX so it stays isolated in signing_keys/
+# Remove private key from local Windows CertStore after exporting to PFX
 Remove-Item -Path "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force -ErrorAction SilentlyContinue
 
 $pfxBase64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($pfxPath))
 [System.IO.File]::WriteAllText((Join-Path $secretDir "WINDOWS_PFX_BASE64.txt"), $pfxBase64)
-[System.IO.File]::WriteAllText((Join-Path $secretDir "WINDOWS_PFX_PASSWORD.txt"), $pfxPasswordPlain)
 
 Write-Host "    [OK] Thumbprint : $($cert.Thumbprint)"
 Write-Host "    [OK] Expires    : $($notAfter.ToString('yyyy-MM-dd HH:mm:ss'))"
 Write-Host "    [OK] Public CER : $cerPublicPath"
-Write-Host "    [OK] Secret PFX : $pfxPath"
+Write-Host "    [OK] Secret PFX : $pfxPath (encrypted)"
 
-# 3. Generate 1-Year GPG Keypair for SHA256SUMS.asc Release Signing
+# 3. Generate 1-Year GPG Keypair & Revocation Certificate
 $gpgExe = "gpg"
 if (-not (Get-Command $gpgExe -ErrorAction SilentlyContinue)) {
     $gitGpg = Join-Path $env:ProgramFiles "Git\usr\bin\gpg.exe"
@@ -81,8 +88,11 @@ if (-not (Get-Command $gpgExe -ErrorAction SilentlyContinue)) {
     }
 }
 
+$gpgPassPlain = ""
+$gpgFingerprint = ""
+
 if (Get-Command $gpgExe -ErrorAction SilentlyContinue) {
-    Write-Host "`n[+] Generating 1-Year GPG Release Signing Keypair..." -ForegroundColor Green
+    Write-Host "`n[+] Generating 1-Year GPG Release Signing Keypair & Revocation Certificate..." -ForegroundColor Green
     $rngGpgBytes = New-Object byte[] 24
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rngGpgBytes)
     $gpgPassPlain = [Convert]::ToBase64String($rngGpgBytes).Replace("+", "X").Replace("/", "Y").Replace("=", "")
@@ -111,10 +121,24 @@ Passphrase: $gpgPassPlain
     $ErrorActionPreference = "Continue"
     & $gpgExe --homedir $tempGpgHomeRel --batch --gen-key $batchFileRel 2>&1 | Out-Null
     $ErrorActionPreference = "Stop"
+    Remove-Item -Force $batchFile -ErrorAction SilentlyContinue
+
+    # Extract fingerprint
+    $fprLines = & $gpgExe --homedir $tempGpgHomeRel --batch --with-colons --fingerprint $PublisherEmail | Out-String
+    foreach ($line in ($fprLines -split "`r?`n")) {
+        if ($line.StartsWith("fpr:")) {
+            $parts = $line.Split(":")
+            if ($parts.Length -ge 10 -and $parts[9].Length -ge 16) {
+                $gpgFingerprint = $parts[9]
+                break
+            }
+        }
+    }
 
     $pubAscSecret = Join-Path $secretDir "ARMAX-PGP-KEY.asc"
     $pubAscPublic = Join-Path $publicCertDir "ARMAX-PGP-KEY.asc"
     $privAscSecret = Join-Path $secretDir "GPG_PRIVATE_KEY.txt"
+    $revAscSecret = Join-Path $secretDir "gpg-revocation.asc"
 
     $pubArmor = & $gpgExe --homedir $tempGpgHomeRel --batch --armor --export $PublisherEmail | Out-String
     [System.IO.File]::WriteAllText($pubAscSecret, $pubArmor)
@@ -122,7 +146,16 @@ Passphrase: $gpgPassPlain
 
     $privArmor = & $gpgExe --homedir $tempGpgHomeRel --batch --yes --pinentry-mode loopback --passphrase $gpgPassPlain --armor --export-secret-keys $PublisherEmail | Out-String
     [System.IO.File]::WriteAllText($privAscSecret, $privArmor)
-    [System.IO.File]::WriteAllText((Join-Path $secretDir "GPG_PASSPHRASE.txt"), $gpgPassPlain)
+
+    # Copy revocation certificate generated in openpgp-revocs.d to signing_keys/gpg-revocation.asc
+    $revocDir = Join-Path $tempGpgHome "openpgp-revocs.d"
+    $revFile = Get-ChildItem -Path $revocDir -Filter "*.rev" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $revFile) {
+        $revContent = [System.IO.File]::ReadAllText($revFile.FullName)
+        # Un-escape leading colon before -----BEGIN PGP PUBLIC KEY BLOCK----- so the revocation cert is ready for emergency use
+        $revContent = $revContent -replace "(?m)^:-----BEGIN PGP PUBLIC KEY BLOCK-----", "-----BEGIN PGP PUBLIC KEY BLOCK-----"
+        [System.IO.File]::WriteAllText($revAscSecret, $revContent)
+    }
 
     # Stop gpg-agent and remove temporary keyring directory
     $gpgConf = Join-Path (Split-Path $gpgExe -Parent) "gpgconf.exe"
@@ -133,14 +166,24 @@ Passphrase: $gpgPassPlain
     }
     Remove-Item -Recurse -Force $tempGpgHome -ErrorAction SilentlyContinue
 
-    Write-Host "    [OK] Public PGP Key : $pubAscPublic"
-    Write-Host "    [OK] Secret PGP Key : $privAscSecret"
+    Write-Host "    [OK] GPG Fingerprint      : $gpgFingerprint"
+    Write-Host "    [OK] Public PGP Key       : $pubAscPublic"
+    Write-Host "    [OK] Encrypted Secret Key : $privAscSecret"
+    Write-Host "    [OK] Revocation Cert      : $revAscSecret"
 }
 
-Write-Host "`n==================================================================" -ForegroundColor Cyan
-Write-Host " GITHUB ACTIONS SECRETS READY (in git-ignored folder 'signing_keys/'):" -ForegroundColor Green
-Write-Host "   1. WINDOWS_PFX_BASE64   -> signing_keys\WINDOWS_PFX_BASE64.txt"
-Write-Host "   2. WINDOWS_PFX_PASSWORD -> signing_keys\WINDOWS_PFX_PASSWORD.txt"
-Write-Host "   3. GPG_PRIVATE_KEY      -> signing_keys\GPG_PRIVATE_KEY.txt"
-Write-Host "   4. GPG_PASSPHRASE       -> signing_keys\GPG_PASSPHRASE.txt"
-Write-Host "==================================================================" -ForegroundColor Cyan
+if (-not $NonInteractiveTest) {
+    Write-Host "`n==================================================================" -ForegroundColor Yellow
+    Write-Host " IMPORTANT: STORE THESE PASSPHRASES IN YOUR PASSWORD MANAGER NOW!" -ForegroundColor Yellow
+    Write-Host " Passphrases are shown ONCE in this terminal and NEVER saved to disk." -ForegroundColor Yellow
+    Write-Host "==================================================================" -ForegroundColor Yellow
+    Write-Host "  WINDOWS_PFX_PASSWORD : $pfxPasswordPlain" -ForegroundColor White
+    if ($gpgPassPlain -ne "") {
+        Write-Host "  GPG_PASSPHRASE       : $gpgPassPlain" -ForegroundColor White
+    }
+    Write-Host "==================================================================" -ForegroundColor Yellow
+}
+
+# Zeroize sensitive variables from memory
+$pfxPasswordPlain = $null
+$gpgPassPlain = $null

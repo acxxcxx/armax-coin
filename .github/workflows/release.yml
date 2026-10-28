@@ -1,14 +1,12 @@
 name: Armaxcoin Multi-Platform Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version tag (must already exist in repository, e.g. v1.0.0)'
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v*'
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   validate_release:
@@ -25,10 +23,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate Release Version Input
+      - name: Validate Release Version Tag
         id: validate
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_VERSION: ${{ github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
@@ -36,14 +34,11 @@ jobs:
 
           # 1. Reject empty or pure whitespace
           if [ -z "$(echo "${RELEASE_VERSION}" | tr -d '[:space:]')" ]; then
-            echo "Error: Release version input cannot be empty or whitespace" >&2
+            echo "Error: Release version tag cannot be empty or whitespace" >&2
             exit 1
           fi
 
           # 2. Strict SemVer 2.0.0 allowlist with mandatory 'v' prefix [Phase 1, Follow-up Point 4]
-          # Enforces non-negative integers without leading zeros, valid pre-release identifiers
-          # (prohibiting leading zeros in numeric pre-release identifiers per SemVer 2.0.0 spec 9),
-          # and strictly rejects shell metacharacters, slashes, backticks, leading dashes, semicolons, and spaces
           if ! echo "${RELEASE_VERSION}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?$'; then
             echo "Error: Invalid release version format '${RELEASE_VERSION}'. Must match SemVer 2.0.0 with 'v' prefix and no leading zeros in numeric identifiers." >&2
             exit 1
@@ -52,7 +47,6 @@ jobs:
           # 3. Verify that the Git tag ref exists in the repository
           if ! git rev-parse -q --verify "refs/tags/${RELEASE_VERSION}" >/dev/null; then
             echo "Error: Git tag '${RELEASE_VERSION}' does not exist in repository references." >&2
-            echo "release.yml is prohibited from creating new Git tags. Create and push the Git tag first." >&2
             exit 1
           fi
 
@@ -126,6 +120,7 @@ jobs:
     name: Build Multi-Architecture Binaries
     needs: [validate_release, verify_tests]
     runs-on: ubuntu-latest
+    environment: release-signing
     permissions:
       contents: read
     strategy:
@@ -177,6 +172,7 @@ jobs:
           CGO_ENABLED: 0
           RELEASE_VERSION: ${{ needs.validate_release.outputs.clean_version }}
         run: |
+          set -euo pipefail
           mkdir -p release_dist
           cp README.md armax.conf.example LICENSE release_dist/
 
@@ -195,8 +191,6 @@ jobs:
           if [ "${{ matrix.os }}" = "windows" ] && [ "${{ matrix.arch }}" = "amd64" ]; then
             cp gui/armgui.exe.manifest release_dist/ 2>/dev/null || true
             cp gui/armax_logo.ico release_dist/ 2>/dev/null || true
-            cp scripts/certs/armax-code-signing.cer release_dist/ 2>/dev/null || true
-            cp scripts/trust-publisher.ps1 release_dist/ 2>/dev/null || true
             go build -trimpath -ldflags="-s -w -H windowsgui -buildid=" -o release_dist/armgui.exe ./gui
           else
             go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armgui$EXT ./gui
@@ -209,56 +203,70 @@ jobs:
           test -f "release_dist/armwallet$EXT" || (echo "Error: armwallet$EXT was not built" && exit 1)
           test -f "release_dist/armgui$EXT" || (echo "Error: armgui$EXT was not built" && exit 1)
 
-      - name: Sign Windows Executables (Authenticode)
+      - name: Sign Windows Executables (Authenticode + RFC 3161 Timestamp)
         if: matrix.os == 'windows'
         env:
           WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
           WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
         run: |
           set -euo pipefail
+          set +x
+
+          if [ -z "${WINDOWS_PFX_BASE64}" ]; then
+            echo "Error: Required secret WINDOWS_PFX_BASE64 is missing or empty. Configure it in the 'release-signing' environment." >&2
+            exit 1
+          fi
+          if [ -z "${WINDOWS_PFX_PASSWORD}" ]; then
+            echo "Error: Required secret WINDOWS_PFX_PASSWORD is missing or empty. Configure it in the 'release-signing' environment." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::${WINDOWS_PFX_BASE64}"
+          echo "::add-mask::${WINDOWS_PFX_PASSWORD}"
+
           sudo apt-get update -qq
-          sudo apt-get install -y -qq osslsigncode openssl
+          sudo apt-get install -y -qq osslsigncode
 
           SIGN_DIR="${RUNNER_TEMP}/armax_win_sign"
           mkdir -p "${SIGN_DIR}"
           chmod 700 "${SIGN_DIR}"
           PFX_FILE="${SIGN_DIR}/armax-code-signing.pfx"
 
-          if [ -n "${WINDOWS_PFX_BASE64}" ] && [ -n "${WINDOWS_PFX_PASSWORD}" ]; then
-            echo "[+] Using configured WINDOWS_PFX_BASE64 secret for Authenticode signing..."
-            printf '%s' "${WINDOWS_PFX_BASE64}" | base64 --decode > "${PFX_FILE}"
-            chmod 600 "${PFX_FILE}"
-            PFX_PASS="${WINDOWS_PFX_PASSWORD}"
-          else
-            echo "[i] WINDOWS_PFX_BASE64 secret not set; generating ephemeral 1-year publisher certificate (Armaxcoin Core <dev@armax-coin.cloud>)..."
-            PFX_PASS=$(openssl rand -hex 24)
-            openssl req -x509 -newkey rsa:3072 -sha256 -days 365 -nodes \
-              -keyout "${SIGN_DIR}/codesign.key" \
-              -out "${SIGN_DIR}/codesign.crt" \
-              -subj "/CN=Armaxcoin Core/O=Armaxcoin Core/emailAddress=dev@armax-coin.cloud" \
-              -addext "keyUsage=critical,digitalSignature" \
-              -addext "extendedKeyUsage=codeSigning"
-            openssl x509 -in "${SIGN_DIR}/codesign.crt" -outform DER -out release_dist/armax-code-signing.cer
-            openssl pkcs12 -export -out "${PFX_FILE}" \
-              -inkey "${SIGN_DIR}/codesign.key" \
-              -in "${SIGN_DIR}/codesign.crt" \
-              -name "Armaxcoin Core" \
-              -passout env:PFX_PASS
-            chmod 600 "${PFX_FILE}"
-          fi
+          printf '%s' "${WINDOWS_PFX_BASE64}" | base64 --decode > "${PFX_FILE}"
+          chmod 600 "${PFX_FILE}"
 
-          export PFX_PASS
           for exe in release_dist/*.exe; do
-            echo "[+] Signing ${exe}..."
-            osslsigncode sign \
+            echo "[+] Signing and timestamping ${exe}..."
+            if ! osslsigncode sign \
               -pkcs12 "${PFX_FILE}" \
-              -readpass <(printf '%s' "${PFX_PASS}") \
+              -readpass <(printf '%s' "${WINDOWS_PFX_PASSWORD}") \
               -n "Armaxcoin Core" \
               -i "https://github.com/acxxcxx/armax-coin" \
               -h sha256 \
+              -ts "https://timestamp.digicert.com" \
               -in "${exe}" \
-              -out "${exe}.signed"
+              -out "${exe}.signed"; then
+              echo "[!] Primary timestamp authority failed for ${exe}; retrying with fallback http://timestamp.sectigo.com..."
+              rm -f "${exe}.signed"
+              osslsigncode sign \
+                -pkcs12 "${PFX_FILE}" \
+                -readpass <(printf '%s' "${WINDOWS_PFX_PASSWORD}") \
+                -n "Armaxcoin Core" \
+                -i "https://github.com/acxxcxx/armax-coin" \
+                -h sha256 \
+                -ts "http://timestamp.sectigo.com" \
+                -in "${exe}" \
+                -out "${exe}.signed"
+            fi
             mv "${exe}.signed" "${exe}"
+
+            echo "[+] Verifying Authenticode signature and timestamp on ${exe}..."
+            VERIFY_OUT=$(osslsigncode verify -in "${exe}" 2>&1 || true)
+            echo "${VERIFY_OUT}"
+            if ! echo "${VERIFY_OUT}" | grep -Eqi "Timestamp|Signing time|Message digest"; then
+              echo "Error: Signature/timestamp verification failed for ${exe}" >&2
+              exit 1
+            fi
           done
 
       - name: Shred Temporary Authenticode Keys
@@ -295,9 +303,10 @@ jobs:
             *.zip
 
   release:
-    name: Publish GitHub Release
+    name: Sign Checksums & Publish GitHub Release
     needs: [validate_release, build]
     runs-on: ubuntu-latest
+    environment: release-signing
     permissions:
       contents: write
     steps:
@@ -343,48 +352,37 @@ jobs:
           test -s SHA256SUMS || (echo "Error: SHA256SUMS is empty" && exit 1)
           cd ..
 
-      - name: Sign Master SHA256SUMS with GPG (1-Year Key)
+      - name: Sign Master SHA256SUMS with GPG
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
+          set +x
+
+          if [ -z "${GPG_PRIVATE_KEY}" ]; then
+            echo "Error: Required secret GPG_PRIVATE_KEY is missing or empty. Configure it in the 'release-signing' environment." >&2
+            exit 1
+          fi
+          if [ -z "${GPG_PASSPHRASE}" ]; then
+            echo "Error: Required secret GPG_PASSPHRASE is missing or empty. Configure it in the 'release-signing' environment." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::${GPG_PASSPHRASE}"
+
           export GNUPGHOME="${RUNNER_TEMP}/armax_gnupg"
           mkdir -p "${GNUPGHOME}"
           chmod 700 "${GNUPGHOME}"
 
-          if [ -n "${GPG_PRIVATE_KEY}" ]; then
-            echo "[+] Importing configured GPG_PRIVATE_KEY secret..."
-            printf '%s\n' "${GPG_PRIVATE_KEY}" | gpg --batch --import
-            if [ -n "${GPG_PASSPHRASE}" ]; then
-              gpg --batch --yes --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" \
-                --armor --detach-sign --output release_assets/SHA256SUMS.asc release_assets/SHA256SUMS
-            else
-              gpg --batch --yes --armor --detach-sign --output release_assets/SHA256SUMS.asc release_assets/SHA256SUMS
-            fi
-            if [ -f "scripts/certs/ARMAX-PGP-KEY.asc" ]; then
-              cp scripts/certs/ARMAX-PGP-KEY.asc release_assets/ARMAX-PGP-KEY.asc
-            else
-              gpg --batch --armor --export "dev@armax-coin.cloud" > release_assets/ARMAX-PGP-KEY.asc
-            fi
+          printf '%s\n' "${GPG_PRIVATE_KEY}" | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --armor --detach-sign --output release_assets/SHA256SUMS.asc release_assets/SHA256SUMS 3<<< "${GPG_PASSPHRASE}"
+
+          if [ -f "scripts/certs/ARMAX-PGP-KEY.asc" ]; then
+            cp scripts/certs/ARMAX-PGP-KEY.asc release_assets/ARMAX-PGP-KEY.asc
           else
-            echo "[i] GPG_PRIVATE_KEY secret not set; generating ephemeral 1-year GPG key (Armaxcoin Core <dev@armax-coin.cloud>)..."
-            EPHEMERAL_PASS=$(openssl rand -hex 24)
-            cat > "${GNUPGHOME}/keygen.batch" <<EOF
-          Key-Type: RSA
-          Key-Length: 3072
-          Subkey-Type: RSA
-          Subkey-Length: 3072
-          Name-Real: Armaxcoin Core
-          Name-Email: dev@armax-coin.cloud
-          Expire-Date: 1y
-          Passphrase: ${EPHEMERAL_PASS}
-          %commit
-          EOF
-            gpg --batch --gen-key "${GNUPGHOME}/keygen.batch"
-            gpg --batch --armor --export "dev@armax-coin.cloud" > release_assets/ARMAX-PGP-KEY.asc
-            gpg --batch --yes --pinentry-mode loopback --passphrase "${EPHEMERAL_PASS}" \
-              --armor --detach-sign --output release_assets/SHA256SUMS.asc release_assets/SHA256SUMS
+            gpg --batch --armor --export > release_assets/ARMAX-PGP-KEY.asc
           fi
 
           # Verify detached signature before publishing

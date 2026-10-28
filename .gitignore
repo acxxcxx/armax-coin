@@ -10,7 +10,10 @@ signing_keys/
 *.pfx
 *.p12
 *.key
+*.pem
 *private*.asc
+GPG_*.txt
+WINDOWS_*.txt
 
 # Local Blockchain Databases & Backups
 blockchain.db
