@@ -144,7 +144,7 @@ Release checksum manifests (`SHA256SUMS`) are detached-signed with the Armaxcoin
    ```
    Confirm that the primary key fingerprint matches the official Armaxcoin Core release signing key:
    ```text
-   <YOUR_GPG_KEY_FINGERPRINT_HERE>
+   C857E67F3FC63BE35125C3D32ACE863ED4BF1460
    ```
 
 2. **Verify the detached PGP signature on `SHA256SUMS`:**
