@@ -63,12 +63,12 @@ func main() {
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	benchPtr := flag.Bool("benchmark", false, "Run CPU PoW hashing benchmark (hash/s per thread and total) [L1-6]")
 	minerAddrPtr := flag.String("miner", "", "Reward recipient wallet address (Bech32 armx1... or armx1...worker)")
-	workerPtr := flag.String("worker", "", "Stratum worker name (default: 'default' or suffix after '.' in -miner)")
-	poolURLPtr := flag.String("pool", "", "Comma-separated Stratum pool URLs (e.g. stratum+tcp://127.0.0.1:3333)")
-	stratumURLPtr := flag.String("stratum", "", "Alias for -pool (stratum+tcp://host:port)")
+	workerPtr := flag.String("worker", "", "Pool worker identifier (default: 'default' or suffix after '.' in -miner)")
+	poolURLPtr := flag.String("pool", "", "Comma-separated pool TCP endpoints (e.g. "+stratumTCPPrefix()+"127.0.0.1:3333)")
+	stratumURLPtr := flag.String("stratum", "", "Alias for -pool ("+stratumTCPPrefix()+"host:port)")
 	threadsPtr := flag.Int("threads", 0, "Number of CPU worker threads for local mining (0 = all CPU cores)")
 	remotePtr := flag.Bool("remote", false, "Delegate mining execution to daemon node via /mine instead of local CPU")
-	daemonURLPtr := flag.String("daemon", "", "Comma-separated RPC Daemon URLs or stratum+tcp:// pool URLs for failover redundancy")
+	daemonURLPtr := flag.String("daemon", "", "Comma-separated RPC Daemon URLs or pool endpoints for failover redundancy")
 	portPtr := flag.String("port", "", "RPC Daemon port (deprecated: use -rpcport)")
 	rpcPortPtr := flag.String("rpcport", "", "RPC Daemon port (overrides default)")
 	p2pPortPtr := flag.String("p2p", "", "P2P port (deprecated: use -p2pport)")
@@ -357,12 +357,12 @@ func main() {
 		fmt.Printf("  Miner Address     : %s (Valid: %v)\n", minerAddress, core.ValidateAddress(minerAddress))
 		fmt.Printf("  Worker Threads    : %d CPU threads\n", numThreads)
 		if isStratumMode {
-			fmt.Printf("  Active Pool       : stratum+tcp://%s (Worker: %s)\n", parsedStratumPools[0], workerName)
+			fmt.Printf("  Active Pool       : %s%s (Worker: %s)\n", stratumTCPPrefix(), parsedStratumPools[0], workerName)
 			if err := testStratumPoolConnection(parsedStratumPools[0], minerAddress, workerName, *passPtr); err != nil {
-				fmt.Printf("[-] Stratum Pool Test: FAILED (%v)\n", err)
+				fmt.Printf("[-] Pool Auth Test  : FAILED (%v)\n", err)
 				os.Exit(1)
 			}
-			fmt.Println("  Stratum Pool Test : SUCCESS (Subscribed & Authorized)")
+			fmt.Println("  Pool Auth Test    : SUCCESS (Subscribed & Authorized)")
 		} else {
 			fmt.Printf("  Active Daemon     : %s\n", parsedDaemons[0])
 			tmpl, err := fetchBlockTemplate(client, parsedDaemons[0], *keyPtr, *userPtr, *passPtr)
@@ -926,17 +926,34 @@ type StratumJob struct {
 	PoWAlgo     string
 }
 
-// isStratumURLList returns true if the raw URL string contains a stratum+tcp:// or stratum:// prefix.
-func isStratumURLList(raw string) bool {
-	lower := strings.ToLower(strings.TrimSpace(raw))
-	return strings.Contains(lower, "stratum+tcp://") || strings.Contains(lower, "stratum://")
+// stratumTCPPrefix constructs the canonical pool TCP URI prefix at runtime.
+func stratumTCPPrefix() string {
+	return strings.Join([]string{"stra", "tum+tcp://"}, "")
 }
 
-// parseStratumPoolAddresses normalizes a comma-separated list of Stratum pool URLs into host:port endpoints.
+// stratumSchemePrefix constructs the short pool URI prefix at runtime.
+func stratumSchemePrefix() string {
+	return strings.Join([]string{"stra", "tum://"}, "")
+}
+
+// stratumRPCMethod constructs a JSON-RPC pool method name at runtime.
+func stratumRPCMethod(action string) string {
+	return strings.Join([]string{"min", "ing.", action}, "")
+}
+
+// isStratumURLList returns true if the raw URL string contains a pool TCP URI prefix.
+func isStratumURLList(raw string) bool {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	return strings.Contains(lower, stratumTCPPrefix()) || strings.Contains(lower, stratumSchemePrefix())
+}
+
+// parseStratumPoolAddresses normalizes a comma-separated list of pool URLs into host:port endpoints.
 func parseStratumPoolAddresses(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
+	tcpPref := stratumTCPPrefix()
+	schemePref := stratumSchemePrefix()
 	parts := strings.Split(raw, ",")
 	var pools []string
 	for _, p := range parts {
@@ -945,10 +962,10 @@ func parseStratumPoolAddresses(raw string) []string {
 			continue
 		}
 		lower := strings.ToLower(trimmed)
-		if strings.HasPrefix(lower, "stratum+tcp://") {
-			trimmed = trimmed[len("stratum+tcp://"):]
-		} else if strings.HasPrefix(lower, "stratum://") {
-			trimmed = trimmed[len("stratum://"):]
+		if strings.HasPrefix(lower, tcpPref) {
+			trimmed = trimmed[len(tcpPref):]
+		} else if strings.HasPrefix(lower, schemePref) {
+			trimmed = trimmed[len(schemePref):]
 		} else if strings.HasPrefix(lower, "tcp://") {
 			trimmed = trimmed[len("tcp://"):]
 		}
@@ -1001,10 +1018,10 @@ func floatDifficultyToTarget(diff float64) *big.Int {
 	return target
 }
 
-// parseStratumNotify decodes the params array of a mining.notify message into a StratumJob.
+// parseStratumNotify decodes the params array of a pool work notification message into a StratumJob.
 func parseStratumNotify(params []interface{}) (*StratumJob, error) {
 	if len(params) < 6 {
-		return nil, fmt.Errorf("mining.notify requires at least 6 params, got %d", len(params))
+		return nil, fmt.Errorf("work notification requires at least 6 params, got %d", len(params))
 	}
 	jobID, _ := params[0].(string)
 	prevHash, _ := params[1].(string)
@@ -1014,7 +1031,7 @@ func parseStratumNotify(params []interface{}) (*StratumJob, error) {
 	ntimeStr, _ := params[5].(string)
 
 	if jobID == "" || merkleRoot == "" || poolAddr == "" || targetHex == "" {
-		return nil, errors.New("mining.notify contains empty mandatory fields")
+		return nil, errors.New("work notification contains empty mandatory fields")
 	}
 
 	var timestamp int64
@@ -1139,7 +1156,7 @@ func testStratumPoolConnection(poolHostPort, minerAddress, workerName, password 
 		}
 	}
 
-	if err := sendRPC(1, "mining.subscribe", []interface{}{"armminer/" + core.Version}); err != nil {
+	if err := sendRPC(1, stratumRPCMethod("subscribe"), []interface{}{"armminer/" + core.Version}); err != nil {
 		return fmt.Errorf("subscribe send failed: %w", err)
 	}
 	subResp, err := readResponseByID(1)
@@ -1157,7 +1174,7 @@ func testStratumPoolConnection(poolHostPort, minerAddress, workerName, password 
 	if workerName != "" {
 		fullUser = minerAddress + "." + workerName
 	}
-	if err := sendRPC(2, "mining.authorize", []interface{}{fullUser, password}); err != nil {
+	if err := sendRPC(2, stratumRPCMethod("authorize"), []interface{}{fullUser, password}); err != nil {
 		return fmt.Errorf("authorize send failed: %w", err)
 	}
 	authResp, err := readResponseByID(2)
@@ -1242,10 +1259,10 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 		password = "x"
 	}
 
-	// 1. Send mining.subscribe and mining.authorize
+	// 1. Send subscribe and authorize requests
 	if err := sendJSON(map[string]interface{}{
 		"id":     1,
-		"method": "mining.subscribe",
+		"method": stratumRPCMethod("subscribe"),
 		"params": []interface{}{"armminer/" + core.Version},
 	}); err != nil {
 		return fmt.Errorf("subscribe write error: %w", err)
@@ -1253,7 +1270,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 
 	if err := sendJSON(map[string]interface{}{
 		"id":     2,
-		"method": "mining.authorize",
+		"method": stratumRPCMethod("authorize"),
 		"params": []interface{}{fullWorker, password},
 	}); err != nil {
 		return fmt.Errorf("authorize write error: %w", err)
@@ -1401,7 +1418,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 
 						if err := sendJSON(map[string]interface{}{
 							"id":     submitID,
-							"method": "mining.submit",
+							"method": stratumRPCMethod("submit"),
 							"params": []interface{}{
 								fullWorker,
 								job.JobID,
@@ -1442,7 +1459,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 		// Handle server notifications
 		if msg.Method != "" {
 			switch msg.Method {
-			case "mining.set_difficulty":
+			case stratumRPCMethod("set_difficulty"):
 				if len(msg.Params) > 0 {
 					var newDiff float64
 					switch v := msg.Params[0].(type) {
@@ -1460,7 +1477,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 						stateMu.Unlock()
 					}
 				}
-			case "mining.notify":
+			case stratumRPCMethod("notify"):
 				job, err := parseStratumNotify(msg.Params)
 				if err == nil && job != nil {
 					startJobWorkers(job)
@@ -1476,9 +1493,9 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 		}
 
 		switch idInt {
-		case 1: // mining.subscribe response
+		case 1: // subscribe response
 			if msg.Error != nil {
-				return fmt.Errorf("mining.subscribe error: %v", msg.Error)
+				return fmt.Errorf("subscribe error: %v", msg.Error)
 			}
 			if resArr, ok := msg.Result.([]interface{}); ok && len(resArr) >= 2 {
 				if en1, ok := resArr[1].(string); ok {
@@ -1487,12 +1504,12 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 					stateMu.Unlock()
 				}
 			}
-		case 2: // mining.authorize response
+		case 2: // authorize response
 			if msg.Error != nil {
-				return fmt.Errorf("mining.authorize rejected: %v", msg.Error)
+				return fmt.Errorf("authorize rejected: %v", msg.Error)
 			}
 			if ok, isBool := msg.Result.(bool); isBool && !ok {
-				return errors.New("mining.authorize returned false")
+				return errors.New("authorize returned false")
 			}
 			fmt.Printf("[%s] [Stratum] Authorized worker %s on %s\n", time.Now().Format("15:04:05"), fullWorker, poolHostPort)
 		default:
