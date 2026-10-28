@@ -1,20 +1,24 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	cryptoRand "crypto/rand"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -58,10 +62,13 @@ type SubmitBlockResponse struct {
 func main() {
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	benchPtr := flag.Bool("benchmark", false, "Run CPU PoW hashing benchmark (hash/s per thread and total) [L1-6]")
-	minerAddrPtr := flag.String("miner", "", "Reward recipient wallet address (Bech32 or hex)")
+	minerAddrPtr := flag.String("miner", "", "Reward recipient wallet address (Bech32 armx1... or armx1...worker)")
+	workerPtr := flag.String("worker", "", "Stratum worker name (default: 'default' or suffix after '.' in -miner)")
+	poolURLPtr := flag.String("pool", "", "Comma-separated Stratum pool URLs (e.g. stratum+tcp://127.0.0.1:3333)")
+	stratumURLPtr := flag.String("stratum", "", "Alias for -pool (stratum+tcp://host:port)")
 	threadsPtr := flag.Int("threads", 0, "Number of CPU worker threads for local mining (0 = all CPU cores)")
 	remotePtr := flag.Bool("remote", false, "Delegate mining execution to daemon node via /mine instead of local CPU")
-	daemonURLPtr := flag.String("daemon", "", "Comma-separated RPC Daemon URLs for failover redundancy (default: profile port)")
+	daemonURLPtr := flag.String("daemon", "", "Comma-separated RPC Daemon URLs or stratum+tcp:// pool URLs for failover redundancy")
 	portPtr := flag.String("port", "", "RPC Daemon port (deprecated: use -rpcport)")
 	rpcPortPtr := flag.String("rpcport", "", "RPC Daemon port (overrides default)")
 	p2pPortPtr := flag.String("p2p", "", "P2P port (deprecated: use -p2pport)")
@@ -184,8 +191,18 @@ func main() {
 		return
 	}
 
+	stratumRawURLs := strings.TrimSpace(*poolURLPtr)
+	if stratumRawURLs == "" {
+		stratumRawURLs = strings.TrimSpace(*stratumURLPtr)
+	}
+	if stratumRawURLs == "" && isStratumURLList(*daemonURLPtr) {
+		stratumRawURLs = strings.TrimSpace(*daemonURLPtr)
+	}
+	parsedStratumPools := parseStratumPoolAddresses(stratumRawURLs)
+	isStratumMode := len(parsedStratumPools) > 0
+
 	daemonURLs := *daemonURLPtr
-	if daemonURLs == "" {
+	if daemonURLs == "" || isStratumMode {
 		if effRPCPort != "" {
 			daemonURLs = "http://127.0.0.1:" + effRPCPort
 		} else {
@@ -193,7 +210,19 @@ func main() {
 		}
 	}
 
-	minerAddress := *minerAddrPtr
+	rawMinerInput := strings.TrimSpace(*minerAddrPtr)
+	if rawMinerInput == "" && isStratumMode && *userPtr != "" {
+		rawMinerInput = strings.TrimSpace(*userPtr)
+	}
+	minerAddress, parsedWorker := splitMinerWorker(rawMinerInput)
+	workerName := strings.TrimSpace(*workerPtr)
+	if workerName == "" {
+		if parsedWorker != "" {
+			workerName = parsedWorker
+		} else {
+			workerName = "default"
+		}
+	}
 
 	// If miner address is not specified, attempt to read from wallet.json
 	if minerAddress == "" {
@@ -327,13 +356,22 @@ func main() {
 		fmt.Printf("  Network Profile   : %s (%s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID)
 		fmt.Printf("  Miner Address     : %s (Valid: %v)\n", minerAddress, core.ValidateAddress(minerAddress))
 		fmt.Printf("  Worker Threads    : %d CPU threads\n", numThreads)
-		fmt.Printf("  Active Daemon     : %s\n", parsedDaemons[0])
-		tmpl, err := fetchBlockTemplate(client, parsedDaemons[0], *keyPtr, *userPtr, *passPtr)
-		if err != nil {
-			fmt.Printf("[-] Daemon Work Test : FAILED (%v)\n", err)
-			os.Exit(1)
+		if isStratumMode {
+			fmt.Printf("  Active Pool       : stratum+tcp://%s (Worker: %s)\n", parsedStratumPools[0], workerName)
+			if err := testStratumPoolConnection(parsedStratumPools[0], minerAddress, workerName, *passPtr); err != nil {
+				fmt.Printf("[-] Stratum Pool Test: FAILED (%v)\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("  Stratum Pool Test : SUCCESS (Subscribed & Authorized)")
+		} else {
+			fmt.Printf("  Active Daemon     : %s\n", parsedDaemons[0])
+			tmpl, err := fetchBlockTemplate(client, parsedDaemons[0], *keyPtr, *userPtr, *passPtr)
+			if err != nil {
+				fmt.Printf("[-] Daemon Work Test : FAILED (%v)\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("  Daemon Work Test  : SUCCESS (Target Block #%d, Difficulty: %.4f)\n", tmpl.Height, tmpl.Difficulty)
 		}
-		fmt.Printf("  Daemon Work Test  : SUCCESS (Target Block #%d, Difficulty: %.4f)\n", tmpl.Height, tmpl.Difficulty)
 		fmt.Println("  [OK] All mining parameters verified. Ready for mining.")
 		fmt.Println("==================================================")
 		return
@@ -402,6 +440,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+
+	// Branch: Stratum v1 TCP Pool Mining Mode (stratum+tcp://)
+	if isStratumMode {
+		fmt.Printf("[+] Active Stratum Pools: %v (Failover count: %d)\n", parsedStratumPools, len(parsedStratumPools))
+		fmt.Printf("[+] Reward Address      : %s (Worker: %s)\n", minerAddress, workerName)
+		fmt.Printf("[+] Mining Mode         : Stratum v1 TCP Pool Client (%d worker threads)\n", numThreads)
+		fmt.Println("[+] Starting Stratum mining loop...")
+		runStratumMiningLoop(stopChan, parsedStratumPools, minerAddress, workerName, *passPtr, numThreads, *statsIntervalPtr)
+		return
+	}
+
 	fmt.Printf("[+] Active RPC Daemons: %v (Failover count: %d)\n", parsedDaemons, len(parsedDaemons))
 	fmt.Printf("[+] Reward Address    : %s\n", minerAddress)
 	if *remotePtr {
@@ -410,9 +461,6 @@ func main() {
 		fmt.Printf("[+] Mining Mode       : Local CPU Engine (%d worker threads)\n", numThreads)
 	}
 	fmt.Println("[+] Starting mining loop...")
-
-	stopChan := make(chan os.Signal, 1)
-	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 
 	currentDaemonIdx := 0
 
@@ -850,4 +898,620 @@ func runMinerBenchmark() {
 	fmt.Printf("[+] Aggregate Hashrate: %.2f hash/s (%.2f kH/s, %.2f MH/s)\n", totalHPS, totalHPS/1000.0, totalHPS/1000000.0)
 	fmt.Printf("[+] Average Hashrate per Thread: %.2f hash/s\n", totalHPS/float64(numCPU))
 	fmt.Println("--------------------------------------------------")
+}
+
+// ============================================================================
+// STRATUM V1 TCP CLIENT ENGINE (stratum+tcp://)
+// ============================================================================
+
+// StratumMessage represents a bidirectional JSON-RPC message over a Stratum TCP socket.
+type StratumMessage struct {
+	ID     interface{}   `json:"id"`
+	Method string        `json:"method,omitempty"`
+	Params []interface{} `json:"params,omitempty"`
+	Result interface{}   `json:"result,omitempty"`
+	Error  interface{}   `json:"error,omitempty"`
+}
+
+// StratumJob encapsulates work parameters broadcast by the pool via mining.notify.
+type StratumJob struct {
+	JobID       string
+	PrevHash    string
+	MerkleRoot  string
+	PoolAddress string
+	Target      string
+	Timestamp   int64
+	CleanJobs   bool
+	Height      int
+	PoWAlgo     string
+}
+
+// isStratumURLList returns true if the raw URL string contains a stratum+tcp:// or stratum:// prefix.
+func isStratumURLList(raw string) bool {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	return strings.Contains(lower, "stratum+tcp://") || strings.Contains(lower, "stratum://")
+}
+
+// parseStratumPoolAddresses normalizes a comma-separated list of Stratum pool URLs into host:port endpoints.
+func parseStratumPoolAddresses(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	var pools []string
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "stratum+tcp://") {
+			trimmed = trimmed[len("stratum+tcp://"):]
+		} else if strings.HasPrefix(lower, "stratum://") {
+			trimmed = trimmed[len("stratum://"):]
+		} else if strings.HasPrefix(lower, "tcp://") {
+			trimmed = trimmed[len("tcp://"):]
+		}
+		trimmed = strings.TrimRight(trimmed, "/")
+		if strings.HasPrefix(strings.ToLower(trimmed), "localhost:") {
+			trimmed = "127.0.0.1:" + trimmed[len("localhost:"):]
+		}
+		if trimmed != "" {
+			if _, _, err := net.SplitHostPort(trimmed); err != nil && !strings.Contains(trimmed, ":") {
+				trimmed = trimmed + ":3333"
+			}
+			pools = append(pools, trimmed)
+		}
+	}
+	return pools
+}
+
+// splitMinerWorker separates "<address>.<worker>" into base wallet address and worker name.
+func splitMinerWorker(input string) (string, string) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", ""
+	}
+	idx := strings.IndexByte(trimmed, '.')
+	if idx == -1 {
+		return trimmed, ""
+	}
+	return strings.TrimSpace(trimmed[:idx]), strings.TrimSpace(trimmed[idx+1:])
+}
+
+// floatDifficultyToTarget converts a floating-point Stratum share difficulty into a 256-bit PoW target ceiling.
+func floatDifficultyToTarget(diff float64) *big.Int {
+	if diff <= 0 {
+		diff = 0.001
+	}
+	diff1Target := core.DifficultyToTarget(1)
+	diffFloat := new(big.Float).SetFloat64(diff)
+	diff1Float := new(big.Float).SetInt(diff1Target)
+	quotient := new(big.Float).Quo(diff1Float, diffFloat)
+
+	target := new(big.Int)
+	quotient.Int(target)
+
+	if target.Cmp(core.MaxTarget256) > 0 {
+		target.Set(core.MaxTarget256)
+	}
+	if target.Sign() <= 0 {
+		target = big.NewInt(1)
+	}
+	return target
+}
+
+// parseStratumNotify decodes the params array of a mining.notify message into a StratumJob.
+func parseStratumNotify(params []interface{}) (*StratumJob, error) {
+	if len(params) < 6 {
+		return nil, fmt.Errorf("mining.notify requires at least 6 params, got %d", len(params))
+	}
+	jobID, _ := params[0].(string)
+	prevHash, _ := params[1].(string)
+	merkleRoot, _ := params[2].(string)
+	poolAddr, _ := params[3].(string)
+	targetHex, _ := params[4].(string)
+	ntimeStr, _ := params[5].(string)
+
+	if jobID == "" || merkleRoot == "" || poolAddr == "" || targetHex == "" {
+		return nil, errors.New("mining.notify contains empty mandatory fields")
+	}
+
+	var timestamp int64
+	if ntimeStr != "" {
+		if ts, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(ntimeStr), "0x"), 16, 64); err == nil && ts > 0 {
+			timestamp = ts
+		} else if ts, err := strconv.ParseInt(ntimeStr, 10, 64); err == nil && ts > 0 {
+			timestamp = ts
+		}
+	}
+	if timestamp <= 0 {
+		timestamp = time.Now().Unix()
+	}
+
+	cleanJobs := true
+	if len(params) >= 7 {
+		if c, ok := params[6].(bool); ok {
+			cleanJobs = c
+		}
+	}
+
+	var height int
+	if len(params) >= 8 {
+		switch v := params[7].(type) {
+		case float64:
+			height = int(v)
+		case int:
+			height = v
+		case int64:
+			height = int(v)
+		case string:
+			height, _ = strconv.Atoi(v)
+		}
+	}
+
+	powAlgo := ""
+	if len(params) >= 9 {
+		powAlgo, _ = params[8].(string)
+	}
+
+	return &StratumJob{
+		JobID:       jobID,
+		PrevHash:    prevHash,
+		MerkleRoot:  merkleRoot,
+		PoolAddress: poolAddr,
+		Target:      targetHex,
+		Timestamp:   timestamp,
+		CleanJobs:   cleanJobs,
+		Height:      height,
+		PoWAlgo:     powAlgo,
+	}, nil
+}
+
+// calculateStratumBlockHash evaluates the canonical Armaxcoin block header digest for a Stratum work item.
+func calculateStratumBlockHash(b *core.Block, powAlgo string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(powAlgo)) {
+	case "armaxhash-v2":
+		return b.CalculateArmaxHashV2()
+	case "armaxhash":
+		return b.CalculateArmaxHash()
+	case "sha256d":
+		return b.CalculateSha256dHash(), nil
+	default:
+		return b.CalculateHashWithError()
+	}
+}
+
+// deriveSessionNonceBase converts extraNonce1 into a disjoint 63-bit starting nonce partition.
+func deriveSessionNonceBase(extraNonce1 string) int64 {
+	if extraNonce1 != "" {
+		if v, err := strconv.ParseUint(extraNonce1, 16, 32); err == nil && v > 0 {
+			return int64(v&0x7fffffff) << 32
+		}
+	}
+	var nonceBytes [4]byte
+	if _, err := io.ReadFull(cryptoRand.Reader, nonceBytes[:]); err == nil {
+		return int64(binary.BigEndian.Uint32(nonceBytes[:]))
+	}
+	return 0
+}
+
+// testStratumPoolConnection performs a dry-run TCP dial, mining.subscribe, and mining.authorize check.
+func testStratumPoolConnection(poolHostPort, minerAddress, workerName, password string) error {
+	conn, err := net.DialTimeout("tcp", poolHostPort, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to connect to %s: %w", poolHostPort, err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	reader := bufio.NewReader(conn)
+	sendRPC := func(id int, method string, params []interface{}) error {
+		payload, err := json.Marshal(map[string]interface{}{
+			"id":     id,
+			"method": method,
+			"params": params,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = conn.Write(append(payload, '\n'))
+		return err
+	}
+
+	readResponseByID := func(expectedID int) (*StratumMessage, error) {
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return nil, err
+			}
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var msg StratumMessage
+			if err := json.Unmarshal([]byte(line), &msg); err != nil {
+				continue
+			}
+			if idFloat, ok := msg.ID.(float64); ok && int(idFloat) == expectedID {
+				return &msg, nil
+			}
+		}
+	}
+
+	if err := sendRPC(1, "mining.subscribe", []interface{}{"armminer/" + core.Version}); err != nil {
+		return fmt.Errorf("subscribe send failed: %w", err)
+	}
+	subResp, err := readResponseByID(1)
+	if err != nil {
+		return fmt.Errorf("subscribe response failed: %w", err)
+	}
+	if subResp.Error != nil {
+		return fmt.Errorf("subscribe error: %v", subResp.Error)
+	}
+
+	if password == "" {
+		password = "x"
+	}
+	fullUser := minerAddress
+	if workerName != "" {
+		fullUser = minerAddress + "." + workerName
+	}
+	if err := sendRPC(2, "mining.authorize", []interface{}{fullUser, password}); err != nil {
+		return fmt.Errorf("authorize send failed: %w", err)
+	}
+	authResp, err := readResponseByID(2)
+	if err != nil {
+		return fmt.Errorf("authorize response failed: %w", err)
+	}
+	if authResp.Error != nil {
+		return fmt.Errorf("authorize rejected: %v", authResp.Error)
+	}
+	if ok, isBool := authResp.Result.(bool); !isBool || !ok {
+		return fmt.Errorf("authorize returned non-true result: %v", authResp.Result)
+	}
+	return nil
+}
+
+// runStratumMiningLoop maintains persistent Stratum TCP connections with automatic failover across pools.
+func runStratumMiningLoop(stopChan <-chan os.Signal, pools []string, minerAddress, workerName, password string, numThreads, statsIntervalSec int) {
+	if len(pools) == 0 {
+		return
+	}
+	currentPoolIdx := 0
+	for {
+		select {
+		case <-stopChan:
+			fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+			return
+		default:
+		}
+
+		activePool := pools[currentPoolIdx]
+		err := runStratumMiningSession(stopChan, activePool, minerAddress, workerName, password, numThreads, statsIntervalSec, 0)
+		select {
+		case <-stopChan:
+			fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+			return
+		default:
+		}
+
+		if err != nil {
+			fmt.Printf("[-] Stratum connection to %s ended: %v\n", activePool, err)
+		}
+		if len(pools) > 1 {
+			currentPoolIdx = (currentPoolIdx + 1) % len(pools)
+			fmt.Printf("[ Auto-Failover] Switching to Stratum pool: %s\n", pools[currentPoolIdx])
+			time.Sleep(2 * time.Second)
+		} else {
+			fmt.Println("[*] Reconnecting to Stratum pool in 3 seconds...")
+			time.Sleep(3 * time.Second)
+		}
+	}
+}
+
+// runStratumMiningSession executes a single Stratum v1 TCP session against poolHostPort.
+// If maxAcceptedShares > 0, the session returns nil once at least maxAcceptedShares shares are accepted by the pool (used for deterministic testing).
+func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddress, workerName, password string, numThreads, statsIntervalSec int, maxAcceptedShares int64) error {
+	conn, err := net.DialTimeout("tcp", poolHostPort, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("dial failed: %w", err)
+	}
+	defer conn.Close()
+
+	var writeMu sync.Mutex
+	var reqIDCounter int64 = 2
+
+	sendJSON := func(payload map[string]interface{}) error {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		_, err = conn.Write(append(data, '\n'))
+		return err
+	}
+
+	fullWorker := minerAddress
+	if workerName != "" {
+		fullWorker = minerAddress + "." + workerName
+	}
+	if password == "" {
+		password = "x"
+	}
+
+	// 1. Send mining.subscribe and mining.authorize
+	if err := sendJSON(map[string]interface{}{
+		"id":     1,
+		"method": "mining.subscribe",
+		"params": []interface{}{"armminer/" + core.Version},
+	}); err != nil {
+		return fmt.Errorf("subscribe write error: %w", err)
+	}
+
+	if err := sendJSON(map[string]interface{}{
+		"id":     2,
+		"method": "mining.authorize",
+		"params": []interface{}{fullWorker, password},
+	}); err != nil {
+		return fmt.Errorf("authorize write error: %w", err)
+	}
+
+	var (
+		stateMu        sync.RWMutex
+		extraNonce1    string
+		shareDiff      = 1.0
+		shareTarget    = floatDifficultyToTarget(1.0)
+		activeCancel   context.CancelFunc
+		workerWG       sync.WaitGroup
+		totalHashes    int64
+		acceptedShares int64
+		rejectedShares int64
+	)
+
+	sessionCtx, cancelSession := context.WithCancel(context.Background())
+	defer func() {
+		cancelSession()
+		stateMu.Lock()
+		if activeCancel != nil {
+			activeCancel()
+		}
+		stateMu.Unlock()
+		_ = conn.Close()
+		workerWG.Wait()
+	}()
+
+	go func() {
+		select {
+		case <-stopChan:
+			cancelSession()
+			_ = conn.Close()
+		case <-sessionCtx.Done():
+		}
+	}()
+
+	// Telemetry goroutine
+	if statsIntervalSec <= 0 {
+		statsIntervalSec = 10
+	}
+	go func() {
+		ticker := time.NewTicker(time.Duration(statsIntervalSec) * time.Second)
+		defer ticker.Stop()
+		start := time.Now()
+		for {
+			select {
+			case <-sessionCtx.Done():
+				return
+			case <-ticker.C:
+				elapsed := time.Since(start).Seconds()
+				if elapsed > 0 {
+					h := atomic.LoadInt64(&totalHashes)
+					acc := atomic.LoadInt64(&acceptedShares)
+					rej := atomic.LoadInt64(&rejectedShares)
+					stateMu.RLock()
+					curDiff := shareDiff
+					stateMu.RUnlock()
+					hps := float64(h) / elapsed
+					fmt.Printf("[%s] [Stratum] %.2f H/s | Diff: %.4f | Shares: %d accepted, %d rejected\n",
+						time.Now().Format("15:04:05"), hps, curDiff, acc, rej)
+				}
+			}
+		}
+	}()
+
+	startJobWorkers := func(job *StratumJob) {
+		stateMu.Lock()
+		if activeCancel != nil {
+			activeCancel()
+		}
+		stateMu.Unlock()
+		workerWG.Wait()
+
+		stateMu.Lock()
+		if sessionCtx.Err() != nil {
+			stateMu.Unlock()
+			return
+		}
+		jobCtx, jobCancel := context.WithCancel(sessionCtx)
+		activeCancel = jobCancel
+		en1 := extraNonce1
+		curDiff := shareDiff
+		stateMu.Unlock()
+
+		baseNonce := deriveSessionNonceBase(en1)
+		fmt.Printf("[%s] [Stratum Job] Height #%d (%s) | Job: %s | Pool Diff: %.4f\n",
+			time.Now().Format("15:04:05"), job.Height, job.PoWAlgo, job.JobID, curDiff)
+
+		var roundNonceCounter uint64
+		for i := 0; i < numThreads; i++ {
+			workerWG.Add(1)
+			go func(workerID int) {
+				defer workerWG.Done()
+				b := core.Block{
+					Index:      job.Height,
+					Timestamp:  job.Timestamp,
+					PrevHash:   job.PrevHash,
+					MerkleRoot: job.MerkleRoot,
+					Miner:      job.PoolAddress,
+					Target:     job.Target,
+					Nonce:      baseNonce + int64(workerID),
+				}
+				stride := int64(numThreads)
+				batchLimit := int64(256)
+				if strings.EqualFold(job.PoWAlgo, "armaxhash") {
+					batchLimit = 1
+				}
+				var localBatch int64
+
+				for {
+					if localBatch >= batchLimit {
+						atomic.AddInt64(&totalHashes, localBatch)
+						localBatch = 0
+						select {
+						case <-jobCtx.Done():
+							return
+						default:
+						}
+					}
+
+					hashHex, err := calculateStratumBlockHash(&b, job.PoWAlgo)
+					if err != nil {
+						return
+					}
+					localBatch++
+
+					stateMu.RLock()
+					target := shareTarget
+					stateMu.RUnlock()
+
+					if core.HashMeetsTarget(hashHex, target) {
+						atomic.AddInt64(&totalHashes, localBatch)
+						localBatch = 0
+						if jobCtx.Err() != nil {
+							return
+						}
+
+						en2Val := atomic.AddUint64(&roundNonceCounter, 1)
+						extraNonce2 := fmt.Sprintf("%08x", uint32(en2Val))
+						ntimeHex := fmt.Sprintf("%x", b.Timestamp)
+						nonceHex := fmt.Sprintf("0x%x", b.Nonce)
+						submitID := atomic.AddInt64(&reqIDCounter, 1)
+
+						if err := sendJSON(map[string]interface{}{
+							"id":     submitID,
+							"method": "mining.submit",
+							"params": []interface{}{
+								fullWorker,
+								job.JobID,
+								extraNonce2,
+								ntimeHex,
+								nonceHex,
+							},
+						}); err != nil {
+							return
+						}
+					}
+
+					b.Nonce += stride
+				}
+			}(i)
+		}
+	}
+
+	reader := bufio.NewReader(conn)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if sessionCtx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("read error: %w", err)
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var msg StratumMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+
+		// Handle server notifications
+		if msg.Method != "" {
+			switch msg.Method {
+			case "mining.set_difficulty":
+				if len(msg.Params) > 0 {
+					var newDiff float64
+					switch v := msg.Params[0].(type) {
+					case float64:
+						newDiff = v
+					case int:
+						newDiff = float64(v)
+					case string:
+						newDiff, _ = strconv.ParseFloat(v, 64)
+					}
+					if newDiff > 0 {
+						stateMu.Lock()
+						shareDiff = newDiff
+						shareTarget = floatDifficultyToTarget(newDiff)
+						stateMu.Unlock()
+					}
+				}
+			case "mining.notify":
+				job, err := parseStratumNotify(msg.Params)
+				if err == nil && job != nil {
+					startJobWorkers(job)
+				}
+			}
+			continue
+		}
+
+		// Handle JSON-RPC responses by ID
+		idInt := int64(-1)
+		if idFloat, ok := msg.ID.(float64); ok {
+			idInt = int64(idFloat)
+		}
+
+		switch idInt {
+		case 1: // mining.subscribe response
+			if msg.Error != nil {
+				return fmt.Errorf("mining.subscribe error: %v", msg.Error)
+			}
+			if resArr, ok := msg.Result.([]interface{}); ok && len(resArr) >= 2 {
+				if en1, ok := resArr[1].(string); ok {
+					stateMu.Lock()
+					extraNonce1 = en1
+					stateMu.Unlock()
+				}
+			}
+		case 2: // mining.authorize response
+			if msg.Error != nil {
+				return fmt.Errorf("mining.authorize rejected: %v", msg.Error)
+			}
+			if ok, isBool := msg.Result.(bool); isBool && !ok {
+				return errors.New("mining.authorize returned false")
+			}
+			fmt.Printf("[%s] [Stratum] Authorized worker %s on %s\n", time.Now().Format("15:04:05"), fullWorker, poolHostPort)
+		default:
+			if idInt > 2 {
+				if msg.Error == nil && msg.Result == true {
+					acc := atomic.AddInt64(&acceptedShares, 1)
+					stateMu.RLock()
+					curDiff := shareDiff
+					stateMu.RUnlock()
+					fmt.Printf("[%s] [Stratum Share] Accepted (#%d) | Diff: %.4f\n", time.Now().Format("15:04:05"), acc, curDiff)
+					if maxAcceptedShares > 0 && acc >= maxAcceptedShares {
+						cancelSession()
+						return nil
+					}
+				} else {
+					rej := atomic.AddInt64(&rejectedShares, 1)
+					fmt.Printf("[%s] [Stratum Share] Rejected (#%d): %v\n", time.Now().Format("15:04:05"), rej, msg.Error)
+				}
+			}
+		}
+	}
 }
