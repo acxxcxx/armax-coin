@@ -191,11 +191,15 @@ jobs:
           go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armsend$EXT ./cli/armsend
           go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armwallet$EXT ./cli/armwallet
 
-          # armgui desktop wallet is supported on windows/amd64
+          # Build armgui desktop wallet (Win32 GUI on Windows, Web Desktop GUI on Linux/macOS)
           if [ "${{ matrix.os }}" = "windows" ] && [ "${{ matrix.arch }}" = "amd64" ]; then
             cp gui/armgui.exe.manifest release_dist/ 2>/dev/null || true
             cp gui/armax_logo.ico release_dist/ 2>/dev/null || true
+            cp scripts/certs/armax-code-signing.cer release_dist/ 2>/dev/null || true
+            cp scripts/trust-publisher.ps1 release_dist/ 2>/dev/null || true
             go build -trimpath -ldflags="-s -w -H windowsgui -buildid=" -o release_dist/armgui.exe ./gui
+          else
+            go build -trimpath -ldflags="-s -w -buildid=" -o release_dist/armgui$EXT ./gui
           fi
 
           # Verify that required binaries were produced
@@ -203,7 +207,73 @@ jobs:
           test -f "release_dist/armminer$EXT" || (echo "Error: armminer$EXT was not built" && exit 1)
           test -f "release_dist/armsend$EXT" || (echo "Error: armsend$EXT was not built" && exit 1)
           test -f "release_dist/armwallet$EXT" || (echo "Error: armwallet$EXT was not built" && exit 1)
+          test -f "release_dist/armgui$EXT" || (echo "Error: armgui$EXT was not built" && exit 1)
 
+      - name: Sign Windows Executables (Authenticode)
+        if: matrix.os == 'windows'
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq osslsigncode openssl
+
+          SIGN_DIR="${RUNNER_TEMP}/armax_win_sign"
+          mkdir -p "${SIGN_DIR}"
+          chmod 700 "${SIGN_DIR}"
+          PFX_FILE="${SIGN_DIR}/armax-code-signing.pfx"
+
+          if [ -n "${WINDOWS_PFX_BASE64}" ] && [ -n "${WINDOWS_PFX_PASSWORD}" ]; then
+            echo "[+] Using configured WINDOWS_PFX_BASE64 secret for Authenticode signing..."
+            printf '%s' "${WINDOWS_PFX_BASE64}" | base64 --decode > "${PFX_FILE}"
+            chmod 600 "${PFX_FILE}"
+            PFX_PASS="${WINDOWS_PFX_PASSWORD}"
+          else
+            echo "[i] WINDOWS_PFX_BASE64 secret not set; generating ephemeral 1-year publisher certificate (Armaxcoin Core <dev@armax-coin.cloud>)..."
+            PFX_PASS=$(openssl rand -hex 24)
+            openssl req -x509 -newkey rsa:3072 -sha256 -days 365 -nodes \
+              -keyout "${SIGN_DIR}/codesign.key" \
+              -out "${SIGN_DIR}/codesign.crt" \
+              -subj "/CN=Armaxcoin Core/O=Armaxcoin Core/emailAddress=dev@armax-coin.cloud" \
+              -addext "keyUsage=critical,digitalSignature" \
+              -addext "extendedKeyUsage=codeSigning"
+            openssl x509 -in "${SIGN_DIR}/codesign.crt" -outform DER -out release_dist/armax-code-signing.cer
+            openssl pkcs12 -export -out "${PFX_FILE}" \
+              -inkey "${SIGN_DIR}/codesign.key" \
+              -in "${SIGN_DIR}/codesign.crt" \
+              -name "Armaxcoin Core" \
+              -passout env:PFX_PASS
+            chmod 600 "${PFX_FILE}"
+          fi
+
+          export PFX_PASS
+          for exe in release_dist/*.exe; do
+            echo "[+] Signing ${exe}..."
+            osslsigncode sign \
+              -pkcs12 "${PFX_FILE}" \
+              -readpass <(printf '%s' "${PFX_PASS}") \
+              -n "Armaxcoin Core" \
+              -i "https://github.com/acxxcxx/armax-coin" \
+              -h sha256 \
+              -in "${exe}" \
+              -out "${exe}.signed"
+            mv "${exe}.signed" "${exe}"
+          done
+
+      - name: Shred Temporary Authenticode Keys
+        if: always() && matrix.os == 'windows'
+        run: |
+          if [ -d "${RUNNER_TEMP}/armax_win_sign" ]; then
+            find "${RUNNER_TEMP}/armax_win_sign" -type f -exec shred -u {} \; 2>/dev/null || rm -rf "${RUNNER_TEMP}/armax_win_sign"
+            rm -rf "${RUNNER_TEMP}/armax_win_sign"
+          fi
+
+      - name: Package & Checksum Archive (${{ matrix.os }}/${{ matrix.arch }})
+        env:
+          RELEASE_VERSION: ${{ needs.validate_release.outputs.clean_version }}
+        run: |
+          set -euo pipefail
           cd release_dist
           sha256sum * > SHA256SUMS
           test -s SHA256SUMS || (echo "Error: SHA256SUMS is empty" && exit 1)
@@ -272,6 +342,64 @@ jobs:
           cat SHA256SUMS
           test -s SHA256SUMS || (echo "Error: SHA256SUMS is empty" && exit 1)
           cd ..
+
+      - name: Sign Master SHA256SUMS with GPG (1-Year Key)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="${RUNNER_TEMP}/armax_gnupg"
+          mkdir -p "${GNUPGHOME}"
+          chmod 700 "${GNUPGHOME}"
+
+          if [ -n "${GPG_PRIVATE_KEY}" ]; then
+            echo "[+] Importing configured GPG_PRIVATE_KEY secret..."
+            printf '%s\n' "${GPG_PRIVATE_KEY}" | gpg --batch --import
+            if [ -n "${GPG_PASSPHRASE}" ]; then
+              gpg --batch --yes --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" \
+                --armor --detach-sign --output release_assets/SHA256SUMS.asc release_assets/SHA256SUMS
+            else
+              gpg --batch --yes --armor --detach-sign --output release_assets/SHA256SUMS.asc release_assets/SHA256SUMS
+            fi
+            if [ -f "scripts/certs/ARMAX-PGP-KEY.asc" ]; then
+              cp scripts/certs/ARMAX-PGP-KEY.asc release_assets/ARMAX-PGP-KEY.asc
+            else
+              gpg --batch --armor --export "dev@armax-coin.cloud" > release_assets/ARMAX-PGP-KEY.asc
+            fi
+          else
+            echo "[i] GPG_PRIVATE_KEY secret not set; generating ephemeral 1-year GPG key (Armaxcoin Core <dev@armax-coin.cloud>)..."
+            EPHEMERAL_PASS=$(openssl rand -hex 24)
+            cat > "${GNUPGHOME}/keygen.batch" <<EOF
+          Key-Type: RSA
+          Key-Length: 3072
+          Subkey-Type: RSA
+          Subkey-Length: 3072
+          Name-Real: Armaxcoin Core
+          Name-Email: dev@armax-coin.cloud
+          Expire-Date: 1y
+          Passphrase: ${EPHEMERAL_PASS}
+          %commit
+          EOF
+            gpg --batch --gen-key "${GNUPGHOME}/keygen.batch"
+            gpg --batch --armor --export "dev@armax-coin.cloud" > release_assets/ARMAX-PGP-KEY.asc
+            gpg --batch --yes --pinentry-mode loopback --passphrase "${EPHEMERAL_PASS}" \
+              --armor --detach-sign --output release_assets/SHA256SUMS.asc release_assets/SHA256SUMS
+          fi
+
+          # Verify detached signature before publishing
+          gpg --verify release_assets/SHA256SUMS.asc release_assets/SHA256SUMS
+          test -s release_assets/SHA256SUMS.asc || (echo "Error: SHA256SUMS.asc is empty" && exit 1)
+          test -s release_assets/ARMAX-PGP-KEY.asc || (echo "Error: ARMAX-PGP-KEY.asc is empty" && exit 1)
+
+      - name: Wipe Temporary GPG Keyring
+        if: always()
+        run: |
+          if [ -d "${RUNNER_TEMP}/armax_gnupg" ]; then
+            gpgconf --homedir "${RUNNER_TEMP}/armax_gnupg" --kill gpg-agent 2>/dev/null || true
+            find "${RUNNER_TEMP}/armax_gnupg" -type f -exec shred -u {} \; 2>/dev/null || rm -rf "${RUNNER_TEMP}/armax_gnupg"
+            rm -rf "${RUNNER_TEMP}/armax_gnupg"
+          fi
 
       - name: Publish GitHub Release
         env:

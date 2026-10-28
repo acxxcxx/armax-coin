@@ -6,6 +6,11 @@ armax.cookie
 *.cookie
 node/armax.cookie
 peers.json
+signing_keys/
+*.pfx
+*.p12
+*.key
+*private*.asc
 
 # Local Blockchain Databases & Backups
 blockchain.db

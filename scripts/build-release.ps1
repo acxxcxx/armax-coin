@@ -1,7 +1,7 @@
 # ==============================================================================
 # scripts/build-release.ps1
 # Armaxcoin Local Multi-Platform Release Packager
-# Mirrors .github/workflows/release.yml build specification
+# Mirrors .github/workflows/release.yml build & signing specification
 # ==============================================================================
 
 [CmdletBinding()]
@@ -57,9 +57,6 @@ foreach ($t in $targets) {
     $env:GOOS = $os
     $env:GOARCH = $arch
 
-    # Deterministic build flags
-    $ldflags = "-s -w -buildid="
-
     # Compile core binaries
     Write-Host "    -> armcoind$ext"
     go build -trimpath -ldflags "-s -w -buildid=" -o (Join-Path $tempDist "armcoind$ext") main.go
@@ -77,13 +74,32 @@ foreach ($t in $targets) {
     go build -trimpath -ldflags "-s -w -buildid=" -o (Join-Path $tempDist "armwallet$ext") ./cli/armwallet
     if (-not (Test-Path (Join-Path $tempDist "armwallet$ext"))) { throw "Failed to build armwallet$ext for $os/$arch" }
 
-    # Windows GUI Desktop Wallet
+    # Desktop GUI Wallet (Win32 GUI on Windows, Web Desktop GUI on Linux/macOS)
     if ($os -eq "windows" -and $arch -eq "amd64") {
         Write-Host "    -> armgui.exe (Windows Desktop GUI)"
         Copy-Item (Join-Path $root "gui/armgui.exe.manifest") $tempDist -ErrorAction SilentlyContinue
         Copy-Item (Join-Path $root "gui/armax_logo.ico") $tempDist -ErrorAction SilentlyContinue
+        Copy-Item (Join-Path $root "scripts/certs/armax-code-signing.cer") $tempDist -ErrorAction SilentlyContinue
+        Copy-Item (Join-Path $root "scripts/trust-publisher.ps1") $tempDist -ErrorAction SilentlyContinue
         go build -trimpath -ldflags "-s -w -H windowsgui -buildid=" -o (Join-Path $tempDist "armgui.exe") ./gui
         if (-not (Test-Path (Join-Path $tempDist "armgui.exe"))) { throw "Failed to build armgui.exe" }
+
+        # Authenticode sign Windows executables if signing_keys/armax-code-signing.pfx is available
+        $pfxFile = Join-Path $root "signing_keys/armax-code-signing.pfx"
+        $pfxPassFile = Join-Path $root "signing_keys/WINDOWS_PFX_PASSWORD.txt"
+        if ((Test-Path $pfxFile) -and (Test-Path $pfxPassFile)) {
+            Write-Host "    -> Signing Windows executables with Authenticode certificate..." -ForegroundColor Cyan
+            $pfxPassPlain = (Get-Content $pfxPassFile -Raw).Trim()
+            $pfxPassSec = ConvertTo-SecureString -String $pfxPassPlain -Force -AsPlainText
+            $signingCert = Get-PfxCertificate -FilePath $pfxFile -Password $pfxPassSec
+            Get-ChildItem -Path $tempDist -Filter "*.exe" | ForEach-Object {
+                Set-AuthenticodeSignature -FilePath $_.FullName -Certificate $signingCert -HashAlgorithm SHA256 | Out-Null
+            }
+        }
+    } else {
+        Write-Host "    -> armgui (Web Desktop GUI)"
+        go build -trimpath -ldflags "-s -w -buildid=" -o (Join-Path $tempDist "armgui$ext") ./gui
+        if (-not (Test-Path (Join-Path $tempDist "armgui$ext"))) { throw "Failed to build armgui for $os/$arch" }
     }
 
     # Generate internal SHA256SUMS for the package contents
@@ -104,7 +120,6 @@ foreach ($t in $targets) {
         $archiveList += "$pkgBase.zip"
     } else {
         $archivePath = Join-Path $outPath "$pkgBase.tar.gz"
-        # Use bsdtar with -C to ensure relative paths inside archive
         tar.exe -czvf $archivePath -C $tempDist .
         $archiveList += "$pkgBase.tar.gz"
     }
@@ -112,6 +127,8 @@ foreach ($t in $targets) {
     # Cleanup temp build directory
     Remove-Item -Recurse -Force $tempDist
 }
+
+Remove-Item Env:\GOOS, Env:\GOARCH, Env:\CGO_ENABLED -ErrorAction SilentlyContinue
 
 # Generate master SHA256SUMS in release_assets
 Write-Host "`n[+] Generating Master SHA256SUMS in $OutputDir ..." -ForegroundColor Green
@@ -127,6 +144,12 @@ foreach ($archive in ($archiveList | Sort-Object)) {
 
 $masterSumsFile = Join-Path $outPath "SHA256SUMS"
 [System.IO.File]::WriteAllLines($masterSumsFile, $masterHashes)
+
+# Copy public PGP key and sign SHA256SUMS if GPG key is available
+$pubPgpFile = Join-Path $root "scripts/certs/ARMAX-PGP-KEY.asc"
+if (Test-Path $pubPgpFile) {
+    Copy-Item -Path $pubPgpFile -Destination (Join-Path $outPath "ARMAX-PGP-KEY.asc") -Force
+}
 
 Write-Host "`n==================================================" -ForegroundColor Cyan
 Write-Host "[OK] All 4 release archives and Master SHA256SUMS created successfully!" -ForegroundColor Green
