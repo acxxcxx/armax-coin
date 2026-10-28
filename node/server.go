@@ -732,27 +732,16 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 	mux.HandleFunc("/getblocktemplate", func(w http.ResponseWriter, r *http.Request) {
 		bc.Lock.RLock()
 		latest := bc.GetLatestBlockUnsafe()
-		var candidateTxs []core.Transaction
-		var totalFees int64 = 0
-		var currentSize = 1000 // header and coinbase margin
 		maxAllowedTxs := core.MaxBlockTransactions - 1
 		maxAllowedSize := core.MaxBlockSize - 50000
-
-		for _, tx := range bc.Mempool {
-			txSize := tx.Size()
-			if len(candidateTxs) >= maxAllowedTxs || currentSize+txSize > maxAllowedSize {
-				break
-			}
-			candidateTxs = append(candidateTxs, tx)
-			totalFees += tx.Fee
-			currentSize += txSize
-		}
+		candidateTxs, totalFees := bc.SelectCandidateTransactionsLocked(maxAllowedTxs, maxAllowedSize)
 
 		target := bc.CalculateLWMA1()
 		diff := core.TargetToDifficulty(target)
 		blockReward := bc.GetBlockReward(latest.Index + 1)
+		minTs := core.MinValidTimestamp(bc.Chain, &latest, latest.Index+1)
 		curTime := time.Now().Unix()
-		if minTs := core.MinValidTimestamp(bc.Chain, &latest, latest.Index+1); curTime < minTs {
+		if curTime < minTs {
 			curTime = minTs
 		}
 		bc.Lock.RUnlock()
@@ -776,6 +765,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			"previousblockhash": latest.Hash,
 			"height":            latest.Index + 1,
 			"curtime":           curTime,
+			"mintime":           minTs,
 			"difficulty":        diff,
 			"target":            fmt.Sprintf("%064x", target),
 			"coinbasevalue":     coinbaseValue,
@@ -793,10 +783,13 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		diff := core.TargetToDifficulty(target)
 		pooledTx := len(bc.Mempool)
 		chainName := strings.ToLower(core.GetActiveNetwork().Name)
+		isGenerating := bc.GetMiningHashrate() > 0
 		bc.Lock.RUnlock()
 
 		powAlgo := "sha256d"
-		if core.IsArmaxHashActive(latest.Index + 1) {
+		if core.IsArmaxHashV2Active(latest.Index + 1) {
+			powAlgo = "armaxhash-v2"
+		} else if core.IsArmaxHashActive(latest.Index + 1) {
 			powAlgo = "armaxhash"
 		}
 
@@ -818,6 +811,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			"pooledtx":           pooledTx,
 			"chain":              chainName,
 			"pow_algo":           powAlgo,
+			"generate":           isGenerating,
 			"warnings":           "",
 		})
 	})

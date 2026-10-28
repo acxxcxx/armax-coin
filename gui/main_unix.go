@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -104,13 +105,102 @@ func openBrowser(url string) {
 }
 
 func main() {
+	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L4-1]")
 	portFlag := flag.Int("port", 18088, "HTTP GUI Wallet port")
-	rpcFlag := flag.String("rpc", "http://127.0.0.1:"+core.TestnetRPCPort, "Armaxcoin node RPC URL")
+	rpcFlag := flag.String("rpc", "", "Armaxcoin node RPC URL (overrides default)")
+	rpcPortPtr := flag.String("rpcport", "", "RPC Daemon port (overrides default)")
+	p2pPortPtr := flag.String("p2p", "", "P2P port (deprecated: use -p2pport)")
+	p2pPortNewPtr := flag.String("p2pport", "", "P2P port (overrides default)")
+	dataDirPtr := flag.String("datadir", "", "Custom data directory")
+	infoPtr := flag.Bool("info", false, "Display active network profile configuration and exit [L3-8]")
+	versionPtr := flag.Bool("version", false, "Display software release version and exit [L4-4]")
 	noBrowserFlag := flag.Bool("no-browser", false, "Do not automatically launch web browser")
 	flag.Parse()
 
+	if *versionPtr {
+		fmt.Printf("armgui v%s\n", core.Version)
+		return
+	}
+
+	effRPCPort := *rpcPortPtr
+	effP2PPort := *p2pPortNewPtr
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "p2p" {
+			fmt.Println("[!] Warning: -p2p is deprecated, please use -p2pport instead")
+			if effP2PPort == "" {
+				effP2PPort = *p2pPortPtr
+			}
+		}
+	})
+
+	if *dataDirPtr != "" {
+		_ = os.Setenv("ARMX_DATA_DIR", *dataDirPtr)
+	}
+
+	netChoice := *networkPtr
+	isExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "network" {
+			isExplicit = true
+		}
+	})
+	if !isExplicit {
+		if envNet := os.Getenv("ARMX_NETWORK"); envNet != "" {
+			if strings.EqualFold(envNet, "regtest") {
+				fmt.Println("[!] Note: regtest profile cannot be selected via environment variable. Please specify '-network regtest' explicitly.")
+			} else {
+				netChoice = envNet
+			}
+		}
+	}
+	if strings.EqualFold(netChoice, "regtest") && !isExplicit {
+		fmt.Println("[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
+		os.Exit(1)
+	}
+	cliNet, err := core.ResolveCLINetwork(netChoice)
+	if err != nil {
+		fmt.Printf("[-] Invalid network profile '%s': %v\n", netChoice, err)
+		os.Exit(1)
+	}
+	if err := core.SetNetwork(netChoice); err != nil {
+		fmt.Printf("[-] Failed to set network profile '%s': %v\n", netChoice, err)
+		os.Exit(1)
+	}
+	activeNet := core.GetActiveNetwork()
+
+	fmt.Println("==================================================")
+	fmt.Println(core.NetworkWarningLine())
+	fmt.Printf("  ARMAXCOIN (%s) - DESKTOP GUI WALLET\n", core.ActiveTicker())
+	fmt.Println("==================================================")
+
+	if *infoPtr {
+		fmt.Printf("[+] Target Network   : %s (%s, RPC: %s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID, cliNet.RPCPort)
+		fmt.Printf("[+] Network Profile  : %s (%s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID)
+		rpcP := cliNet.RPCPort
+		if effRPCPort != "" {
+			rpcP = effRPCPort
+		}
+		p2pP := cliNet.P2PPort
+		if effP2PPort != "" {
+			p2pP = effP2PPort
+		}
+		fmt.Printf("[+] RPC Port         : %s\n", rpcP)
+		fmt.Printf("[+] P2P Port         : %s\n", p2pP)
+		fmt.Printf("[+] Data Directory   : %s\n", cliNet.DataDir)
+		for _, seed := range cliNet.DefaultSeeds {
+			fmt.Printf("[+] Seed Peer        : %s\n", seed)
+		}
+		return
+	}
+
 	listenPort = *portFlag
-	rpcURL = strings.TrimRight(*rpcFlag, "/")
+	if *rpcFlag != "" {
+		rpcURL = strings.TrimRight(*rpcFlag, "/")
+	} else if effRPCPort != "" {
+		rpcURL = "http://127.0.0.1:" + effRPCPort
+	} else {
+		rpcURL = "http://127.0.0.1:" + cliNet.RPCPort
+	}
 
 	benchmarkPerCore = calibrateBenchmark()
 
@@ -132,6 +222,7 @@ func main() {
 	serverMux.HandleFunc("/api/mine/status", handleMineStatus)
 	serverMux.HandleFunc("/api/addressbook", handleAddressBook)
 	serverMux.HandleFunc("/api/wallet/info", handleWalletInfo)
+	serverMux.HandleFunc("/api/wallet/create", handleWalletCreate)
 	serverMux.HandleFunc("/api/wallet/restore", handleWalletRestore)
 	serverMux.HandleFunc("/api/export-csv", handleExportCSV)
 
@@ -167,40 +258,128 @@ func main() {
 	}
 }
 
+func findWalletPath() string {
+	if envFile := strings.TrimSpace(os.Getenv("ARMX_WALLET_FILE")); envFile != "" {
+		return envFile
+	}
+	if _, err := os.Stat("wallet.json"); err == nil {
+		return "wallet.json"
+	}
+	if envDir := strings.TrimSpace(os.Getenv("ARMX_DATA_DIR")); envDir != "" {
+		return filepath.Join(envDir, "wallet.json")
+	}
+	if exe, err := os.Executable(); err == nil {
+		cand := filepath.Join(filepath.Dir(exe), "wallet.json")
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+		return cand
+	}
+	return "wallet.json"
+}
+
+func findAddressBookPath() string {
+	if _, err := os.Stat("addressbook.json"); err == nil {
+		return "addressbook.json"
+	}
+	return filepath.Join(filepath.Dir(node.GetRPCAuthCookiePath()), "addressbook.json")
+}
+
 func loadOrInitWallet() {
-	walletFile := "wallet.json"
+	walletFile := findWalletPath()
 	if _, err := os.Stat(walletFile); err == nil {
-		// Read address from file
+		// Read address from existing encrypted keystore file
 		data, err := os.ReadFile(walletFile)
 		if err == nil {
 			var ks wallet.KeystoreFile
 			if json.Unmarshal(data, &ks) == nil && ks.Address != "" {
 				activeAddress = ks.Address
+				if envPass := os.Getenv("ARMX_WALLET_PASSPHRASE"); envPass != "" {
+					if w, err := wallet.DecryptAndLoadKeystore(envPass, walletFile); err == nil {
+						activeWallet = w
+					}
+				}
 				return
 			}
 		}
 	}
 
-	// Generate default session wallet
-	w, err := wallet.NewWallet()
-	if err != nil {
-		fmt.Printf("[-] Failed to create session wallet: %v\n", err)
+	// If ARMX_WALLET_PASSPHRASE is provided in the environment, initialize and persist an encrypted wallet
+	if envPass := os.Getenv("ARMX_WALLET_PASSPHRASE"); len(envPass) >= 12 && !wallet.IsLegacyPassphrase(envPass) {
+		w, err := wallet.NewWallet()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[-] Failed to create wallet: %v\n", err)
+			return
+		}
+		if err := wallet.EncryptAndSaveKeystore(w, envPass, walletFile); err != nil {
+			fmt.Fprintf(os.Stderr, "[-] Failed to save encrypted keystore to %s: %v\n", walletFile, err)
+			return
+		}
+		activeWallet = w
+		activeAddress = w.Address
+		w.ClearMnemonic()
+		fmt.Printf("[+] Initialized encrypted wallet keystore at %s\n", walletFile)
 		return
 	}
-	activeWallet = w
-	activeAddress = w.Address
-	// Encrypt and save with default empty passphrase if brand new
-	_ = wallet.EncryptAndSaveKeystore(w, "", walletFile)
-	w.ClearMnemonic()
+
+	fmt.Printf("[!] No wallet keystore found at %s. Create or restore an encrypted wallet in the Receive tab of the Web GUI.\n", walletFile)
 }
 
 func handleWalletInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"address": activeAddress,
-		"version": core.Version,
-		"network": core.ActiveNetwork.NetworkID,
-		"crypto":  "ML-DSA-65 (FIPS 204)",
+		"address":     activeAddress,
+		"wallet_path": findWalletPath(),
+		"initialized": activeAddress != "",
+		"version":     core.Version,
+		"network":     core.ActiveNetwork.NetworkID,
+		"crypto":      "ML-DSA-65 (FIPS 204)",
+	})
+}
+
+func handleWalletCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if len(req.Passphrase) < 12 {
+		http.Error(w, "Passphrase must be at least 12 characters", http.StatusBadRequest)
+		return
+	}
+	if wallet.IsLegacyPassphrase(req.Passphrase) {
+		http.Error(w, "Cannot use insecure legacy default passphrase", http.StatusBadRequest)
+		return
+	}
+
+	newW, err := wallet.NewWallet()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to generate wallet: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	walletPath := findWalletPath()
+	if err := wallet.EncryptAndSaveKeystore(newW, req.Passphrase, walletPath); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save encrypted keystore: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	mnemonic := newW.Mnemonic
+	activeWallet = newW
+	activeAddress = newW.Address
+	newW.ClearMnemonic()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "success",
+		"address":  activeAddress,
+		"mnemonic": mnemonic,
 	})
 }
 
@@ -222,6 +401,14 @@ func handleWalletRestore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Mnemonic cannot be empty", http.StatusBadRequest)
 		return
 	}
+	if len(req.Passphrase) < 12 {
+		http.Error(w, "Passphrase must be at least 12 characters", http.StatusBadRequest)
+		return
+	}
+	if wallet.IsLegacyPassphrase(req.Passphrase) {
+		http.Error(w, "Cannot use insecure legacy default passphrase", http.StatusBadRequest)
+		return
+	}
 
 	restored, err := wallet.WalletFromMnemonic(mnemonic, "", 0)
 	if err != nil {
@@ -229,7 +416,8 @@ func handleWalletRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := wallet.EncryptAndSaveKeystore(restored, req.Passphrase, "wallet.json"); err != nil {
+	walletPath := findWalletPath()
+	if err := wallet.EncryptAndSaveKeystore(restored, req.Passphrase, walletPath); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save wallet: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -448,7 +636,7 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 	if activeWallet != nil && activeWallet.PrivateKey != nil {
 		signingWallet = activeWallet
 	} else {
-		loadedW, err := wallet.DecryptAndLoadKeystore(req.Passphrase, "wallet.json")
+		loadedW, err := wallet.DecryptAndLoadKeystore(req.Passphrase, findWalletPath())
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Keystore passphrase decryption error: %v", err), http.StatusUnauthorized)
 			return
@@ -724,7 +912,7 @@ func handleMineStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAddressBook(w http.ResponseWriter, r *http.Request) {
-	bookFile := "addressbook.json"
+	bookFile := findAddressBookPath()
 	type Contact struct {
 		Name      string `json:"name"`
 		Address   string `json:"address"`
@@ -749,6 +937,7 @@ func handleAddressBook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data, _ := json.MarshalIndent(contacts, "", "  ")
+		_ = os.MkdirAll(filepath.Dir(bookFile), 0700)
 		_ = os.WriteFile(bookFile, data, 0600)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "saved"})
@@ -1013,13 +1202,27 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
     </div>
 
     <div class="card">
+      <div class="card-title"> Create New Encrypted Wallet</div>
+      <div class="form-group">
+        <label class="form-label">New Keystore Passphrase (minimum 12 characters):</label>
+        <input type="password" class="form-control" id="txtCreatePass" placeholder="Enter strong passphrase (min 12 chars)...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm Keystore Passphrase:</label>
+        <input type="password" class="form-control" id="txtCreatePassConfirm" placeholder="Confirm passphrase...">
+      </div>
+      <button class="btn" onclick="executeCreateWallet()"> Generate & Save New Wallet</button>
+      <div id="createMnemonicBox" style="margin-top:16px; display:none; padding:12px; border-radius:6px; background:#090d16; border:1px solid #38bdf8; font-size:13px; font-family:monospace; color:#f8fafc;"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title"> Restore / Import Mnemonic Seed Phrase</div>
       <div class="form-group">
         <label class="form-label">BIP-39 Mnemonic (12 or 24 words):</label>
         <input type="text" class="form-control" id="txtRestoreMnemonic" placeholder="word1 word2 word3 ...">
       </div>
       <div class="form-group">
-        <label class="form-label">New Keystore Password:</label>
+        <label class="form-label">New Keystore Password (minimum 12 characters):</label>
         <input type="password" class="form-control" id="txtRestorePass" placeholder="Enter password to encrypt wallet...">
       </div>
       <button class="btn btn-secondary" onclick="executeRestoreWallet()"> Restore Wallet from Mnemonic</button>
@@ -1443,24 +1646,80 @@ function renderTransactionPage() {
   document.getElementById('txPageInfo').innerText = 'Page ' + (currentTxPage + 1) + ' / ' + pageCount + ' -- ' + filteredTxRecords.length + ' matching / ' + currentTxRecords.length + ' total loaded';
 }
 
-async function runCLI() {
-  const raw = document.getElementById('cliCommand').value.trim();
-  if (!raw) return;
-  const parts = raw.split(/\s+/);
-  const command = (parts[0] || '').toLowerCase();
-  const arg = parts.slice(1).join(' ');
-  const out = document.getElementById('cliOutput');
-  if (command === 'clear') { out.innerText = ''; return; }
-  if (command === 'help') {
-    out.innerText = 'Supported commands:\nhelp\ngetnetworkinfo\ngetblockchaininfo\ngetpeerinfo\ngetbalance [address]\ngethistory [address]\ngetmempoolinfo\nclear';
+async function executeCreateWallet() {
+  const pass = document.getElementById('txtCreatePass').value;
+  const confirmPass = document.getElementById('txtCreatePassConfirm').value;
+  const box = document.getElementById('createMnemonicBox');
+  if (!pass || pass.length < 12) {
+    alert("Passphrase must be at least 12 characters.");
     return;
   }
-  out.innerText = '$ ' + raw + '\nQuerying node...';
+  if (pass !== confirmPass) {
+    alert("Passphrases do not match.");
+    return;
+  }
   try {
-    const res = await fetch('/api/cli?command=' + encodeURIComponent(command) + '&arg=' + encodeURIComponent(arg));
-    const body = await res.text();
-    out.innerText = '$ ' + raw + '\nHTTP ' + res.status + '\n' + body;
-  } catch (e) { out.innerText = 'CLI error: ' + e.message; }
+    const res = await fetch('/api/wallet/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passphrase: pass })
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      alert("Wallet creation failed: " + text);
+      return;
+    }
+    const data = JSON.parse(text);
+    currentAddress = data.address;
+    document.getElementById('lblOverviewAddr').value = currentAddress;
+    document.getElementById('txtReceiveAddr').value = currentAddress;
+    document.getElementById('txtMinerAddr').value = currentAddress;
+    document.getElementById('txtCreatePass').value = '';
+    document.getElementById('txtCreatePassConfirm').value = '';
+    box.style.display = 'block';
+    box.innerText = "IMPORTANT - WRITE DOWN YOUR 24-WORD RECOVERY PHRASE NOW (SHOWN ONCE):\n\n" + data.mnemonic + "\n\nSaved Address: " + data.address;
+    fetchBalance();
+    loadHistory();
+  } catch (e) {
+    alert("Error creating wallet: " + e.message);
+  }
+}
+
+async function executeRestoreWallet() {
+  const mnemonic = document.getElementById('txtRestoreMnemonic').value.trim();
+  const pass = document.getElementById('txtRestorePass').value;
+  if (!mnemonic) {
+    alert("Please enter your 12 or 24-word BIP-39 recovery phrase.");
+    return;
+  }
+  if (!pass || pass.length < 12) {
+    alert("Passphrase must be at least 12 characters.");
+    return;
+  }
+  try {
+    const res = await fetch('/api/wallet/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mnemonic: mnemonic, passphrase: pass })
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      alert("Restore failed: " + text);
+      return;
+    }
+    const data = JSON.parse(text);
+    currentAddress = data.address;
+    document.getElementById('lblOverviewAddr').value = currentAddress;
+    document.getElementById('txtReceiveAddr').value = currentAddress;
+    document.getElementById('txtMinerAddr').value = currentAddress;
+    document.getElementById('txtRestoreMnemonic').value = '';
+    document.getElementById('txtRestorePass').value = '';
+    alert("Wallet restored and saved! Active address: " + currentAddress);
+    fetchBalance();
+    loadHistory();
+  } catch (e) {
+    alert("Error restoring wallet: " + e.message);
+  }
 }
 
 function showTxDetailModal(idx) {

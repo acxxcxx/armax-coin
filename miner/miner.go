@@ -39,6 +39,7 @@ type BlockTemplate struct {
 	PreviousBlockHash string             `json:"previousblockhash"`
 	Height            int                `json:"height"`
 	CurTime           int64              `json:"curtime"`
+	MinTime           int64              `json:"mintime,omitempty"`
 	Difficulty        float64            `json:"difficulty"`
 	Target            string             `json:"target"`
 	CoinbaseValue     int64              `json:"coinbasevalue"`
@@ -55,11 +56,6 @@ type SubmitBlockResponse struct {
 }
 
 func main() {
-	fmt.Println("==================================================")
-	fmt.Println("ARMAX ALPHA TESTNET - no economic value, unaudited")
-	fmt.Printf("ARMAXCOIN (%s) - AUTOMATIC CPU MINER CLIENT\n", core.ActiveTicker())
-	fmt.Println("==================================================")
-
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
 	benchPtr := flag.Bool("benchmark", false, "Run CPU PoW hashing benchmark (hash/s per thread and total) [L1-6]")
 	minerAddrPtr := flag.String("miner", "", "Reward recipient wallet address (Bech32 or hex)")
@@ -163,6 +159,10 @@ func main() {
 		os.Exit(1)
 	}
 	activeNet := core.GetActiveNetwork()
+	fmt.Println("==================================================")
+	fmt.Println(core.NetworkWarningLine())
+	fmt.Printf("ARMAXCOIN (%s) - AUTOMATIC CPU MINER CLIENT\n", core.ActiveTicker())
+	fmt.Println("==================================================")
 	fmt.Printf("[+] Target Network   : %s (%s, RPC: %s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID, activeNet.RPCPort)
 
 	if *infoPtr {
@@ -466,8 +466,12 @@ func main() {
 		txs := append([]core.Transaction{cbTx}, tmpl.Transactions...)
 		candidateBlock := *core.NewBlock(txs, tmpl.PreviousBlockHash, tmpl.Height, minerAddress, targetInt)
 		now := time.Now().Unix()
-		if tmpl.CurTime > now {
-			candidateBlock.Timestamp = tmpl.CurTime
+		minTs := tmpl.CurTime
+		if tmpl.MinTime > minTs {
+			minTs = tmpl.MinTime
+		}
+		if minTs > now {
+			candidateBlock.Timestamp = minTs
 		} else {
 			candidateBlock.Timestamp = now
 		}
@@ -513,6 +517,9 @@ func main() {
 						case <-stopChan:
 							return
 						default:
+						}
+						if curTime := time.Now().Unix(); curTime > b.Timestamp {
+							b.Timestamp = curTime
 						}
 					}
 					var err error

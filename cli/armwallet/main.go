@@ -494,27 +494,45 @@ func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	var historyResp struct {
-		Address      string             `json:"address"`
-		Transactions []core.Transaction `json:"transactions"`
+	type txHistoryRecord struct {
+		BlockIndex int              `json:"block_index"`
+		Timestamp  int64            `json:"timestamp"`
+		Status     string           `json:"status"`
+		Tx         core.Transaction `json:"tx"`
 	}
-	if err := json.Unmarshal(body, &historyResp); err != nil {
-		fmt.Fprintf(os.Stderr, "[-] Failed to parse history response: %v\n", err)
-		os.Exit(1)
+
+	var txs []core.Transaction
+	var records []txHistoryRecord
+	if err := json.Unmarshal(body, &records); err == nil {
+		for _, rec := range records {
+			txs = append(txs, rec.Tx)
+		}
+	} else {
+		var legacyResp struct {
+			Address      string             `json:"address"`
+			Transactions []core.Transaction `json:"transactions"`
+		}
+		if errLegacy := json.Unmarshal(body, &legacyResp); errLegacy != nil {
+			fmt.Fprintf(os.Stderr, "[-] Failed to parse history response: %v\n", err)
+			os.Exit(1)
+		}
+		txs = legacyResp.Transactions
 	}
 
 	fmt.Println("==================================================")
-	fmt.Printf(" RESCAN RESULTS FOR %s (%d txs found):\n", ks.Address, len(historyResp.Transactions))
+	fmt.Printf(" RESCAN RESULTS FOR %s (%d txs found):\n", ks.Address, len(txs))
 	fmt.Println("==================================================")
-	for i, tx := range historyResp.Transactions {
+	for i, tx := range txs {
 		role := "Received"
-		if tx.Sender == ks.Address {
+		if tx.Sender == "SYSTEM" || tx.Sender == "COINBASE" {
+			role = "Mined"
+		} else if core.MatchAddress(tx.Sender, ks.Address) {
 			role = "Sent"
 		}
 		fmt.Printf("  [%d] %s: %.8f %s | Nonce #%d | Fee: %d Armoids | TXID: %s\n",
 			i+1, role, float64(tx.Amount)/1e8, core.ActiveTicker(), tx.Nonce, tx.Fee, tx.HashHex())
 	}
-	if len(historyResp.Transactions) == 0 {
+	if len(txs) == 0 {
 		fmt.Println("  (no transactions recorded yet for this address)")
 	}
 	fmt.Println("==================================================")

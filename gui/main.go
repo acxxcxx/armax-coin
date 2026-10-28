@@ -1112,11 +1112,6 @@ func formatArmx(armoids int64) string {
 }
 
 func main() {
-	fmt.Println("==================================================")
-	fmt.Println("WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited")
-	fmt.Printf("  ARMAXCOIN (%s) - DESKTOP GUI WALLET\n", core.ActiveTicker())
-	fmt.Println("==================================================")
-
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L4-1]")
 	portPtr := flag.String("port", "", "RPC Daemon port (deprecated: use -rpcport)")
 	rpcPortPtr := flag.String("rpcport", "", "RPC Daemon port (overrides default)")
@@ -1185,6 +1180,11 @@ func main() {
 		os.Exit(1)
 	}
 	activeNetwork = core.GetActiveNetwork()
+
+	fmt.Println("==================================================")
+	fmt.Println(core.NetworkWarningLine())
+	fmt.Printf("  ARMAXCOIN (%s) - DESKTOP GUI WALLET\n", core.ActiveTicker())
+	fmt.Println("==================================================")
 
 	if *infoPtr {
 		fmt.Printf("[+] Target Network   : %s (%s, RPC: %s)\n", strings.ToUpper(activeNetwork.Name), activeNetwork.NetworkID, cliNet.RPCPort)

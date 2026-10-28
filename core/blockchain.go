@@ -710,30 +710,36 @@ func SetMiningDeterministicRaceHookForTesting(hook func(recordErr func(error))) 
 	}
 }
 
-// MineBlockContext mines a new block including miner reward, transaction fees, and mempool transactions
-// with context cancellation and stale-block detection support.
-func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string, threadCount ...int) (Block, error) {
-	bc.Lock.Lock()
+// SelectCandidateTransactionsLocked simulates mempool transactions against a state overlay
+// and returns valid candidate transactions along with their total fees [C-20].
+// Callers must hold bc.Lock (at least RLock).
+func (bc *Blockchain) SelectCandidateTransactionsLocked(maxTxs int, maxBytes int) ([]Transaction, int64) {
+	if maxTxs <= 0 || maxTxs > MaxBlockTransactions-1 {
+		maxTxs = MaxBlockTransactions - 1
+	}
+	if maxBytes <= 0 || maxBytes > MaxBlockSize-50000 {
+		maxBytes = MaxBlockSize - 50000
+	}
 
-	// 1. Purge stale/invalid transactions from mempool before assembly [C-20]
-	bc.CleanMempoolLocked()
-
-	target := bc.CalculateLWMA1()
-	prevBlock := bc.GetLatestBlockUnsafe()
-	currentBlockReward := bc.GetBlockReward(prevBlock.Index + 1)
-	bc.BlockReward = currentBlockReward
-
-	// 2. Simulate transactions against state overlay to discard invalid ones [C-20]
-	maxMempoolTxs := MaxBlockTransactions - 1
-	var validTxsToMine []Transaction
-	var totalFees int64 = 0
+	var validTxs []Transaction
+	var totalFees int64
+	currentSize := 1000 // header and coinbase margin
 
 	simBalances := make(map[string]int64)
 	simNonces := make(map[string]int64)
+	seenHashes := make(map[string]struct{}, len(bc.Mempool))
 
 	for _, tx := range bc.Mempool {
-		if len(validTxsToMine) >= maxMempoolTxs {
+		if len(validTxs) >= maxTxs {
 			break
+		}
+		txSize := tx.Size()
+		if txSize > MaxTxSize || currentSize+txSize > maxBytes {
+			continue
+		}
+		txHash := tx.HashHex()
+		if _, dup := seenHashes[txHash]; dup {
+			continue
 		}
 		if !tx.Verify() {
 			continue
@@ -771,9 +777,30 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 		}
 		simBalances[recipHex] += tx.Amount
 
+		seenHashes[txHash] = struct{}{}
+		currentSize += txSize
 		totalFees += tx.Fee
-		validTxsToMine = append(validTxsToMine, tx)
+		validTxs = append(validTxs, tx)
 	}
+
+	return validTxs, totalFees
+}
+
+// MineBlockContext mines a new block including miner reward, transaction fees, and mempool transactions
+// with context cancellation and stale-block detection support.
+func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string, threadCount ...int) (Block, error) {
+	bc.Lock.Lock()
+
+	// 1. Purge stale/invalid transactions from mempool before assembly [C-20]
+	bc.CleanMempoolLocked()
+
+	target := bc.CalculateLWMA1()
+	prevBlock := bc.GetLatestBlockUnsafe()
+	currentBlockReward := bc.GetBlockReward(prevBlock.Index + 1)
+	bc.BlockReward = currentBlockReward
+
+	// 2. Simulate transactions against state overlay to discard invalid ones [C-20]
+	validTxsToMine, totalFees := bc.SelectCandidateTransactionsLocked(MaxBlockTransactions-1, MaxBlockSize-50000)
 
 	rewardTx := Transaction{
 		Sender:    "SYSTEM",
@@ -1017,7 +1044,7 @@ func (bc *Blockchain) MineBlockWithErr(minerAddress string) (Block, error) {
 	return bc.MineBlockContext(context.Background(), minerAddress)
 }
 
-// IsChainValid verifies the cryptographic and PoW integrity of the entire blockchain
+// IsChainValid verifies the cryptographic, consensus, and state integrity of the entire blockchain
 func (bc *Blockchain) IsChainValid() bool {
 	bc.Lock.RLock()
 	defer bc.Lock.RUnlock()
@@ -1030,9 +1057,26 @@ func (bc *Blockchain) IsChainValid() bool {
 		return false
 	}
 
+	mat := bc.GetCoinbaseMaturity()
+	simState := NewStateManager()
+	simState.CoinbaseMaturity = mat
+	if err := simState.VerifyAndApplyBlock(&bc.Chain[0], InitialReward, mat); err != nil {
+		return false
+	}
+	runningSupply := InitialReward
+
 	for i := 1; i < len(bc.Chain); i++ {
 		currentBlock := bc.Chain[i]
 		prevBlock := bc.Chain[i-1]
+
+		if currentBlock.Size() > MaxBlockSize {
+			return false
+		}
+		for _, tx := range currentBlock.Transactions {
+			if tx.Size() > MaxTxSize {
+				return false
+			}
+		}
 
 		if currentBlock.Index != prevBlock.Index+1 {
 			return false
@@ -1043,6 +1087,21 @@ func (bc *Blockchain) IsChainValid() bool {
 		if len(currentBlock.Transactions) == 0 || len(currentBlock.Transactions) > MaxBlockTransactions {
 			return false
 		}
+		if currentBlock.Miner != "" {
+			if !ValidateAddress(currentBlock.Miner) || !MatchAddress(currentBlock.Miner, currentBlock.Transactions[0].Recipient) {
+				return false
+			}
+		}
+
+		seenTxs := make(map[string]struct{}, len(currentBlock.Transactions))
+		for _, tx := range currentBlock.Transactions {
+			h := tx.HashHex()
+			if _, dup := seenTxs[h]; dup {
+				return false
+			}
+			seenTxs[h] = struct{}{}
+		}
+
 		if currentBlock.MerkleRoot != CalculateMerkleRoot(currentBlock.Transactions) {
 			return false
 		}
@@ -1059,6 +1118,22 @@ func (bc *Blockchain) IsChainValid() bool {
 		if !HashMeetsTarget(currentBlock.Hash, expectedTarget) {
 			return false
 		}
+
+		if err := validateBlockTimestampRules(&currentBlock, &prevBlock, bc.Chain[:i]); err != nil {
+			return false
+		}
+
+		if expectedHash, exists := Checkpoints[currentBlock.Index]; exists && expectedHash != "" {
+			if currentBlock.Hash != expectedHash {
+				return false
+			}
+		}
+
+		reward := CalculateBlockRewardGivenSupply(currentBlock.Index, runningSupply)
+		if err := simState.VerifyAndApplyBlock(&currentBlock, reward, mat); err != nil {
+			return false
+		}
+		runningSupply += reward
 	}
 	return true
 }

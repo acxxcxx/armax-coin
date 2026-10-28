@@ -77,7 +77,7 @@ if (Test-Path $armgui) {
 foreach ($b in $binsToTest) {
     $bName = Split-Path $b -Leaf
     $out = & $b -version 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or -not ($out -match "v1\.0\.4")) {
+    if ($LASTEXITCODE -ne 0 -or -not ($out -match "v1\.0\.5")) {
         throw "Failed version check for $bName (exit: $LASTEXITCODE, output: $out)"
     }
     Write-Host "    [OK] $bName : $($out.Trim())"
@@ -178,7 +178,7 @@ try {
     # 7. Check node /chain and /stats endpoint
     $statsUrl = "http://127.0.0.1:$rpcPort/stats"
     $statsResp = Invoke-RestMethod -Uri $statsUrl -Method Get -TimeoutSec 5
-    Write-Host "[OK] Node stats responsive (Height: $($statsResp.height), Supply: $($statsResp.supply_armx) ARMX)"
+    Write-Host "[OK] Node stats responsive (Height: $($statsResp.height), Supply: $($statsResp.circulating_supply) tARMX)"
 
     # 8. Send transaction test
     Write-Host "[+] Testing transaction creation and sending between wallets..." -ForegroundColor Green

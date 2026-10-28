@@ -29,7 +29,7 @@
 - **Node & P2P Ingestion:**
   - `ValidateAndAddBlock(newBlock Block)` (`core/consensus.go`): Performs full state overlay simulation before committing atomically to the `bbolt` transactional database.
   - `AddOrphanBlock(b Block, peerIP string)` (`node/p2p.go`): Verifies `b.CalculateHash() == b.Hash` and `HashMeetsTarget` prior to storing orphan blocks in memory, preventing memory-exhaustion DoS attacks.
-  - `IsChainValid()` (`core/blockchain.go`): Sequentially scans the local chain verifying `CalculateHash()` and `HashMeetsTarget` across every block from genesis to tip.
+  - `IsChainValid()` (`core/blockchain.go`): Sequentially scans the local chain from genesis to tip verifying `CalculateHashWithError()`, `HashMeetsTarget`, block/tx size bounds, `[C-26]` miner-coinbase matching, `[C-18]` duplicate transaction checks, `validateBlockTimestampRules`, checkpoints, and full account state/signature application.
 
 ### 1.3 Mining and Nonce Search
 - **Daemon In-Process Miner:** `MineBlockContext` (`core/blockchain.go`):

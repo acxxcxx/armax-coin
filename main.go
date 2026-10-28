@@ -17,10 +17,6 @@ import (
 )
 
 func main() {
-	fmt.Println("==================================================")
-	fmt.Println("WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited")
-	fmt.Println("==================================================")
-
 	networkFlag := flag.String("network", "testnet", "Network profile to run (testnet, mainnet) [C-33, L4-1]")
 	daemonFlag := flag.Bool("daemon", true, "Run node as RPC Daemon & P2P Server (default: true)")
 	testFlag := flag.Bool("test", false, "Run demo self-test suite instead of production node daemon")
@@ -147,6 +143,10 @@ func main() {
 		os.Exit(1)
 	}
 	activeNet := core.GetActiveNetwork()
+
+	fmt.Println("==================================================")
+	fmt.Println(core.NetworkWarningLine())
+	fmt.Println("==================================================")
 
 	debugLogPath := filepath.Join(cliNet.DataDir, "debug.log")
 	if err := core.InitLogger(*logLevelFlag, *debugCategoriesFlag, *printToConsoleFlag, debugLogPath); err != nil {

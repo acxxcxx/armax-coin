@@ -601,7 +601,7 @@ Hard-fork release. Timestamp rules C1/C2 (MTP-55, non-decreasing timestamps) act
 
 - **Testnet display ticker `tARMX`:** daemon, miner, GUI, and CLI help use the active ticker (display-only). `ARMX` remains the mainnet ticker.
 - **CLI standards:** non-zero exit codes on errors, JSON error output for `armsend -json`, warnings on stderr, deprecation notices for legacy aliases, and `-h`/`--help`.
-- **Fixes:** Unix GUI miner RPC authentication (HTTP 401) and missing TXID in the Unix GUI transactions tab.
+- **Fixes:** Unix GUI miner RPC authentication (HTTP 401), missing TXID in the Unix GUI transactions tab, encrypted wallet creation/restore persistence in Unix Web GUI (`gui/main_unix.go`), `armwallet -rescan` JSON array parsing, `/getmininginfo` `armaxhash-v2` reporting, `/getblocktemplate` state overlay filtering, and full consensus/state verification in `IsChainValid()` (`armcoind -verifychain`).
 - **Reconnect fix:** seed peers are never evicted and are re-dialed every ~60 s (quietly, without log spam); a node that lost its internet link rejoins automatically. A heavier fork deeper than 720 blocks logs an explicit `-resync` hint.
 - **Security:** pinned `toolchain go1.27.3` (`GO-2026-6809`); fail-fast startup errors instead of panics.
 - **Note:** `v1.0.2` was never released; the version sequence goes `v1.0.1` to `v1.0.3`.

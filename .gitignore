@@ -51,6 +51,9 @@ Thumbs.db
 server-web/armax-web
 server-web/armax-web-*
 server-web/armax-web.exe
+web-explorer/armax-web
+web-explorer/armax-web-*
+web-explorer/armax-web.exe
 
 # Temporary scratch directory
 scratch/
