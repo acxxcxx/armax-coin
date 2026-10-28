@@ -628,6 +628,9 @@ Armaxcoin is strategically architected across 7 core pillars:
 Hard-fork release. Timestamp rules C1/C2 (MTP-55, non-decreasing timestamps) activate at testnet block 8,000; all nodes must upgrade before then. Genesis, NetworkID, and hashing are unchanged, and existing testnet blocks remain valid.
 
 - **Testnet display ticker `tARMX`:** daemon, miner, GUI, and CLI help use the active ticker (display-only). `ARMX` remains the mainnet ticker.
+- **P2P block synchronization past block #4000:** Fixed integer precision loss for 64-bit nonces (> 2^53) during JSON deserialization in `GET_BLOCK_RANGE`, eliminating hash mismatch errors during peer sync.
+- **Stratum v1 TCP Pool Client (`armminer`):** Native `stratum+tcp://` client with multi-endpoint failover, dynamic VarDiff support, and per-thread nonce partitioning.
+- **Windows Defender false positive mitigation:** Enforced `-trimpath` and stripped symbols across PE executables to eliminate machine learning heuristic flags.
 - **CLI standards:** non-zero exit codes on errors, JSON error output for `armsend -json`, warnings on stderr, deprecation notices for legacy aliases, and `-h`/`--help`.
 - **Fixes:** Unix GUI miner RPC authentication (HTTP 401), missing TXID in the Unix GUI transactions tab, encrypted wallet creation/restore persistence in Unix Web GUI (`gui/main_unix.go`), `armwallet -rescan` JSON array parsing, `/getmininginfo` `armaxhash-v2` reporting, `/getblocktemplate` state overlay filtering, and full consensus/state verification in `IsChainValid()` (`armcoind -verifychain`).
 - **Reconnect fix:** seed peers are never evicted and are re-dialed every ~60 s (quietly, without log spam); a node that lost its internet link rejoins automatically. A heavier fork deeper than 720 blocks logs an explicit `-resync` hint.

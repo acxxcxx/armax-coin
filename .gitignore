@@ -47,6 +47,10 @@ blockchain.db.invalid-*
 *.syso
 !gui/rsrc_windows_amd64.syso
 
+# Release artifacts & staging
+release_assets/
+dist/
+
 # OS / Editor Artifacts
 .DS_Store
 Thumbs.db
