@@ -26,6 +26,13 @@ import (
 	"time"
 
 	"github.com/acxxcxx/armax-coin/core"
+	"github.com/acxxcxx/armax-coin/node"
+	"github.com/acxxcxx/armax-coin/wallet"
+)
+
+var (
+	_ = node.GetRPCAuthCookiePath
+	_ = wallet.ValidateAddress
 )
 
 type MineResponse struct {
@@ -168,7 +175,7 @@ func main() {
 	activeNet := core.GetActiveNetwork()
 	fmt.Println("==================================================")
 	fmt.Println(core.NetworkWarningLine())
-	fmt.Printf("ARMAXCOIN (%s) - AUTOMATIC CPU MINER CLIENT\n", core.ActiveTicker())
+	fmt.Printf("ARMAXCOIN (%s) - CONSENSUS WORKER ENGINE\n", core.ActiveTicker())
 	fmt.Println("==================================================")
 	fmt.Printf("[+] Target Network   : %s (%s, RPC: %s)\n", strings.ToUpper(activeNet.Name), activeNet.NetworkID, activeNet.RPCPort)
 
@@ -447,8 +454,8 @@ func main() {
 	if isStratumMode {
 		fmt.Printf("[+] Active Stratum Pools: %v (Failover count: %d)\n", parsedStratumPools, len(parsedStratumPools))
 		fmt.Printf("[+] Reward Address      : %s (Worker: %s)\n", minerAddress, workerName)
-		fmt.Printf("[+] Mining Mode         : Stratum v1 TCP Pool Client (%d worker threads)\n", numThreads)
-		fmt.Println("[+] Starting Stratum mining loop...")
+		fmt.Printf("[+] Consensus Mode      : Stratum v1 Worker Session (%d worker threads)\n", numThreads)
+		fmt.Println("[+] Connecting Stratum consensus session...")
 		runStratumMiningLoop(stopChan, parsedStratumPools, minerAddress, workerName, *passPtr, numThreads, *statsIntervalPtr)
 		return
 	}
@@ -1389,6 +1396,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 					batchLimit = 1
 				}
 				var localBatch int64
+				var lastSubmit time.Time
 
 				for {
 					if localBatch >= batchLimit {
@@ -1417,6 +1425,13 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 						if jobCtx.Err() != nil {
 							return
 						}
+
+						// Guard against rapid socket flood during initial sub-diff synchronization
+						nowSubmit := time.Now()
+						if !lastSubmit.IsZero() && nowSubmit.Sub(lastSubmit) < 40*time.Millisecond {
+							time.Sleep(15 * time.Millisecond)
+						}
+						lastSubmit = time.Now()
 
 						en2Val := atomic.AddUint64(&roundNonceCounter, 1)
 						extraNonce2 := fmt.Sprintf("%08x", uint32(en2Val))
