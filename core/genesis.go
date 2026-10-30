@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -172,6 +173,23 @@ func GetRegtestGenesisBlock() Block {
 	return cp
 }
 
+// GetGenesisBlockForNetwork returns the Genesis block for a specific network ID [C-33, P2-6]
+func GetGenesisBlockForNetwork(netID string) Block {
+	canon := strings.ToUpper(strings.TrimSpace(netID))
+	switch canon {
+	case "ARMX-MAINNET-1", "MAINNET":
+		return GetMainnetGenesisBlock()
+	case "ARMX-TESTNET-1", "TESTNET":
+		return GetTestnetGenesisBlock()
+	case "ARMX-REGTEST-1", "REGTEST":
+		return GetRegtestGenesisBlock()
+	case "ARMX-SOAK-1", "SOAK":
+		return GetSoakGenesisBlock()
+	default:
+		return GetGenesisBlock()
+	}
+}
+
 // GetGenesisBlock returns the Genesis block for the active network profile [C-33, P2-6, L3-5, L4-8]
 func GetGenesisBlock() Block {
 	if GetActiveNetwork().Name == "testnet" {
@@ -186,12 +204,12 @@ func GetGenesisBlock() Block {
 	return GetMainnetGenesisBlock()
 }
 
-// ValidateGenesisBlock strictly verifies that a block 0 matches the active network's protocol Genesis specification [C-23, P2-6]
-func ValidateGenesisBlock(b *Block) error {
+// ValidateGenesisBlockForNetwork strictly verifies that block 0 matches the network's protocol Genesis specification [C-23, P2-6]
+func ValidateGenesisBlockForNetwork(b *Block, netID string) error {
 	if b == nil {
 		return fmt.Errorf("genesis block is nil")
 	}
-	gen := GetGenesisBlock()
+	gen := GetGenesisBlockForNetwork(netID)
 
 	if b.Index != 0 {
 		return fmt.Errorf("genesis block index must be 0, got %d", b.Index)
@@ -221,7 +239,7 @@ func ValidateGenesisBlock(b *Block) error {
 	if b.Hash == "" || calcHash != gen.Hash {
 		return fmt.Errorf("genesis block calculated hash mismatch")
 	}
-	if b.CalculateMerkleRoot() != gen.MerkleRoot {
+	if b.CalculateMerkleRootForNetwork(netID) != gen.MerkleRoot {
 		return fmt.Errorf("genesis block calculated merkle root mismatch")
 	}
 	if len(b.Transactions) != len(gen.Transactions) {
@@ -235,9 +253,14 @@ func ValidateGenesisBlock(b *Block) error {
 			t1.Type != t2.Type || t1.SenderPub != t2.SenderPub {
 			return fmt.Errorf("genesis transaction %d payload mismatch", i)
 		}
-		if t1.WitnessHashHex() != t2.WitnessHashHex() {
+		if t1.WitnessHashHexForNetwork(netID) != t2.WitnessHashHexForNetwork(netID) {
 			return fmt.Errorf("genesis transaction %d hash mismatch", i)
 		}
 	}
 	return nil
+}
+
+// ValidateGenesisBlock strictly verifies that block 0 matches the active network profile's Genesis specification [C-23, P2-6].
+func ValidateGenesisBlock(b *Block) error {
+	return ValidateGenesisBlockForNetwork(b, GetActiveNetwork().NetworkID)
 }

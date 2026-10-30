@@ -72,7 +72,7 @@ func TestCLINetwork_Resolution(t *testing.T) {
 	if errMain != nil {
 		t.Fatalf("Expected ResolveCLINetwork(\"mainnet\") to succeed with testhooks tag, got: %v", errMain)
 	}
-	if cfgMain.RPCPort != "19332" || cfgMain.P2PPort != "19334" || cfgMain.DataDir != "data" {
+	if cfgMain.RPCPort != "19332" || cfgMain.P2PPort != "19334" || cfgMain.DataDir != "mainnet" {
 		t.Errorf("Mainnet config mismatch: %+v", cfgMain)
 	}
 

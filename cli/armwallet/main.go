@@ -23,6 +23,7 @@ const (
 func main() {
 	flag.Usage = printUsage
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
+	localMainnetPtr := flag.Bool("local-mainnet", false, "Enable strictly local, isolated Mainnet mode (loopback only, no public seeds) [L4-1]")
 	createPtr := flag.Bool("create", false, "Create a new quantum-safe wallet with 24-word recovery mnemonic")
 	newAddressPtr := flag.Bool("newaddress", false, "Create a new quantum-safe address/wallet (deprecated alias for -create)")
 	restorePtr := flag.String("restore", "", "Restore wallet from BIP-39 mnemonic phrase (24 or 12 words)")
@@ -93,10 +94,12 @@ func main() {
 		_ = os.Setenv("ARMX_DATA_DIR", *dataDirPtr)
 	}
 
-	targetWalletPath := *filePtr
-	if *walletPtr != "" {
-		targetWalletPath = *walletPtr
-	}
+	fileExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "file" || f.Name == "wallet" {
+			fileExplicit = true
+		}
+	})
 
 	netChoice := *networkPtr
 	isExplicit := false
@@ -118,6 +121,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
 		os.Exit(1)
 	}
+	if *localMainnetPtr {
+		core.EnableLocalMainnet()
+		if !isExplicit || strings.EqualFold(netChoice, "mainnet") {
+			netChoice = "mainnet"
+		} else {
+			fmt.Fprintf(os.Stderr, "[-] Error: -local-mainnet cannot be combined with network '%s' (mainnet required)\n", netChoice)
+			os.Exit(1)
+		}
+	}
+
 	cliNet, err := core.ResolveCLINetwork(netChoice)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] Invalid network profile '%s': %v\n", netChoice, err)
@@ -128,6 +141,16 @@ func main() {
 		os.Exit(1)
 	}
 	activeNet := core.GetActiveNetwork()
+
+	var targetWalletPath string
+	if fileExplicit {
+		targetWalletPath = *filePtr
+		if *walletPtr != "" {
+			targetWalletPath = *walletPtr
+		}
+	} else {
+		targetWalletPath = wallet.GetDefaultWalletPathForNetwork(netChoice)
+	}
 
 	daemonURL := *daemonPtr
 	if daemonURL == "" {

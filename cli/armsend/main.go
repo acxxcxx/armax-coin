@@ -69,6 +69,7 @@ Flags:
 func main() {
 	flag.Usage = printUsage
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
+	localMainnetPtr := flag.Bool("local-mainnet", false, "Enable strictly local, isolated Mainnet mode (loopback only, no public seeds) [L4-1]")
 	toPtr := flag.String("to", "", "Recipient wallet address (required, Bech32 armx1...)")
 	amountPtr := flag.String("amount", "", "Amount to send in whole coins, decimal (e.g. '10.5')")
 	amountArmxPtr := flag.String("amount-armx", "", "Amount to send in whole coins, decimal (deprecated alias for -amount)")
@@ -136,10 +137,12 @@ func main() {
 		_ = os.Setenv("ARMX_DATA_DIR", *dataDirPtr)
 	}
 
-	targetWalletFile := *walletFilePtr
-	if *filePtr != "" {
-		targetWalletFile = *filePtr
-	}
+	walletExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "wallet" || f.Name == "file" {
+			walletExplicit = true
+		}
+	})
 
 	netChoice := *networkPtr
 	isExplicit := false
@@ -160,6 +163,15 @@ func main() {
 	if strings.EqualFold(netChoice, "regtest") && !isExplicit {
 		exitError(*jsonPtr, "regtest profile cannot be selected without explicit flag '-network regtest'")
 	}
+	if *localMainnetPtr {
+		core.EnableLocalMainnet()
+		if !isExplicit || strings.EqualFold(netChoice, "mainnet") {
+			netChoice = "mainnet"
+		} else {
+			exitError(*jsonPtr, fmt.Sprintf("-local-mainnet cannot be combined with network '%s' (mainnet required)", netChoice))
+		}
+	}
+
 	cliNet, err := core.ResolveCLINetwork(netChoice)
 	if err != nil {
 		exitError(*jsonPtr, fmt.Sprintf("Invalid network profile '%s': %v", netChoice, err))
@@ -168,6 +180,16 @@ func main() {
 		exitError(*jsonPtr, fmt.Sprintf("Failed to set network profile '%s': %v", netChoice, err))
 	}
 	activeNet := core.GetActiveNetwork()
+
+	var targetWalletFile string
+	if walletExplicit {
+		targetWalletFile = *walletFilePtr
+		if *filePtr != "" {
+			targetWalletFile = *filePtr
+		}
+	} else {
+		targetWalletFile = wallet.GetDefaultWalletPathForNetwork(netChoice)
+	}
 
 	if !*jsonPtr {
 		fmt.Println("==================================================")

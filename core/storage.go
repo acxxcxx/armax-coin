@@ -30,7 +30,11 @@ func SetDBPath(path string) {
 }
 
 // GetDBPath determines the absolute path for blockchain.db.
-// Testnet profiles are strictly isolated into a <datadir>/testnet/ subfolder [L1-3].
+// Network profiles are strictly isolated into respective subfolders:
+// mainnet -> <datadir>/mainnet/
+// testnet -> <datadir>/testnet/
+// regtest -> <datadir>/regtest/
+// soak    -> <datadir>/soak/
 func GetDBPath() string {
 	dbPathMu.RLock()
 	cPath := customDBPath
@@ -39,40 +43,51 @@ func GetDBPath() string {
 		return cPath
 	}
 
-	subDir := ""
-	if netName := GetActiveNetwork().Name; netName == "testnet" || netName == "regtest" || netName == "soak" {
-		subDir = netName
+	netName := GetActiveNetwork().Name
+	subDir := netName
+	if subDir == "" {
+		subDir = "mainnet"
 	}
 
 	// 1. Check environment variable override
 	if envDir := os.Getenv("ARMX_DATA_DIR"); envDir != "" {
 		targetDir := envDir
-		if subDir != "" && filepath.Base(envDir) != subDir {
+		if filepath.Base(envDir) != subDir {
 			targetDir = filepath.Join(envDir, subDir)
 		}
 		_ = os.MkdirAll(targetDir, 0755)
-		return filepath.Join(targetDir, DBFileName)
+		targetFile := filepath.Join(targetDir, DBFileName)
+
+		// Check for legacy unisolated database in root data directory without mutating it
+		if targetDir != envDir {
+			legacyFile := filepath.Join(envDir, DBFileName)
+			if _, err := os.Stat(legacyFile); err == nil {
+				if _, errT := os.Stat(targetFile); os.IsNotExist(errT) {
+					fmt.Printf("[!] Notice: Found legacy database at %s. Network '%s' now uses isolated path %s. The legacy file was left intact. Please copy or move it manually if you wish to reuse it.\n", legacyFile, netName, targetFile)
+				}
+			}
+		}
+		return targetFile
 	}
 
-	// 2. Check if blockchain.db already exists next to the running executable
+	// 2. Check if blockchain.db already exists in network subfolder next to executable
 	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
-		if subDir != "" {
-			execDir = filepath.Join(execDir, subDir)
-			_ = os.MkdirAll(execDir, 0755)
-		}
-		candidate := filepath.Join(execDir, DBFileName)
+		targetDir := filepath.Join(execDir, subDir)
+		_ = os.MkdirAll(targetDir, 0755)
+		candidate := filepath.Join(targetDir, DBFileName)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
+		legacyCandidate := filepath.Join(execDir, DBFileName)
+		if _, err := os.Stat(legacyCandidate); err == nil {
+			fmt.Printf("[!] Notice: Found legacy database at %s. Network '%s' now uses isolated path %s. The legacy file was left intact. Please copy or move it manually if you wish to reuse it.\n", legacyCandidate, netName, candidate)
+		}
 	}
 
-	// 3. Check if blockchain.db exists in current working directory
-	baseDir := "."
-	if subDir != "" {
-		baseDir = subDir
-		_ = os.MkdirAll(baseDir, 0755)
-	}
+	// 3. Check if blockchain.db exists in current working directory under subDir
+	baseDir := subDir
+	_ = os.MkdirAll(baseDir, 0755)
 	candidate := filepath.Join(baseDir, DBFileName)
 	if _, err := os.Stat(candidate); err == nil {
 		if abs, err := filepath.Abs(candidate); err == nil {
@@ -80,15 +95,16 @@ func GetDBPath() string {
 		}
 		return candidate
 	}
+	if _, err := os.Stat(DBFileName); err == nil {
+		fmt.Printf("[!] Notice: Found legacy database at ./%s. Network '%s' now uses isolated path %s. The legacy file was left intact. Please copy or move it manually if you wish to reuse it.\n", DBFileName, netName, candidate)
+	}
 
-	// 4. Default: Save next to executable
+	// 4. Default: Save next to executable in subDir
 	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
-		if subDir != "" {
-			execDir = filepath.Join(execDir, subDir)
-			_ = os.MkdirAll(execDir, 0755)
-		}
-		return filepath.Join(execDir, DBFileName)
+		targetDir := filepath.Join(execDir, subDir)
+		_ = os.MkdirAll(targetDir, 0755)
+		return filepath.Join(targetDir, DBFileName)
 	}
 
 	return candidate
@@ -266,7 +282,7 @@ func loadBlockchainFromPath(dbPath string) (*Blockchain, bool, error) {
 		return nil, false, fmt.Errorf("stat database %q: %w", dbPath, err)
 	}
 
-	db, err := OpenStore(dbPath)
+	db, err := OpenStoreReadOnly(dbPath)
 	if err != nil {
 		// Quarantine only when bbolt identifies the file as an invalid database.
 		// Other errors (for example, permissions or a lock timeout) should not
@@ -357,11 +373,11 @@ func loadBlockchainFromPath(dbPath string) (*Blockchain, bool, error) {
 		)
 	}
 
-	// [C-23] Strictly validate Genesis block
+	// [C-23] Strictly validate Genesis block against active network rules
 	if err := ValidateGenesisBlock(&blocks[0]); err != nil {
 		_ = db.Close()
-		MarkDBInvalid(dbPath)
-		return nil, false, fmt.Errorf("stored database genesis mismatch: %w", err)
+		gen := GetGenesisBlock()
+		return nil, false, fmt.Errorf("stored database genesis mismatch: database genesis hash %s does not match active network %s genesis hash %s: %w (source database left unmodified)", blocks[0].Hash, GetActiveNetwork().Name, gen.Hash, err)
 	}
 	blocks[0] = GetGenesisBlock()
 

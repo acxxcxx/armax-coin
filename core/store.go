@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -64,8 +65,25 @@ func encodeTxLocation(height uint64, txIdx uint64) []byte {
 	return buf
 }
 
+// OpenStoreReadOnly opens an existing bbolt database in strictly read-only mode [F4].
+// It guarantees zero mutations or writes are made to the database file before network
+// identity and genesis validation are complete.
+func OpenStoreReadOnly(path string) (*bolt.DB, error) {
+	db, err := bolt.Open(path, 0600, &bolt.Options{
+		Timeout:  3 * time.Second,
+		ReadOnly: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 // OpenStore opens or initializes the bbolt database and creates required buckets [C-25]
 func OpenStore(path string) (*bolt.DB, error) {
+	if dir := filepath.Dir(path); dir != "" {
+		_ = os.MkdirAll(dir, 0755)
+	}
 	db, err := bolt.Open(path, 0600, &bolt.Options{
 		Timeout: 3 * time.Second,
 	})

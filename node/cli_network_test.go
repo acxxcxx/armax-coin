@@ -159,8 +159,8 @@ func TestCLI_DataDirAndSeedIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to resolve mainnet CLI config: %v", err)
 	}
-	if mainCfg.DataDir != "data" {
-		t.Errorf("Expected mainnet DataDir 'data', got '%s'", mainCfg.DataDir)
+	if mainCfg.DataDir != "mainnet" {
+		t.Errorf("Expected mainnet DataDir 'mainnet', got '%s'", mainCfg.DataDir)
 	}
 	if mainCfg.RPCPort != "19332" || mainCfg.P2PPort != "19334" {
 		t.Errorf("Expected mainnet ports 19332/19334, got %s/%s", mainCfg.RPCPort, mainCfg.P2PPort)

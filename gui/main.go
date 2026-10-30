@@ -299,29 +299,55 @@ func saveAddressBook() error {
 	return os.Chmod(path, 0600)
 }
 
-func isNodeOnline(url string) bool {
+type NodeNetworkStatus struct {
+	Online    bool
+	Match     bool
+	NetworkID string
+	Err       error
+}
+
+func verifyNodeNetwork(url string, expectedNetID string) NodeNetworkStatus {
 	client := http.Client{Timeout: 800 * time.Millisecond}
 	resp, err := client.Get(url + "/stats")
-	if err == nil && resp.StatusCode == 200 {
-		_ = resp.Body.Close()
-		return true
+	if err != nil {
+		return NodeNetworkStatus{Online: false, Err: err}
 	}
-	return false
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return NodeNetworkStatus{Online: false, Err: fmt.Errorf("node returned HTTP %d", resp.StatusCode)}
+	}
+
+	// 1. Mandatory response header check
+	hdrID := strings.TrimSpace(resp.Header.Get("X-Network-ID"))
+	if hdrID == "" {
+		return NodeNetworkStatus{Online: true, Match: false, Err: errors.New("missing X-Network-ID response header")}
+	}
+	if hdrID != expectedNetID {
+		return NodeNetworkStatus{Online: true, Match: false, NetworkID: hdrID, Err: fmt.Errorf("network mismatch on response header: expected '%s', got '%s'", expectedNetID, hdrID)}
+	}
+
+	var stats struct {
+		NetworkID string `json:"network_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		return NodeNetworkStatus{Online: true, Match: false, Err: fmt.Errorf("malformed /stats response: %w", err)}
+	}
+	if stats.NetworkID == "" {
+		return NodeNetworkStatus{Online: true, Match: false, Err: errors.New("node returned empty network_id")}
+	}
+	if stats.NetworkID != expectedNetID {
+		return NodeNetworkStatus{Online: true, Match: false, NetworkID: stats.NetworkID, Err: fmt.Errorf("network mismatch: expected '%s', got '%s'", expectedNetID, stats.NetworkID)}
+	}
+	return NodeNetworkStatus{Online: true, Match: true, NetworkID: stats.NetworkID}
+}
+
+func isNodeOnline(url string) bool {
+	status := verifyNodeNetwork(url, activeNetwork.NetworkID)
+	return status.Online && status.Match
 }
 
 func findWalletPath() string {
-	if exe, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exe)
-		cand := filepath.Join(exeDir, "wallet.json")
-		if _, err := os.Stat(cand); err == nil {
-			return cand
-		}
-		if _, err := os.Stat("wallet.json"); err == nil {
-			return "wallet.json"
-		}
-		return cand
-	}
-	return "wallet.json"
+	return wallet.GetDefaultWalletPath()
 }
 
 func promptCreateWalletDialog(owner walk.Form) (*wallet.Wallet, error) {
@@ -1220,8 +1246,15 @@ func main() {
 	}
 	rpcURL = "http://127.0.0.1:" + rpcPort
 
+	// Check if port already has a running daemon
+	nodeStatus := verifyNodeNetwork(rpcURL, activeNetwork.NetworkID)
+	if nodeStatus.Online && !nodeStatus.Match {
+		fmt.Fprintf(os.Stderr, "[-] Error: Daemon on %s is running network '%s', expected '%s'. Connection rejected to prevent cross-network contamination.\n", rpcURL, nodeStatus.NetworkID, activeNetwork.NetworkID)
+		os.Exit(1)
+	}
+
 	// 1. Start embedded node if not already running on port
-	if !isNodeOnline(rpcURL) {
+	if !nodeStatus.Online {
 		bc, openErr := core.OpenBlockchain(3)
 		if openErr != nil {
 			fmt.Printf("[-] %v\n", openErr)
@@ -2257,11 +2290,22 @@ func refreshNodeAndWallet(mw *walk.MainWindow, lblBal, lblArmoids, lblH, lblP, l
 		resp, err := client.Get(rpcURL + "/stats")
 		var stats StatsResponse
 		hasStats := false
+		var networkMismatchErr error
 		if err == nil && resp.StatusCode == 200 {
 			if json.NewDecoder(resp.Body).Decode(&stats) == nil {
-				hasStats = true
+				if stats.NetworkID == "" {
+					networkMismatchErr = errors.New("node returned empty network ID")
+				} else if stats.NetworkID != activeNetwork.NetworkID {
+					networkMismatchErr = fmt.Errorf("network ID mismatch: expected '%s', node reported '%s'", activeNetwork.NetworkID, stats.NetworkID)
+				} else {
+					hasStats = true
+				}
+			} else {
+				networkMismatchErr = errors.New("malformed /stats response")
 			}
 			_ = resp.Body.Close()
+		} else if err != nil {
+			networkMismatchErr = err
 		}
 
 		peerCount := 0
@@ -2280,10 +2324,10 @@ func refreshNodeAndWallet(mw *walk.MainWindow, lblBal, lblArmoids, lblH, lblP, l
 			}
 		}
 
-		// 2. Fetch Wallet /balance
+		// 2. Fetch Wallet /balance only if connected to verified matching network
 		var bal BalanceResponse
 		hasBal := false
-		if activeAddress != "" {
+		if hasStats && activeAddress != "" {
 			bResp, bErr := client.Get(rpcURL + "/balance?address=" + activeAddress)
 			if bErr == nil && bResp.StatusCode == 200 {
 				if json.NewDecoder(bResp.Body).Decode(&bal) == nil {
@@ -2407,7 +2451,11 @@ func refreshNodeAndWallet(mw *walk.MainWindow, lblBal, lblArmoids, lblH, lblP, l
 				}
 			} else {
 				if lblDiagDaemonStatus != nil {
-					lblDiagDaemonStatus.SetText("Daemon Unreachable / Offline (" + rpcURL + ")")
+					if networkMismatchErr != nil {
+						lblDiagDaemonStatus.SetText(fmt.Sprintf("Connection Rejected: %v", networkMismatchErr))
+					} else {
+						lblDiagDaemonStatus.SetText("Daemon Unreachable / Offline (" + rpcURL + ")")
+					}
 				}
 			}
 		})
@@ -2625,6 +2673,15 @@ func sendTransaction(mw *walk.MainWindow, leTo, leAmt, leFee, lePass *walk.LineE
 	}
 
 	go func() {
+		// Verify node is online and on the matching network profile
+		nodeNet := verifyNodeNetwork(rpcURL, activeNetwork.NetworkID)
+		if !nodeNet.Match {
+			mw.Synchronize(func() {
+				walk.MsgBox(mw, "Network Mismatch", fmt.Sprintf("Cannot send transaction: daemon validation failed (%v)", nodeNet.Err), walk.MsgBoxIconError)
+			})
+			return
+		}
+
 		// Query next nonce
 		client := http.Client{Timeout: 5 * time.Second}
 		bResp, err := client.Get(fmt.Sprintf("%s/balance?address=%s", rpcURL, signingWallet.Address))
@@ -2932,19 +2989,69 @@ func stopMiningLoop(lblStat, lblHash *walk.Label, btnStart, btnStop *walk.PushBu
 	teLog.ScrollToCaret()
 }
 
-func runGUICommand(owner walk.Form, input *walk.LineEdit, output *walk.TextEdit) {
-	fields := strings.Fields(strings.TrimSpace(input.Text()))
+// queryValidatedNodeEndpoint performs an HTTP GET request to endpointPath,
+// strictly requiring and verifying the daemon's network identity on the exact response
+// via the mandatory X-Network-ID response header and, for /stats, the payload field.
+// This completely eliminates TOCTOU by rejecting responses without a matching header on the spot.
+func queryValidatedNodeEndpoint(targetRPCURL string, endpointPath string, expectedNetID string, timeout time.Duration) ([]byte, int, error) {
+	client := http.Client{Timeout: timeout}
+	reqURL := strings.TrimRight(targetRPCURL, "/") + endpointPath
+	resp, err := client.Get(reqURL)
+	if err != nil {
+		return nil, 0, fmt.Errorf("daemon offline or unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, resp.StatusCode, fmt.Errorf("node returned HTTP %d", resp.StatusCode)
+	}
+
+	// 1. Mandatory response header validation: every remote endpoint response MUST include X-Network-ID
+	hdrNetID := strings.TrimSpace(resp.Header.Get("X-Network-ID"))
+	if hdrNetID == "" {
+		return nil, resp.StatusCode, errors.New("missing X-Network-ID response header")
+	}
+	if hdrNetID != expectedNetID {
+		return nil, resp.StatusCode, fmt.Errorf("network mismatch on response header: expected '%s', got '%s'", expectedNetID, hdrNetID)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// 2. Additional defense-in-depth verification for /stats payload
+	if strings.HasPrefix(endpointPath, "/stats") {
+		var stats struct {
+			NetworkID string `json:"network_id"`
+		}
+		if err := json.Unmarshal(data, &stats); err != nil {
+			return nil, resp.StatusCode, fmt.Errorf("malformed /stats response: %w", err)
+		}
+		if stats.NetworkID == "" {
+			return nil, resp.StatusCode, errors.New("node returned empty network_id")
+		}
+		if stats.NetworkID != expectedNetID {
+			return nil, resp.StatusCode, fmt.Errorf("network mismatch on response body: expected '%s', got '%s'", expectedNetID, stats.NetworkID)
+		}
+	}
+
+	return data, resp.StatusCode, nil
+}
+
+// executeConsoleCommand parses and executes a read-only console command against the RPC node,
+// verifying the daemon's network identity on the exact response received.
+func executeConsoleCommand(rawCmd string, targetRPCURL string, expectedNetID string) string {
+	fields := strings.Fields(strings.TrimSpace(rawCmd))
 	if len(fields) == 0 {
-		return
+		return ""
 	}
 	cmd := strings.ToLower(fields[0])
 	if cmd == "clear" {
-		output.SetText("")
-		return
+		return ""
 	}
 	if cmd == "help" {
-		output.SetText("ARMAX GUI CLI (read-only commands)\nhelp\ngetnetworkinfo\ngetblockchaininfo\ngetpeerinfo\ngetbalance [address]\ngethistory [address]\ngetmempoolinfo\nclear\n\nCommands query the configured node; they do not execute OS shell commands.")
-		return
+		return "ARMAX GUI CLI (read-only commands)\nhelp\ngetnetworkinfo\ngetblockchaininfo\ngetpeerinfo\ngetbalance [address]\ngethistory [address]\ngetmempoolinfo\nclear\n\nCommands query the configured node; they do not execute OS shell commands."
 	}
 	path := ""
 	switch cmd {
@@ -2958,8 +3065,7 @@ func runGUICommand(owner walk.Form, input *walk.LineEdit, output *walk.TextEdit)
 			addr = fields[1]
 		}
 		if !core.ValidateAddress(addr) {
-			output.SetText("Invalid address. Usage: getbalance [armx1... address]")
-			return
+			return "Invalid address. Usage: getbalance [armx1... address]"
 		}
 		path = "/balance?address=" + url.QueryEscape(addr)
 	case "gethistory":
@@ -2968,51 +3074,58 @@ func runGUICommand(owner walk.Form, input *walk.LineEdit, output *walk.TextEdit)
 			addr = fields[1]
 		}
 		if !core.ValidateAddress(addr) {
-			output.SetText("Invalid address. Usage: gethistory [armx1... address]")
-			return
+			return "Invalid address. Usage: gethistory [armx1... address]"
 		}
 		path = "/history?address=" + url.QueryEscape(addr)
 	default:
-		output.SetText("Unknown command. Type help for supported commands.")
+		return "Unknown command. Type help for supported commands."
+	}
+
+	data, statusCode, err := queryValidatedNodeEndpoint(targetRPCURL, path, expectedNetID, 5*time.Second)
+	if err != nil {
+		if strings.Contains(err.Error(), "offline") || strings.Contains(err.Error(), "unreachable") {
+			return fmt.Sprintf("CLI error: daemon offline or unreachable: %v", err)
+		}
+		return fmt.Sprintf("CLI error: network validation failed: %v", err)
+	}
+	return fmt.Sprintf("$ %s\nHTTP %d\n%s", strings.TrimSpace(rawCmd), statusCode, string(data))
+}
+
+func runGUICommand(owner walk.Form, input *walk.LineEdit, output *walk.TextEdit) {
+	cmdText := strings.TrimSpace(input.Text())
+	fields := strings.Fields(cmdText)
+	if len(fields) == 0 {
+		return
+	}
+	cmd := strings.ToLower(fields[0])
+	if cmd == "clear" {
+		output.SetText("")
 		return
 	}
 	go func() {
-		client := http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Get(strings.TrimRight(rpcURL, "/") + path)
-		if err != nil {
-			output.Synchronize(func() { output.SetText("CLI error: " + err.Error()) })
-			return
-		}
-		defer resp.Body.Close()
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-		result := fmt.Sprintf("$ %s\nHTTP %d\n%s", strings.TrimSpace(input.Text()), resp.StatusCode, string(data))
+		result := executeConsoleCommand(cmdText, rpcURL, activeNetwork.NetworkID)
 		output.Synchronize(func() { output.SetText(result) })
 	}()
 }
 
 func queryNodeDiagnostics(teConsole *walk.TextEdit) {
 	go func() {
-		client := http.Client{Timeout: 3 * time.Second}
-		resp, err := client.Get(rpcURL + "/stats")
-		if err != nil {
+		statsData, _, sErr := queryValidatedNodeEndpoint(rpcURL, "/stats", activeNetwork.NetworkID, 3*time.Second)
+		if sErr != nil {
 			teConsole.Synchronize(func() {
-				teConsole.SetText("[-] Error querying /stats: " + err.Error())
+				teConsole.SetText(fmt.Sprintf("[-] Node diagnostics rejected: network validation failed: %v", sErr))
 			})
 			return
 		}
-		defer resp.Body.Close()
-		data, _ := io.ReadAll(resp.Body)
 
 		var pretty bytes.Buffer
-		_ = json.Indent(&pretty, data, "", "  ")
+		_ = json.Indent(&pretty, statsData, "", "  ")
 
-		pResp, pErr := client.Get(rpcURL + "/peers")
+		peersData, _, pErr := queryValidatedNodeEndpoint(rpcURL, "/peers", activeNetwork.NetworkID, 3*time.Second)
 		peersStr := "[]"
 		if pErr == nil {
-			pData, _ := io.ReadAll(pResp.Body)
-			pResp.Body.Close()
 			var pPretty bytes.Buffer
-			if json.Indent(&pPretty, pData, "", "  ") == nil {
+			if json.Indent(&pPretty, peersData, "", "  ") == nil {
 				peersStr = pPretty.String()
 			}
 		}
@@ -3026,18 +3139,15 @@ func queryNodeDiagnostics(teConsole *walk.TextEdit) {
 
 func queryNodePeers(teConsole *walk.TextEdit) {
 	go func() {
-		client := http.Client{Timeout: 3 * time.Second}
-		pResp, pErr := client.Get(rpcURL + "/peers")
-		if pErr != nil {
+		data, _, err := queryValidatedNodeEndpoint(rpcURL, "/peers", activeNetwork.NetworkID, 3*time.Second)
+		if err != nil {
 			teConsole.Synchronize(func() {
-				teConsole.SetText("[-] Error querying /peers: " + pErr.Error())
+				teConsole.SetText(fmt.Sprintf("[-] Node peers query rejected: network validation failed: %v", err))
 			})
 			return
 		}
-		defer pResp.Body.Close()
-		pData, _ := io.ReadAll(pResp.Body)
 		var pPretty bytes.Buffer
-		_ = json.Indent(&pPretty, pData, "", "  ")
+		_ = json.Indent(&pPretty, data, "", "  ")
 		output := fmt.Sprintf("=== CONNECTED PEERS (%s) ===\r\n%s\r\n", time.Now().Format("15:04:05"), pPretty.String())
 		teConsole.Synchronize(func() {
 			teConsole.SetText(output)
@@ -3047,18 +3157,15 @@ func queryNodePeers(teConsole *walk.TextEdit) {
 
 func queryNodeChain(teConsole *walk.TextEdit) {
 	go func() {
-		client := http.Client{Timeout: 3 * time.Second}
-		cResp, cErr := client.Get(rpcURL + "/chain")
-		if cErr != nil {
+		data, _, err := queryValidatedNodeEndpoint(rpcURL, "/chain", activeNetwork.NetworkID, 3*time.Second)
+		if err != nil {
 			teConsole.Synchronize(func() {
-				teConsole.SetText("[-] Error querying /chain: " + cErr.Error())
+				teConsole.SetText(fmt.Sprintf("[-] Node chain query rejected: network validation failed: %v", err))
 			})
 			return
 		}
-		defer cResp.Body.Close()
-		cData, _ := io.ReadAll(io.LimitReader(cResp.Body, 1<<20))
 		var cPretty bytes.Buffer
-		_ = json.Indent(&cPretty, cData, "", "  ")
+		_ = json.Indent(&cPretty, data, "", "  ")
 		output := fmt.Sprintf("=== BLOCKCHAIN RECENT HEADERS (%s) ===\r\n%s\r\n", time.Now().Format("15:04:05"), cPretty.String())
 		teConsole.Synchronize(func() {
 			teConsole.SetText(output)
@@ -3068,18 +3175,15 @@ func queryNodeChain(teConsole *walk.TextEdit) {
 
 func queryNodeMempool(teConsole *walk.TextEdit) {
 	go func() {
-		client := http.Client{Timeout: 3 * time.Second}
-		mResp, mErr := client.Get(rpcURL + "/mempool")
-		if mErr != nil {
+		data, _, err := queryValidatedNodeEndpoint(rpcURL, "/mempool", activeNetwork.NetworkID, 3*time.Second)
+		if err != nil {
 			teConsole.Synchronize(func() {
-				teConsole.SetText("[-] Error querying /mempool: " + mErr.Error())
+				teConsole.SetText(fmt.Sprintf("[-] Node mempool query rejected: network validation failed: %v", err))
 			})
 			return
 		}
-		defer mResp.Body.Close()
-		mData, _ := io.ReadAll(io.LimitReader(mResp.Body, 1<<20))
 		var mPretty bytes.Buffer
-		_ = json.Indent(&mPretty, mData, "", "  ")
+		_ = json.Indent(&mPretty, data, "", "  ")
 		output := fmt.Sprintf("=== UNCONFIRMED MEMPOOL TRANSACTIONS (%s) ===\r\n%s\r\n", time.Now().Format("15:04:05"), mPretty.String())
 		teConsole.Synchronize(func() {
 			teConsole.SetText(output)

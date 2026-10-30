@@ -68,6 +68,7 @@ type SubmitBlockResponse struct {
 
 func main() {
 	networkPtr := flag.String("network", "testnet", "Network profile (testnet, mainnet) [L1-3, L4-1]")
+	localMainnetPtr := flag.Bool("local-mainnet", false, "Enable strictly local, isolated Mainnet mode (loopback only, no public seeds) [L4-1]")
 	benchPtr := flag.Bool("benchmark", false, "Run CPU PoW hashing benchmark (hash/s per thread and total) [L1-6]")
 	minerAddrPtr := flag.String("miner", "", "Reward recipient wallet address (Bech32 armx1... or armx1...worker)")
 	workerPtr := flag.String("worker", "", "Pool worker identifier (default: 'default' or suffix after '.' in -miner)")
@@ -163,6 +164,16 @@ func main() {
 		fmt.Println("[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
 		os.Exit(1)
 	}
+	if *localMainnetPtr {
+		core.EnableLocalMainnet()
+		if !isExplicit || strings.EqualFold(netChoice, "mainnet") {
+			netChoice = "mainnet"
+		} else {
+			fmt.Printf("[-] Error: -local-mainnet cannot be combined with network '%s' (mainnet required)\n", netChoice)
+			os.Exit(1)
+		}
+	}
+
 	cliNet, err := core.ResolveCLINetwork(netChoice)
 	if err != nil {
 		fmt.Printf("[-] Invalid network profile '%s': %v\n", netChoice, err)
@@ -231,17 +242,9 @@ func main() {
 		}
 	}
 
-	// If miner address is not specified, attempt to read from wallet.json
+	// If miner address is not specified, attempt to read from isolated network wallet.json
 	if minerAddress == "" {
-		walletPath := "wallet.json"
-		if _, err := os.Stat(walletPath); os.IsNotExist(err) {
-			if execPath, err := os.Executable(); err == nil {
-				candidate := filepath.Join(filepath.Dir(execPath), "wallet.json")
-				if _, err := os.Stat(candidate); err == nil {
-					walletPath = candidate
-				}
-			}
-		}
+		walletPath := wallet.GetDefaultWalletPathForNetwork(netChoice)
 		if fileData, err := os.ReadFile(walletPath); err == nil {
 			var ks LocalKeystore
 			if err := json.Unmarshal(fileData, &ks); err == nil && ks.Address != "" {
@@ -438,8 +441,9 @@ func main() {
 
 	// Verify miner address is present and valid before beginning actual mining loop
 	if minerAddress == "" {
-		fmt.Println("[!] Error: No miner address specified and wallet.json could not be read.")
-		fmt.Println("[!] Usage: armminer -miner <Bech32-armx1-address> or run armwallet -create first.")
+		expectedWallet := wallet.GetDefaultWalletPathForNetwork(netChoice)
+		fmt.Printf("[!] Error: No miner address specified and %s could not be read.\n", expectedWallet)
+		fmt.Printf("[!] Usage: armminer -network %s -miner <Bech32-armx1-address> or run armwallet -network %s -create first.\n", netChoice, netChoice)
 		os.Exit(1)
 	}
 	if !core.ValidateAddress(minerAddress) {

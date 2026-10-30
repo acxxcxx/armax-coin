@@ -237,7 +237,7 @@ func QueryP2P(peerAddress string, msg Message, timeout time.Duration) (*Message,
 		return nil, err
 	}
 
-	conn, _, err := DialEncryptedWithFallback(peerAddress, timeout, !IsStrictTLS())
+	conn, _, err := DialEncryptedWithFallbackForNetwork(expectedNetID, peerAddress, timeout, !IsStrictTLS())
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func SendP2PMessage(peerAddress string, msg Message) error {
 		return errors.New("cannot send P2P message: network ID is missing or ambiguous")
 	}
 
-	conn, _, err := DialEncryptedWithFallback(peerAddress, 4*time.Second, !IsStrictTLS())
+	conn, _, err := DialEncryptedWithFallbackForNetwork(msg.NetworkID, peerAddress, 4*time.Second, !IsStrictTLS())
 	if err != nil {
 		return err
 	}

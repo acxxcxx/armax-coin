@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 
 func main() {
 	networkFlag := flag.String("network", "testnet", "Network profile to run (testnet, mainnet) [C-33, L4-1]")
+	localMainnetFlag := flag.Bool("local-mainnet", false, "Run isolated local Mainnet node (no public seeds, loopback only) [L4-1]")
 	daemonFlag := flag.Bool("daemon", true, "Run node as RPC Daemon & P2P Server (default: true)")
 	testFlag := flag.Bool("test", false, "Run demo self-test suite instead of production node daemon")
 	configFlag := flag.String("config", "armax.conf", "Path to node configuration file")
@@ -130,6 +132,16 @@ func main() {
 	if strings.EqualFold(networkChoice, "regtest") && !isNetworkFlagExplicit {
 		fmt.Println("[-] Error: regtest profile cannot be selected without explicit flag '-network regtest'")
 		os.Exit(1)
+	}
+
+	if *localMainnetFlag {
+		core.EnableLocalMainnet()
+		if !isNetworkFlagExplicit || strings.EqualFold(networkChoice, "mainnet") {
+			networkChoice = "mainnet"
+		} else {
+			fmt.Printf("[-] Error: -local-mainnet cannot be combined with network '%s' (mainnet required)\n", networkChoice)
+			os.Exit(1)
+		}
 	}
 
 	// Switch active network profile (testnet / mainnet) [C-33, L1-3, L4-1]
@@ -524,7 +536,26 @@ func main() {
 			cfg.RPCPassword = *rpcPasswordFlag
 		}
 		if *allowNonLoopbackFlag {
+			if *localMainnetFlag {
+				fmt.Println("[-] Error: -rpc-allow-non-loopback cannot be used in local mainnet mode")
+				os.Exit(1)
+			}
 			cfg.AllowNonLoopbackRPC = true
+		}
+
+		if *localMainnetFlag && *bindFlag != "" {
+			host := *bindFlag
+			if h, _, err := net.SplitHostPort(*bindFlag); err == nil {
+				host = h
+			}
+			host = strings.TrimPrefix(host, "[")
+			host = strings.TrimSuffix(host, "]")
+			ip := net.ParseIP(host)
+			isLoop := (ip != nil && ip.IsLoopback()) || strings.EqualFold(host, "localhost") || host == "127.0.0.1" || host == "::1"
+			if !isLoop {
+				fmt.Printf("[-] Error: -rpcbind cannot be bound to non-loopback address '%s' in local mainnet mode\n", *bindFlag)
+				os.Exit(1)
+			}
 		}
 
 		// Override seed peers if specified via CLI [N-20]
@@ -533,6 +564,20 @@ func main() {
 			for _, p := range strings.Split(*peersFlag, ",") {
 				trimmed := strings.TrimSpace(p)
 				if trimmed != "" {
+					if *localMainnetFlag {
+						host := trimmed
+						if h, _, err := net.SplitHostPort(trimmed); err == nil {
+							host = h
+						}
+						host = strings.TrimPrefix(host, "[")
+						host = strings.TrimSuffix(host, "]")
+						ip := net.ParseIP(host)
+						isLoop := (ip != nil && ip.IsLoopback()) || strings.EqualFold(host, "localhost") || host == "127.0.0.1" || host == "::1"
+						if !isLoop {
+							fmt.Printf("[-] Error: peer '%s' rejected: local mainnet mode strictly prohibits non-loopback peers\n", trimmed)
+							os.Exit(1)
+						}
+					}
 					cliPeers = append(cliPeers, trimmed)
 				}
 			}
@@ -545,15 +590,7 @@ func main() {
 		if cfg.EnableMining {
 			minerAddr := cfg.MinerAddress
 			if minerAddr == "" {
-				walletPath := "wallet.json"
-				if _, err := os.Stat(walletPath); os.IsNotExist(err) {
-					if execPath, err := os.Executable(); err == nil {
-						candidate := filepath.Join(filepath.Dir(execPath), "wallet.json")
-						if _, err := os.Stat(candidate); err == nil {
-							walletPath = candidate
-						}
-					}
-				}
+				walletPath := wallet.GetDefaultWalletPathForNetwork(networkChoice)
 				if fileData, err := os.ReadFile(walletPath); err == nil {
 					var ks struct {
 						Address string `json:"address"`
@@ -625,15 +662,16 @@ func main() {
 	fmt.Printf("[+] Wallet 2 (W2)    : %s\n", w2.Address)
 	fmt.Printf("[+] Miner Wallet     : %s\n", minerWallet.Address)
 
-	// Save miner wallet to encrypted wallet.json for CLI testing convenience without destroying existing user keys [T15]
-	bakPath, err := wallet.CreateNewWalletKeystore(minerWallet, "armax-demo", "wallet.json", false)
+	// Save miner wallet to encrypted wallet file for CLI testing convenience without destroying existing user keys [T15]
+	demoWalletPath := wallet.GetDefaultWalletPath()
+	bakPath, err := wallet.CreateNewWalletKeystore(minerWallet, "armax-demo", demoWalletPath, false)
 	if err != nil {
 		fmt.Printf("[-] Warning: Failed to save demo miner wallet: %v\n", err)
 	} else if bakPath != "" {
-		fmt.Printf("[+] Existing wallet.json detected and backed up to %s\n", bakPath)
-		fmt.Println("[+] Demo miner wallet secured and saved to wallet.json")
+		fmt.Printf("[+] Existing %s detected and backed up to %s\n", demoWalletPath, bakPath)
+		fmt.Printf("[+] Demo miner wallet secured and saved to %s\n", demoWalletPath)
 	} else {
-		fmt.Println("[+] Miner wallet secured and saved to wallet.json")
+		fmt.Printf("[+] Miner wallet secured and saved to %s\n", demoWalletPath)
 	}
 
 	// 3. Genesis miner mines initial block for block reward

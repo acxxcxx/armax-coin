@@ -1052,8 +1052,9 @@ func (bc *Blockchain) IsChainValid() bool {
 	if len(bc.Chain) == 0 {
 		return false
 	}
-	// [C-23] Strictly validate Genesis block against protocol specification
-	if err := ValidateGenesisBlock(&bc.Chain[0]); err != nil {
+	// [C-23] Strictly validate Genesis block against protocol specification for this chain's network
+	chainNetID := bc.GetNetworkID()
+	if err := ValidateGenesisBlockForNetwork(&bc.Chain[0], chainNetID); err != nil {
 		return false
 	}
 
@@ -1095,14 +1096,14 @@ func (bc *Blockchain) IsChainValid() bool {
 
 		seenTxs := make(map[string]struct{}, len(currentBlock.Transactions))
 		for _, tx := range currentBlock.Transactions {
-			h := tx.HashHex()
+			h := tx.HashHexForNetwork(chainNetID)
 			if _, dup := seenTxs[h]; dup {
 				return false
 			}
 			seenTxs[h] = struct{}{}
 		}
 
-		if currentBlock.MerkleRoot != CalculateMerkleRoot(currentBlock.Transactions) {
+		if currentBlock.MerkleRoot != CalculateMerkleRootForNetwork(currentBlock.Transactions, chainNetID) {
 			return false
 		}
 		calcHash, err := currentBlock.CalculateHashWithError()
@@ -1123,7 +1124,8 @@ func (bc *Blockchain) IsChainValid() bool {
 			return false
 		}
 
-		if expectedHash, exists := Checkpoints[currentBlock.Index]; exists && expectedHash != "" {
+		chainNetID := bc.GetNetworkID()
+		if expectedHash, exists := GetCheckpointForNetwork(chainNetID, currentBlock.Index); exists {
 			if currentBlock.Hash != expectedHash {
 				return false
 			}

@@ -38,9 +38,16 @@ type Transaction struct {
 // Hash produces a canonical double-SHA256 (SHA-256d) digest of the transaction data
 // committing to NetworkID, SigAlg, canonical addresses, amounts, nonces, and script parameters [P2-2].
 func (tx *Transaction) Hash() []byte {
+	return tx.HashForNetwork(NetworkID())
+}
+
+// HashForNetwork computes the canonical transaction hash bound to a specific network ID [P2-2, C-33].
+func (tx *Transaction) HashForNetwork(netID string) []byte {
 	canonicalSender := strings.ToLower(tx.Sender)
 	canonicalRecipient := strings.ToLower(tx.Recipient)
-	netID := NetworkID()
+	if netID == "" {
+		netID = NetworkID()
+	}
 	var record string
 	if (tx.Type == "" || tx.Type == TxTypeStandard) && tx.HashLock == "" {
 		record = fmt.Sprintf("%s:%d:%s:%s:%s:%d:%d:%d", netID, tx.SigAlg, canonicalSender, tx.SenderPub, canonicalRecipient, tx.Amount, tx.Fee, tx.Nonce)
@@ -57,9 +64,19 @@ func (tx *Transaction) HashHex() string {
 	return hex.EncodeToString(tx.Hash())
 }
 
+// HashHexForNetwork returns the 64-character hexadecimal representation of the transaction hash for a specific network ID
+func (tx *Transaction) HashHexForNetwork(netID string) string {
+	return hex.EncodeToString(tx.HashForNetwork(netID))
+}
+
 // WitnessHash produces a double-SHA256 digest committing to both the transaction data and its signature [C-07]
 func (tx *Transaction) WitnessHash() []byte {
-	record := fmt.Sprintf("%s:%s", tx.HashHex(), tx.Signature)
+	return tx.WitnessHashForNetwork(NetworkID())
+}
+
+// WitnessHashForNetwork produces a double-SHA256 digest committing to both transaction data and signature for a specific network ID [C-07, C-33]
+func (tx *Transaction) WitnessHashForNetwork(netID string) []byte {
+	record := fmt.Sprintf("%s:%s", tx.HashHexForNetwork(netID), tx.Signature)
 	h1 := sha256.Sum256([]byte(record))
 	h2 := sha256.Sum256(h1[:])
 	return h2[:]
@@ -68,6 +85,11 @@ func (tx *Transaction) WitnessHash() []byte {
 // WitnessHashHex returns the 64-character hexadecimal representation of the witness hash
 func (tx *Transaction) WitnessHashHex() string {
 	return hex.EncodeToString(tx.WitnessHash())
+}
+
+// WitnessHashHexForNetwork returns the 64-character hexadecimal representation of the witness hash for a specific network ID
+func (tx *Transaction) WitnessHashHexForNetwork(netID string) string {
+	return hex.EncodeToString(tx.WitnessHashForNetwork(netID))
 }
 
 type sigVerifyCache struct {

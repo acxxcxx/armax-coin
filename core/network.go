@@ -49,7 +49,8 @@ type NetworkProfile struct {
 	ArmaxHashV2ActivationHeight int64    `json:"armaxhash_v2_activation_height"` // Block height where PoW switches to ArmaxHash v2 Stream-Fast (-1 = disabled)
 	// TimestampRulesActivationHeight is the first block height validated with the C1/C2 timestamp
 	// rules (MTP-55 and non-decreasing timestamps). A negative value disables the rules.
-	TimestampRulesActivationHeight int64 `json:"timestamp_rules_activation_height"`
+	TimestampRulesActivationHeight int64          `json:"timestamp_rules_activation_height"`
+	Checkpoints                    map[int]string `json:"checkpoints,omitempty"`
 }
 
 var (
@@ -70,6 +71,9 @@ var (
 		ArmaxHashV2ActivationHeight: -1,
 		// Mainnet has not launched, so the C1/C2 timestamp rules apply from the first block.
 		TimestampRulesActivationHeight: 0,
+		Checkpoints: map[int]string{
+			0: GenesisHash,
+		},
 		DefaultSeeds: []string{
 			"id.armax-coin.cloud:" + MainnetP2PPort,
 			"armax-coin.cloud:" + MainnetP2PPort,
@@ -93,6 +97,9 @@ var (
 		ArmaxHashV2ActivationHeight: 2500, // Hard fork activation at block #2500 on testnet
 		// Hard fork: C1/C2 timestamp rules (MTP-55, non-decreasing timestamps) from block #8000 on testnet.
 		TimestampRulesActivationHeight: 8000,
+		Checkpoints: map[int]string{
+			0: TestnetGenesisHash,
+		},
 		DefaultSeeds: []string{
 			"testnet-seed1.armax-coin.cloud:" + TestnetP2PPort,
 			"testnet-seed2.armax-coin.cloud:" + TestnetP2PPort,
@@ -152,7 +159,33 @@ var (
 	armaxHashV2ActivationHeightOverride *int64 // nil means use network profile or env
 	timestampRulesHeightOverride        *int64 // nil means use network profile
 	testGlobalNetworkLock               sync.Mutex
+
+	localMainnetMu      sync.RWMutex
+	localMainnetEnabled bool
 )
+
+// EnableLocalMainnet explicitly activates local mainnet mode for the process [L4-1].
+// In this mode, the mainnet profile is permitted to run, but strictly constrained
+// to local loopback operations without public seeds or external P2P connections.
+func EnableLocalMainnet() {
+	localMainnetMu.Lock()
+	defer localMainnetMu.Unlock()
+	localMainnetEnabled = true
+}
+
+// DisableLocalMainnet disables local mainnet mode.
+func DisableLocalMainnet() {
+	localMainnetMu.Lock()
+	defer localMainnetMu.Unlock()
+	localMainnetEnabled = false
+}
+
+// IsLocalMainnet reports whether local mainnet mode is currently active.
+func IsLocalMainnet() bool {
+	localMainnetMu.RLock()
+	defer localMainnetMu.RUnlock()
+	return localMainnetEnabled
+}
 
 // NetworkID returns the active network profile's NetworkID dynamically [L1-2].
 // It safely snapshots the hook and default network ID while holding netMu.RLock,
@@ -310,12 +343,16 @@ func SetNetwork(name string) error {
 			if allowMainnetInTestsHook != nil {
 				allowTest = allowMainnetInTestsHook()
 			}
-			if !allowTest {
+			if !allowTest && !IsLocalMainnet() {
 				//lint:ignore ST1005 Exact user-specified error message required [L4-1]
 				return fmt.Errorf("Mainnet has not been launched; please use -network testnet")
 			}
 		}
-		ActiveNetwork = MainnetProfile
+		prof := MainnetProfile
+		if IsLocalMainnet() {
+			prof.DefaultSeeds = []string{}
+		}
+		ActiveNetwork = prof
 	case "soak", "armx-soak-1", "test":
 		ActiveNetwork = SoakProfile
 	case "regtest", "armx-regtest-1":
@@ -332,9 +369,17 @@ func GetActiveNetwork() NetworkProfile {
 	netMu.RLock()
 	defer netMu.RUnlock()
 	prof := ActiveNetwork
-	if len(ActiveNetwork.DefaultSeeds) > 0 {
+	if prof.Name == "mainnet" && IsLocalMainnet() {
+		prof.DefaultSeeds = []string{}
+	} else if len(ActiveNetwork.DefaultSeeds) > 0 {
 		prof.DefaultSeeds = make([]string, len(ActiveNetwork.DefaultSeeds))
 		copy(prof.DefaultSeeds, ActiveNetwork.DefaultSeeds)
+	}
+	if len(ActiveNetwork.Checkpoints) > 0 {
+		prof.Checkpoints = make(map[int]string, len(ActiveNetwork.Checkpoints))
+		for k, v := range ActiveNetwork.Checkpoints {
+			prof.Checkpoints[k] = v
+		}
 	}
 	return prof
 }
@@ -361,12 +406,15 @@ func ResolveCLINetwork(networkName string) (CLINetworkConfig, error) {
 			if allowMainnetInTestsHook != nil {
 				allowTest = allowMainnetInTestsHook()
 			}
-			if !allowTest {
+			if !allowTest && !IsLocalMainnet() {
 				//lint:ignore ST1005 Exact user-specified error message required [L4-1]
 				return CLINetworkConfig{}, fmt.Errorf("Mainnet has not been launched; please use -network testnet")
 			}
 		}
 		prof = MainnetProfile
+		if IsLocalMainnet() {
+			prof.DefaultSeeds = []string{}
+		}
 	case "soak", "armx-soak-1", "test":
 		prof = SoakProfile
 	case "regtest", "armx-regtest-1":
@@ -375,14 +423,7 @@ func ResolveCLINetwork(networkName string) (CLINetworkConfig, error) {
 		return CLINetworkConfig{}, fmt.Errorf("unknown network profile: %s (supported: testnet, mainnet, regtest, soak)", networkName)
 	}
 
-	dataDir := "data"
-	if prof.Name == "testnet" {
-		dataDir = "testnet"
-	} else if prof.Name == "regtest" {
-		dataDir = "regtest"
-	} else if prof.Name == "soak" {
-		dataDir = "soak"
-	}
+	dataDir := prof.Name
 
 	seeds := make([]string, len(prof.DefaultSeeds))
 	copy(seeds, prof.DefaultSeeds)

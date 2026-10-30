@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -237,6 +238,12 @@ func main() {
 	fmt.Printf("[*] GUI Wallet Interface: %s\n", guiURL)
 	fmt.Println("=================================================================")
 
+	if err := verifyNodeNetwork(rpcURL, activeNet.NetworkID); err != nil {
+		if strings.Contains(err.Error(), "network mismatch") || strings.Contains(err.Error(), "empty network_id") {
+			fmt.Fprintf(os.Stderr, "[-] Error: Connected daemon on %s returned network mismatch: %v. Cross-network requests will be rejected.\n", rpcURL, err)
+		}
+	}
+
 	// Wait for port listener
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -259,23 +266,7 @@ func main() {
 }
 
 func findWalletPath() string {
-	if envFile := strings.TrimSpace(os.Getenv("ARMX_WALLET_FILE")); envFile != "" {
-		return envFile
-	}
-	if _, err := os.Stat("wallet.json"); err == nil {
-		return "wallet.json"
-	}
-	if envDir := strings.TrimSpace(os.Getenv("ARMX_DATA_DIR")); envDir != "" {
-		return filepath.Join(envDir, "wallet.json")
-	}
-	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), "wallet.json")
-		if _, err := os.Stat(cand); err == nil {
-			return cand
-		}
-		return cand
-	}
-	return "wallet.json"
+	return wallet.GetDefaultWalletPath()
 }
 
 func findAddressBookPath() string {
@@ -480,6 +471,38 @@ func handleCLI(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, io.LimitReader(resp.Body, 4<<20))
 }
 
+func verifyNodeNetwork(url string, expectedNetID string) error {
+	client := http.Client{Timeout: 800 * time.Millisecond}
+	resp, err := client.Get(url + "/stats")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("node returned HTTP %d", resp.StatusCode)
+	}
+	hdrID := strings.TrimSpace(resp.Header.Get("X-Network-ID"))
+	if hdrID == "" {
+		return errors.New("missing X-Network-ID response header")
+	}
+	if hdrID != expectedNetID {
+		return fmt.Errorf("network mismatch on response header: expected '%s', got '%s'", expectedNetID, hdrID)
+	}
+	var stats struct {
+		NetworkID string `json:"network_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		return fmt.Errorf("malformed /stats response: %w", err)
+	}
+	if stats.NetworkID == "" {
+		return errors.New("node returned empty network_id")
+	}
+	if stats.NetworkID != expectedNetID {
+		return fmt.Errorf("network mismatch: expected '%s', got '%s'", expectedNetID, stats.NetworkID)
+	}
+	return nil
+}
+
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	client := http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get(rpcURL + "/stats")
@@ -488,8 +511,42 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+
+	expectedNetID := core.ActiveNetwork.NetworkID
+	hdrNetID := strings.TrimSpace(resp.Header.Get("X-Network-ID"))
+	if hdrNetID == "" {
+		http.Error(w, "missing X-Network-ID response header", http.StatusBadGateway)
+		return
+	}
+	if hdrNetID != expectedNetID {
+		http.Error(w, fmt.Sprintf("Node network mismatch on header: expected '%s', got '%s'", expectedNetID, hdrNetID), http.StatusBadGateway)
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "Failed to read node /stats response: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	var stats struct {
+		NetworkID string `json:"network_id"`
+	}
+	if err := json.Unmarshal(bodyBytes, &stats); err != nil {
+		http.Error(w, "Malformed /stats response from daemon", http.StatusBadGateway)
+		return
+	}
+	if stats.NetworkID == "" {
+		http.Error(w, "Node returned empty network_id", http.StatusBadGateway)
+		return
+	}
+	if stats.NetworkID != expectedNetID {
+		http.Error(w, fmt.Sprintf("Node network mismatch: expected '%s', got '%s'", expectedNetID, stats.NetworkID), http.StatusBadGateway)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = w.Write(bodyBytes)
 }
 
 func handlePeers(w http.ResponseWriter, r *http.Request) {
@@ -529,6 +586,10 @@ func handleMempool(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleBalance(w http.ResponseWriter, r *http.Request) {
+	if err := verifyNodeNetwork(rpcURL, core.ActiveNetwork.NetworkID); err != nil {
+		http.Error(w, fmt.Sprintf("Node network validation failed: %v", err), http.StatusBadGateway)
+		return
+	}
 	addr := r.URL.Query().Get("address")
 	if addr == "" {
 		addr = activeAddress
@@ -545,6 +606,10 @@ func handleBalance(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleHistory(w http.ResponseWriter, r *http.Request) {
+	if err := verifyNodeNetwork(rpcURL, core.ActiveNetwork.NetworkID); err != nil {
+		http.Error(w, fmt.Sprintf("Node network validation failed: %v", err), http.StatusBadGateway)
+		return
+	}
 	addr := r.URL.Query().Get("address")
 	if addr == "" {
 		addr = activeAddress
@@ -629,6 +694,12 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 		if f, err := core.ParseArmxDecimal(req.Fee); err == nil {
 			feeArmoids = f
 		}
+	}
+
+	// Verify daemon network identity before preparing or broadcasting transaction
+	if err := verifyNodeNetwork(rpcURL, core.ActiveNetwork.NetworkID); err != nil {
+		http.Error(w, fmt.Sprintf("Node network validation failed: %v", err), http.StatusBadGateway)
+		return
 	}
 
 	// Load signing wallet

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,9 +10,14 @@ import (
 // TestT12_ProductionRejectsSilentInMemoryFallback verifies that database open errors
 // do not silently fall back to ephemeral in-memory storage in production/testnet mode [T12].
 func TestT12_ProductionRejectsSilentInMemoryFallback(t *testing.T) {
-	// Create an unwritable / directory conflict path
+	// Create an unwritable / directory conflict path by creating a regular file
+	// where a parent directory should be.
 	tempDir := t.TempDir()
-	invalidDbPath := filepath.Join(tempDir, "cannot_create_dir", "blockchain.db")
+	conflictParent := filepath.Join(tempDir, "cannot_create_dir")
+	if err := os.WriteFile(conflictParent, []byte("conflict_file"), 0644); err != nil {
+		t.Fatalf("Failed to create conflict parent file: %v", err)
+	}
+	invalidDbPath := filepath.Join(conflictParent, "blockchain.db")
 
 	// Directly calling NewBlockchainWithStoragePath on invalid path must return error, not fallback
 	bc, err := NewBlockchainWithStoragePath(1, invalidDbPath)

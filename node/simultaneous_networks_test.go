@@ -18,8 +18,14 @@ import (
 // 4. Filesystem, database, cookie, and peer cache isolation verified without port or state conflicts.
 // 5. Explicitly logs each node's network identity, genesis hash, and listening port.
 func TestSimultaneousNetworksIsolated(t *testing.T) {
+	core.LockNetworkForTesting(t)
+	core.SetAllowMainnetForTesting(true)
 	core.SetNetworkForTesting(true)
-	defer core.SetNetworkForTesting(true)
+	defer func() {
+		core.SetAllowMainnetForTesting(false)
+		core.SetNetworkForTesting(true)
+		_ = core.SetNetwork("testnet")
+	}()
 
 	baseDataDir := t.TempDir()
 	t.Setenv("ARMX_DATA_DIR", baseDataDir)
@@ -103,7 +109,7 @@ func TestSimultaneousNetworksIsolated(t *testing.T) {
 	// ==========================================
 	// 5. Verify Filesystem & Storage Isolation
 	// ==========================================
-	mainnetDB := filepath.Join(baseDataDir, "blockchain.db")
+	mainnetDB := filepath.Join(baseDataDir, "mainnet", "blockchain.db")
 	testnetDB := filepath.Join(baseDataDir, "testnet", "blockchain.db")
 
 	if _, err := os.Stat(mainnetDB); os.IsNotExist(err) {
@@ -113,7 +119,7 @@ func TestSimultaneousNetworksIsolated(t *testing.T) {
 		t.Fatalf("Testnet DB file missing: %s", testnetDB)
 	}
 
-	mainnetCookie := filepath.Join(baseDataDir, "armax.cookie")
+	mainnetCookie := filepath.Join(baseDataDir, "mainnet", "armax.cookie")
 	testnetCookie := filepath.Join(baseDataDir, "testnet", "armax.cookie")
 
 	if _, err := os.Stat(mainnetCookie); os.IsNotExist(err) {

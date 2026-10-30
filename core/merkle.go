@@ -8,6 +8,11 @@ import (
 
 // CalculateMerkleRoot computes the 32-byte (64 hex characters) binary Merkle tree root of transactions
 func CalculateMerkleRoot(txs []Transaction) string {
+	return CalculateMerkleRootForNetwork(txs, NetworkID())
+}
+
+// CalculateMerkleRootForNetwork computes the 32-byte (64 hex characters) binary Merkle tree root of transactions for a specific network ID [C-33]
+func CalculateMerkleRootForNetwork(txs []Transaction, netID string) string {
 	if len(txs) == 0 {
 		h := sha256.Sum256([]byte{})
 		return hex.EncodeToString(h[:])
@@ -15,7 +20,7 @@ func CalculateMerkleRoot(txs []Transaction) string {
 
 	var currentLevel []string
 	for _, tx := range txs {
-		currentLevel = append(currentLevel, tx.WitnessHashHex())
+		currentLevel = append(currentLevel, tx.WitnessHashHexForNetwork(netID))
 	}
 
 	for len(currentLevel) > 1 {

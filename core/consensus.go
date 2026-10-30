@@ -16,9 +16,96 @@ const (
 	MaxReorganizationDepth = 720
 )
 
-// Checkpoints allows locking critical historic block hashes to prevent deep reorganization
+// Checkpoints maintains backward compatibility for legacy callers.
+// Deprecated: Use GetCheckpoint or GetNetworkCheckpoints for network-aware checkpoint resolution.
 var Checkpoints = map[int]string{
 	0: GenesisHash,
+}
+
+var checkpointOverrideHook func() map[int]string
+
+// GetCheckpointsForNetwork returns the immutable checkpoint mapping for a specific network ID.
+// If an active test override hook is installed, it takes precedence.
+func GetCheckpointsForNetwork(netID string) map[int]string {
+	if checkpointOverrideHook != nil {
+		if override := checkpointOverrideHook(); override != nil {
+			return override
+		}
+	}
+	canon := strings.ToUpper(strings.TrimSpace(netID))
+	switch canon {
+	case "ARMX-MAINNET-1", "MAINNET":
+		if len(MainnetProfile.Checkpoints) > 0 {
+			return MainnetProfile.Checkpoints
+		}
+		return map[int]string{0: GenesisHash}
+	case "ARMX-TESTNET-1", "TESTNET":
+		if len(TestnetProfile.Checkpoints) > 0 {
+			return TestnetProfile.Checkpoints
+		}
+		return map[int]string{0: TestnetGenesisHash}
+	case "ARMX-REGTEST-1", "REGTEST":
+		if len(RegtestProfile.Checkpoints) > 0 {
+			return RegtestProfile.Checkpoints
+		}
+		return map[int]string{0: GetRegtestGenesisBlock().Hash}
+	case "ARMX-SOAK-1", "SOAK":
+		if len(SoakProfile.Checkpoints) > 0 {
+			return SoakProfile.Checkpoints
+		}
+		return map[int]string{0: GetSoakGenesisBlock().Hash}
+	default:
+		prof := GetActiveNetwork()
+		if len(prof.Checkpoints) > 0 {
+			return prof.Checkpoints
+		}
+		return map[int]string{0: GetGenesisBlock().Hash}
+	}
+}
+
+// GetCheckpointForNetwork returns the expected hash for a specific block height and network ID.
+func GetCheckpointForNetwork(netID string, height int) (string, bool) {
+	ckpts := GetCheckpointsForNetwork(netID)
+	hash, exists := ckpts[height]
+	return hash, exists && hash != ""
+}
+
+// GetNetworkCheckpoints returns the immutable checkpoint mapping for the active network profile.
+func GetNetworkCheckpoints() map[int]string {
+	return GetCheckpointsForNetwork(GetActiveNetwork().NetworkID)
+}
+
+// GetCheckpoint returns the expected hash for a specific block height if a checkpoint is configured.
+func GetCheckpoint(height int) (string, bool) {
+	return GetCheckpointForNetwork(GetActiveNetwork().NetworkID, height)
+}
+
+// resolveChainNetworkID extracts the canonical network ID from the genesis block of a chain history.
+// It returns an explicit error if chainHistory is empty or the anchor genesis block is unrecognized,
+// preventing silent fallback to the global active profile during consensus validation [C-33].
+func resolveChainNetworkID(chainHistory []Block) (string, error) {
+	if len(chainHistory) == 0 {
+		return "", fmt.Errorf("cannot determine network identity: chain history is empty")
+	}
+	gen := chainHistory[0]
+	if gen.Index != 0 {
+		return "", fmt.Errorf("cannot determine network identity: first block in chain history has index %d (expected 0)", gen.Index)
+	}
+	h := gen.Hash
+	t := gen.Target
+	if h == GenesisHash {
+		return "ARMX-MAINNET-1", nil
+	}
+	if h == TestnetGenesisHash {
+		return "ARMX-TESTNET-1", nil
+	}
+	if t == RegtestProfile.PowLimitHex || h == GetRegtestGenesisBlock().Hash {
+		return "ARMX-REGTEST-1", nil
+	}
+	if t == SoakProfile.PowLimitHex || h == GetSoakGenesisBlock().Hash {
+		return "ARMX-SOAK-1", nil
+	}
+	return "", fmt.Errorf("cannot determine network identity: unrecognized genesis anchor %s", h)
 }
 
 // CalculateChainwork computes the cumulative Proof-of-Work (Chainwork) of a block sequence
@@ -69,6 +156,11 @@ func CalculateMedianTimePastN(chain []Block, upToIndex int, window int) int64 {
 // validateBlockContext performs comprehensive header, contextual, PoW, MTP-11, and size validation
 // shared identically between ValidateAndAddBlock and ResolveChain [C-04, C-05, C-06, C-18, T13].
 func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistorical ...bool) error {
+	chainNetID, err := resolveChainNetworkID(chainHistory)
+	if err != nil {
+		return fmt.Errorf("consensus network context error: %w", err)
+	}
+
 	// 0. Size constraints [C-04]
 	if b.Size() > MaxBlockSize {
 		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", b.Size(), MaxBlockSize)
@@ -96,7 +188,7 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 	// 2. Duplicate transaction check within the block [C-18]
 	seenTxs := make(map[string]struct{}, len(b.Transactions))
 	for idx, tx := range b.Transactions {
-		h := tx.HashHex()
+		h := tx.HashHexForNetwork(chainNetID)
 		if _, exists := seenTxs[h]; exists {
 			return fmt.Errorf("duplicate transaction %s at index #%d", h, idx)
 		}
@@ -114,7 +206,7 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 	}
 
 	// 5. Binary Merkle tree root verification
-	calculatedMerkle := CalculateMerkleRoot(b.Transactions)
+	calculatedMerkle := CalculateMerkleRootForNetwork(b.Transactions, chainNetID)
 	if b.MerkleRoot != calculatedMerkle {
 		return fmt.Errorf("merkle root mismatch (got %s, calculated %s)", b.MerkleRoot, calculatedMerkle)
 	}
@@ -158,9 +250,9 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 	}
 
 	// 9. Checkpoint validation
-	if expectedHash, exists := Checkpoints[b.Index]; exists && expectedHash != "" {
+	if expectedHash, exists := GetCheckpointForNetwork(chainNetID, b.Index); exists {
 		if b.Hash != expectedHash {
-			return fmt.Errorf("checkpoint mismatch for block #%d: expected %s, got %s", b.Index, expectedHash, b.Hash)
+			return fmt.Errorf("checkpoint mismatch for block #%d on %s: expected %s, got %s", b.Index, chainNetID, expectedHash, b.Hash)
 		}
 	}
 
@@ -253,10 +345,12 @@ func (bc *Blockchain) PreCheckBlock(b *Block) error {
 		return fmt.Errorf("block #%d miner mismatch: header miner '%s' does not match coinbase recipient '%s'", b.Index, b.Miner, coinbaseRecipient)
 	}
 
+	chainNetID := bc.GetNetworkID()
+
 	// 3. Duplicate transactions within the block [C-18]
 	seenTxs := make(map[string]struct{}, len(b.Transactions))
 	for idx, tx := range b.Transactions {
-		h := tx.HashHex()
+		h := tx.HashHexForNetwork(chainNetID)
 		if _, exists := seenTxs[h]; exists {
 			return fmt.Errorf("duplicate transaction %s at index #%d", h, idx)
 		}
@@ -264,7 +358,7 @@ func (bc *Blockchain) PreCheckBlock(b *Block) error {
 	}
 
 	// 4. Binary Merkle tree root verification
-	calculatedMerkle := CalculateMerkleRoot(b.Transactions)
+	calculatedMerkle := CalculateMerkleRootForNetwork(b.Transactions, chainNetID)
 	if b.MerkleRoot != calculatedMerkle {
 		return fmt.Errorf("merkle root mismatch (got %s, calculated %s)", b.MerkleRoot, calculatedMerkle)
 	}

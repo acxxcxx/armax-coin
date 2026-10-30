@@ -393,7 +393,7 @@ func TestCalculateHashNoFallbackOnArmaxHashFailure(t *testing.T) {
 		Index: 9,
 		Hash:  bCrafted.PrevHash,
 	}
-	valErr := validateBlockContext(&bCrafted, prev, []Block{})
+	valErr := validateBlockContext(&bCrafted, prev, []Block{GetGenesisBlock()})
 	if valErr == nil {
 		t.Fatal("CRITICAL: validateBlockContext must reject block when hash computation fails")
 	}

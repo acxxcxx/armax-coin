@@ -1,6 +1,7 @@
 package core
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -70,7 +71,7 @@ func TestP2_6_LegacySchemaVersionDatabaseRejected(t *testing.T) {
 }
 
 // TestP2_6_LegacyGenesisDatabaseRejected verifies that database with mismatched/legacy genesis
-// is rejected and preserved under .invalid-<timestamp> [P2-6]
+// is rejected and preserved intact without modifying, renaming, or deleting the source file [P2-6]
 func TestP2_6_LegacyGenesisDatabaseRejected(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("ARMX_DATA_DIR", tempDir)
@@ -99,31 +100,38 @@ func TestP2_6_LegacyGenesisDatabaseRejected(t *testing.T) {
 	}
 	_ = db.Close()
 
+	// Capture initial checksum before loading
+	initialBytes, err := os.ReadFile(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to read initial db: %v", err)
+	}
+	initialHash := sha256.Sum256(initialBytes)
+
 	// 2. LoadFromFile must reject the database due to genesis mismatch
 	loadedBc, ok := LoadFromFile()
 	if ok || loadedBc != nil {
 		t.Fatalf("LoadFromFile succeeded on tampered genesis database; expected rejection!")
 	}
 
-	// 3. Verify original database file is renamed to .invalid-<timestamp>
-	if _, err := os.Stat(dbPath); err == nil {
-		t.Fatalf("Original database %s was NOT moved after genesis rejection!", dbPath)
+	// 3. Verify original database file is preserved in-place, NOT moved, deleted, or mutated
+	afterBytes, err := os.ReadFile(dbPath)
+	if err != nil {
+		t.Fatalf("Original database %s was deleted or moved after genesis rejection: %v", dbPath, err)
+	}
+	afterHash := sha256.Sum256(afterBytes)
+	if afterHash != initialHash {
+		t.Fatalf("Original database was mutated during failed load! Hash before: %x, after: %x", initialHash, afterHash)
 	}
 
+	// 4. Verify no .invalid- quarantine files were created
 	entries, err := os.ReadDir(filepath.Dir(dbPath))
 	if err != nil {
 		t.Fatalf("ReadDir failed: %v", err)
 	}
-
-	foundInvalid := false
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), "blockchain.db.invalid-") {
-			foundInvalid = true
-			break
+			t.Fatalf("Unexpected .invalid-<timestamp> file created for genesis mismatch: %s", entry.Name())
 		}
-	}
-	if !foundInvalid {
-		t.Fatalf("No .invalid-<timestamp> file found after genesis mismatch rejection")
 	}
 }
 

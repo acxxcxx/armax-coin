@@ -78,19 +78,19 @@ func (alt *authLockoutTracker) recordSuccess(ip string) {
 // daemon and local clients. It prevents clients from guessing based on their
 // working directory when ARMX_DATA_DIR is configured.
 func GetRPCAuthCookiePath() string {
-	subDir := ""
-	if netName := core.GetActiveNetwork().Name; netName == "testnet" || netName == "regtest" || netName == "soak" {
-		subDir = netName
+	netName := core.GetActiveNetwork().Name
+	subDir := netName
+	if subDir == "" {
+		subDir = "mainnet"
 	}
-	targetDir := "."
+	targetDir := subDir
 	if envDir := os.Getenv("ARMX_DATA_DIR"); envDir != "" {
 		targetDir = envDir
-		if subDir != "" {
+		if filepath.Base(envDir) != subDir {
 			targetDir = filepath.Join(envDir, subDir)
 		}
-	} else if subDir != "" {
-		targetDir = subDir
 	}
+	_ = os.MkdirAll(targetDir, 0700)
 	return filepath.Join(targetDir, "armax.cookie")
 }
 

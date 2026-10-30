@@ -17,6 +17,9 @@ var (
 
 	allowMainnetMu  sync.RWMutex
 	allowMainnetVal = true
+
+	checkpointOverrideMu  sync.RWMutex
+	checkpointOverrideVal map[int]string
 )
 
 func init() {
@@ -39,6 +42,19 @@ func init() {
 		allowMainnetMu.RLock()
 		defer allowMainnetMu.RUnlock()
 		return allowMainnetVal
+	}
+
+	checkpointOverrideHook = func() map[int]string {
+		checkpointOverrideMu.RLock()
+		defer checkpointOverrideMu.RUnlock()
+		if checkpointOverrideVal == nil {
+			return nil
+		}
+		cp := make(map[int]string, len(checkpointOverrideVal))
+		for k, v := range checkpointOverrideVal {
+			cp[k] = v
+		}
+		return cp
 	}
 }
 
@@ -75,6 +91,27 @@ func SetAllowMainnetForTesting(allow bool) {
 	allowMainnetVal = allow
 }
 
+// SetCheckpointsForTesting sets a temporary checkpoint override map for unit/integration tests.
+// It returns a cleanup function that restores previous state.
+func SetCheckpointsForTesting(ckpts map[int]string) func() {
+	checkpointOverrideMu.Lock()
+	prev := checkpointOverrideVal
+	if ckpts == nil {
+		checkpointOverrideVal = nil
+	} else {
+		checkpointOverrideVal = make(map[int]string, len(ckpts))
+		for k, v := range ckpts {
+			checkpointOverrideVal[k] = v
+		}
+	}
+	checkpointOverrideMu.Unlock()
+	return func() {
+		checkpointOverrideMu.Lock()
+		checkpointOverrideVal = prev
+		checkpointOverrideMu.Unlock()
+	}
+}
+
 // LockNetworkForTesting serializes unit tests that mutate global network profiles,
 // activation heights, or network hooks. It registers a t.Cleanup callback that
 // automatically restores default network state and releases the lock, guaranteeing
@@ -88,6 +125,7 @@ func LockNetworkForTesting(t testing.TB) {
 		ResetArmaxHashV2ActivationHeightOverride()
 		SetNetworkForTesting(true)
 		_ = SetNetwork("testnet")
+		DisableLocalMainnet()
 		unlock()
 	})
 }

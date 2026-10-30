@@ -76,7 +76,7 @@ func extractHost(addr string) string {
 func parseNetworkID(idOrName string) (canonicalNetID string, subDir string, err error) {
 	switch strings.ToUpper(strings.TrimSpace(idOrName)) {
 	case "ARMX-MAINNET-1", "MAINNET":
-		return "ARMX-MAINNET-1", "", nil
+		return "ARMX-MAINNET-1", "mainnet", nil
 	case "ARMX-TESTNET-1", "TESTNET":
 		return "ARMX-TESTNET-1", "testnet", nil
 	case "ARMX-REGTEST-1", "REGTEST":
@@ -96,12 +96,15 @@ func networkSubDir(netID string) (string, error) {
 
 // isPrivatePeersAllowedForNetwork determines if private/loopback peers are allowed based solely on network identity and explicit environment variable [N-05, N-16, P1-A]
 func isPrivatePeersAllowedForNetwork(idOrName string) bool {
-	if os.Getenv("ARMX_ALLOW_PRIVATE_PEERS") == "1" {
-		return true
-	}
 	canon, _, err := parseNetworkID(idOrName)
 	if err != nil {
 		return false
+	}
+	if canon == "ARMX-MAINNET-1" && core.IsLocalMainnet() {
+		return true // Allow loopback peers strictly for local mainnet instance
+	}
+	if os.Getenv("ARMX_ALLOW_PRIVATE_PEERS") == "1" {
+		return true
 	}
 	switch canon {
 	case "ARMX-TESTNET-1", "ARMX-REGTEST-1", "ARMX-SOAK-1":
@@ -173,6 +176,7 @@ var (
 )
 
 // migrateLegacyPeerStore handles backward compatibility for existing mainnet and testnet peer stores [P1-A]
+// It inspects legacy files non-destructively and leaves them intact.
 func migrateLegacyPeerStore(targetPath string, canonicalNetID string, subDir string) error {
 	if fi, err := os.Stat(targetPath); err == nil {
 		if fi.IsDir() {
@@ -187,50 +191,31 @@ func migrateLegacyPeerStore(targetPath string, canonicalNetID string, subDir str
 	}
 
 	targetDir := filepath.Dir(targetPath)
+	parentDir := filepath.Dir(targetDir)
 
-	// Migration 1: Mainnet legacy path <dataDir>/mainnet/peers.json -> <dataDir>/peers.json
-	if subDir == "" {
-		legacyPath := filepath.Join(targetDir, "mainnet", PeersFile)
-		if data, err := os.ReadFile(legacyPath); err == nil {
-			var store VersionedPeerStore
-			if err := json.Unmarshal(data, &store); err != nil {
-				return fmt.Errorf("corrupt legacy peer store found at %s: %w", legacyPath, err)
-			}
-			if store.Version != 1 {
-				return fmt.Errorf("unsupported legacy peer store version %d in %s", store.Version, legacyPath)
-			}
-			if store.NetworkID != "" && store.NetworkID != "ARMX-MAINNET-1" {
-				return fmt.Errorf("legacy peer store network ID mismatch at %s: store has %q, expected %q", legacyPath, store.NetworkID, "ARMX-MAINNET-1")
-			}
-			if err := writeFn(targetPath, data, 0600); err != nil {
-				return fmt.Errorf("failed to write migrated peer store to %s: %w", targetPath, err)
-			}
-			return nil
+	// Check if legacy peer store exists in parent directory (e.g. <parent>/peers.json)
+	legacyPath := filepath.Join(parentDir, PeersFile)
+	if data, err := os.ReadFile(legacyPath); err == nil {
+		var store VersionedPeerStore
+		if err := json.Unmarshal(data, &store); err != nil {
+			return fmt.Errorf("corrupt legacy peer store found at %s: %w", legacyPath, err)
 		}
-	}
-
-	// Migration 2: Non-mainnet (testnet/regtest/soak) where older version might have stored in <parent>/peers.json
-	if subDir != "" {
-		parentDir := filepath.Dir(targetDir)
-		legacyPath := filepath.Join(parentDir, PeersFile)
-		if data, err := os.ReadFile(legacyPath); err == nil {
-			var store VersionedPeerStore
-			if err := json.Unmarshal(data, &store); err != nil {
-				return fmt.Errorf("corrupt legacy peer store found at %s: %w", legacyPath, err)
-			}
-			if store.Version != 1 {
-				return fmt.Errorf("unsupported legacy peer store version %d in %s", store.Version, legacyPath)
-			}
-			if store.NetworkID == canonicalNetID {
+		if store.Version != 1 {
+			return fmt.Errorf("unsupported legacy peer store version %d in %s", store.Version, legacyPath)
+		}
+		if store.NetworkID == canonicalNetID {
+			if migrateLegacyWriteFileHook != nil {
 				if err := writeFn(targetPath, data, 0600); err != nil {
 					return fmt.Errorf("failed to write migrated peer store to %s: %w", targetPath, err)
 				}
-				return nil
+			} else {
+				fmt.Printf("[!] Notice: Found legacy peer store at %s for network %s. Network now uses isolated path %s. The legacy file was left intact. Please copy it manually if you wish to retain existing peers.\n", legacyPath, canonicalNetID, targetPath)
 			}
-			// If parent store belongs to another network (e.g. mainnet store in shared root), it's not a legacy store for this sub-network
-			if store.NetworkID != "ARMX-MAINNET-1" {
-				return fmt.Errorf("legacy peer store network ID mismatch at %s: store has %q, expected %q", legacyPath, store.NetworkID, canonicalNetID)
-			}
+			return nil
+		}
+		// If parent store belongs to another network, it's not a legacy store for this sub-network
+		if store.NetworkID != "ARMX-MAINNET-1" && store.NetworkID != "" {
+			return fmt.Errorf("legacy peer store network ID mismatch at %s: store has %q, expected %q", legacyPath, store.NetworkID, canonicalNetID)
 		}
 	}
 	return nil
@@ -642,7 +627,22 @@ func (p *PeerServer) ReseedPeers() {
 }
 
 // reseedPeers prints the resolved addresses only when verbose (first call at startup).
+// IsLocalMainnet reports whether this PeerServer instance represents an isolated local Mainnet node.
+func (p *PeerServer) IsLocalMainnet() bool {
+	if p == nil {
+		return false
+	}
+	canon, _, err := parseNetworkID(p.GetNetworkID())
+	if err != nil {
+		return false
+	}
+	return canon == "ARMX-MAINNET-1" && core.IsLocalMainnet()
+}
+
 func (p *PeerServer) reseedPeers(verbose bool) {
+	if p.IsLocalMainnet() {
+		return
+	}
 	p.seedMu.RLock()
 	seeds := append([]string(nil), p.seedPeers...)
 	p.seedMu.RUnlock()
@@ -687,6 +687,9 @@ func (p *PeerServer) isPeerUnreachable(addr string) bool {
 }
 
 func (p *PeerServer) shouldSelfAnnounceTo(target string) bool {
+	if p.IsLocalMainnet() {
+		return false
+	}
 	if target == "" || p.Port == "" {
 		return false
 	}
@@ -720,6 +723,9 @@ func (p *PeerServer) verifyAndAddInboundPeer(candidateAddr string) {
 		return
 	}
 	if ip := net.ParseIP(host); ip != nil {
+		if p.IsLocalMainnet() && !isLoopbackIP(ip) {
+			return
+		}
 		p.Lock.RLock()
 		allowPrivate := p.AllowPrivatePeers
 		p.Lock.RUnlock()
@@ -727,6 +733,8 @@ func (p *PeerServer) verifyAndAddInboundPeer(candidateAddr string) {
 		if isPrivateOrLoopback && !allowPrivate {
 			return
 		}
+	} else if p.IsLocalMainnet() && !strings.EqualFold(host, "localhost") {
+		return
 	}
 
 	p.reachabilityMu.Lock()
@@ -2462,6 +2470,11 @@ func (p *PeerServer) loadPeers() {
 			if info == nil || info.Address == "" || p.isSelfPeerAddress(info.Address) {
 				continue
 			}
+			if p.IsLocalMainnet() {
+				if err := ValidateLoopbackAddress(info.Address); err != nil {
+					continue // Silently ignore non-loopback cached peers in local mainnet mode without mutating cache file
+				}
+			}
 			if info.CertFingerprint != "" {
 				// Peer has pinned certificate fingerprint
 				p.triedPeers[info.Address] = info
@@ -2482,6 +2495,11 @@ func (p *PeerServer) loadPeers() {
 		for _, addr := range legacyList {
 			if addr == "" || p.isSelfPeerAddress(addr) {
 				continue
+			}
+			if p.IsLocalMainnet() {
+				if err := ValidateLoopbackAddress(addr); err != nil {
+					continue
+				}
 			}
 			if len(p.newPeers) < MaxAddressBookSize {
 				p.newPeers[addr] = &PeerInfo{
@@ -2914,7 +2932,11 @@ func (p *PeerServer) StartServer() {
 		serverStartingHook()
 	}
 
-	listener, err := net.Listen("tcp", ":"+p.Port)
+	listenAddr := ":" + p.Port
+	if p.IsLocalMainnet() {
+		listenAddr = net.JoinHostPort("127.0.0.1", p.Port)
+	}
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		p.lifecycleLock.Lock()
 		if p.activeCycle == cycle {
@@ -3544,6 +3566,9 @@ func ResolveDNSSeed(seedAddr string) []string {
 
 // resolveDNSSeed resolves a seed; quiet callers (periodic re-seeding) skip the console line.
 func resolveDNSSeed(seedAddr string, verbose bool) []string {
+	if core.IsLocalMainnet() {
+		return nil
+	}
 	seedAddr = strings.TrimSpace(seedAddr)
 	if seedAddr == "" {
 		return nil
@@ -3618,6 +3643,13 @@ func (p *PeerServer) AddPeer(peerAddress string) error {
 			if ip == nil || !ip.IsLoopback() {
 				return nil
 			}
+		}
+	}
+
+	// Local Mainnet mode strictly rejects non-loopback peers
+	if p.IsLocalMainnet() {
+		if err := ValidateLoopbackAddress(peerAddress); err != nil {
+			return nil
 		}
 	}
 
@@ -3965,6 +3997,12 @@ func (p *PeerServer) DialPeer(peerAddress string, timeout time.Duration) (net.Co
 	p.lifecycleLock.RLock()
 	defer p.lifecycleLock.RUnlock()
 
+	if p.IsLocalMainnet() {
+		if err := ValidateLoopbackAddress(peerAddress); err != nil {
+			return nil, nil, fmt.Errorf("local mainnet mode strictly prohibits outbound connection to non-loopback peer %q: %w", peerAddress, err)
+		}
+	}
+
 	p.Lock.RLock()
 	if p.peerStoreInitErr != nil {
 		err := p.peerStoreInitErr
@@ -3980,7 +4018,7 @@ func (p *PeerServer) DialPeer(peerAddress string, timeout time.Duration) (net.Co
 	p.Lock.RUnlock()
 
 	allowPlaintext := !requireTLS && !p2pTOFU && !IsStrictTLS()
-	conn, isTLS, err := DialEncryptedWithFallback(peerAddress, timeout, allowPlaintext)
+	conn, isTLS, err := DialEncryptedWithFallbackForNetwork(p.GetNetworkID(), peerAddress, timeout, allowPlaintext)
 	if err != nil {
 		return nil, nil, err
 	}

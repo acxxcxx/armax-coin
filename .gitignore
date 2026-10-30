@@ -71,3 +71,11 @@ web-explorer/armax-web.exe
 scratch/
 build/
 build-all.ps1
+
+# Local Mainnet & Testnet Runtime Directories
+local_mainnet*/
+test_local_mainnet*/
+mainnet/
+testnet/
+regtest/
+soak/

@@ -1073,6 +1073,13 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 
 	// Global Middleware: CORS & Rate-Limiting
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		effectiveNetID := NetworkID()
+		if cfg != nil && cfg.NetworkID != "" {
+			effectiveNetID = cfg.NetworkID
+		}
+		w.Header().Set("X-Network-ID", effectiveNetID)
+		w.Header().Set("Access-Control-Expose-Headers", "X-Network-ID")
+
 		origin := r.Header.Get("Origin")
 		isMutating := isMutatingEndpoint(r.URL.Path, r.Method)
 
@@ -1220,6 +1227,38 @@ func InitServerFromConfig(bc *core.Blockchain, cfg *Config) (*PeerServer, *Serve
 		cfg.RPCBind = "127.0.0.1"
 	}
 
+	if targetNetID == "ARMX-MAINNET-1" && core.IsLocalMainnet() {
+		rawAddr := strings.TrimSpace(cfg.RPCBind)
+		host := rawAddr
+		if h, _, err := net.SplitHostPort(rawAddr); err == nil {
+			host = h
+		}
+		host = strings.TrimPrefix(host, "[")
+		host = strings.TrimSuffix(host, "]")
+		ip := net.ParseIP(host)
+		isLoop := (ip != nil && ip.IsLoopback()) || strings.EqualFold(host, "localhost") || host == "127.0.0.1" || host == "::1"
+		if !isLoop {
+			return nil, nil, fmt.Errorf("local mainnet mode strictly prohibits binding RPC to non-loopback address %q", rawAddr)
+		}
+		if cfg.AllowNonLoopbackRPC {
+			return nil, nil, fmt.Errorf("local mainnet mode strictly prohibits allow_non_loopback_rpc")
+		}
+
+		var localSeeds []string
+		for _, s := range cfg.SeedPeers {
+			sHost, _, err := net.SplitHostPort(s)
+			if err == nil {
+				sHost = strings.TrimPrefix(sHost, "[")
+				sHost = strings.TrimSuffix(sHost, "]")
+				sIP := net.ParseIP(sHost)
+				if (sIP != nil && sIP.IsLoopback()) || strings.EqualFold(sHost, "localhost") || sHost == "127.0.0.1" || sHost == "::1" {
+					localSeeds = append(localSeeds, s)
+				}
+			}
+		}
+		cfg.SeedPeers = localSeeds
+	}
+
 	// 4. Strict TLS 1.3 Transport Setting [N-08, N-18]
 	if cfg.RequireTLS {
 		SetStrictTLS(true)
@@ -1292,6 +1331,25 @@ func ValidateRPCBind(cfg *Config) error {
 		isLoopback = ip.IsLoopback()
 	} else if strings.EqualFold(host, "localhost") {
 		isLoopback = true
+	}
+
+	isMainnet := false
+	if cfg.NetworkID != "" {
+		canon, _, err := parseNetworkID(cfg.NetworkID)
+		if err == nil && canon == "ARMX-MAINNET-1" {
+			isMainnet = true
+		}
+	} else if strings.EqualFold(core.GetActiveNetwork().Name, "mainnet") {
+		isMainnet = true
+	}
+
+	if isMainnet && core.IsLocalMainnet() {
+		if !isLoopback {
+			return fmt.Errorf("local mainnet mode strictly prohibits binding RPC to non-loopback address '%s'", rawAddr)
+		}
+		if cfg.AllowNonLoopbackRPC {
+			return fmt.Errorf("local mainnet mode strictly prohibits allow_non_loopback_rpc")
+		}
 	}
 
 	if !isLoopback {

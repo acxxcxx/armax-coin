@@ -30,6 +30,11 @@ func (b *Block) CalculateMerkleRoot() string {
 	return CalculateMerkleRoot(b.Transactions)
 }
 
+// CalculateMerkleRootForNetwork returns the binary Merkle root of the block's transactions for a specific network ID [C-33]
+func (b *Block) CalculateMerkleRootForNetwork(netID string) string {
+	return CalculateMerkleRootForNetwork(b.Transactions, netID)
+}
+
 // GetTarget returns the 256-bit target integer represented by the block's Target field
 func (b *Block) GetTarget() *big.Int {
 	if len(b.Target) == 64 {
