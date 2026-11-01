@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -95,6 +96,7 @@ func TestUnixGUIVerifyNodeNetwork_EmptyNetworkIDRejected(t *testing.T) {
 func TestUnixGUIVerifyNodeNetwork_MalformedStatsRejected(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/stats" {
+			w.Header().Set("X-Network-ID", "ARMX-TESTNET-1")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`not json`))
 			return
@@ -198,7 +200,7 @@ func TestUnixGUIHandleSend_NetworkMismatchRejected(t *testing.T) {
 	defer func() { core.ActiveNetwork = origNet }()
 	core.ActiveNetwork = core.TestnetProfile
 
-	payload := `{"to":"armx1test","amount":1.0,"passphrase":"test"}`
+	payload := fmt.Sprintf(`{"to":"%s","amount":"1.0","passphrase":"test"}`, core.GenesisMiner)
 	req := httptest.NewRequest("POST", "/api/send", bytes.NewBufferString(payload))
 	w := httptest.NewRecorder()
 
