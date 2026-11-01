@@ -19,17 +19,18 @@ This checklist defines the formal progression gates for the **Sequential Launch 
   - Algorithm: Double-SHA256 (SHA-256d) block headers with LWMA-1 difficulty retargeting ($N=60, T=120\text{s}$).
   - Digital signatures: NIST FIPS 204 (ML-DSA-65).
   - Hard supply ceiling: 126,000,000 ARMX mathematically bounded.
-  - Genesis block: 60 ARMX burned to zero address (`armx1qqqq...plwcdd`) without premine.
-- [x] **Quality Gates Passed**:
-  - `go build ./...` passes (exit 0).
-  - `go vet -tags testhooks ./...` passes (exit 0).
-  - `staticcheck -tags testhooks ./...` passes (0 errors).
-  - `govulncheck ./...` passes (0 vulnerabilities).
-  - `go test -tags testhooks -count=1 ./...` passes.
-- [x] **Repository Sanitization & Clean Snapshot**:
+  - Tokenomics preserved: 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target, and existing genesis are unchanged.
+  - No mining-funded treasury is guaranteed: after launch, project miners may seek up to 1,000,000 ARMX using ordinary mining and the same consensus rules; this objective is not a premine, genesis allocation, or consensus reserve.
+  - Bridge backing and DEX liquidity are separate, unapproved decisions; no wARMX should be minted without verifiable native backing and approved custody/proof-of-lock controls.
+- [x] **Quality Gates Status (Core Packages vs Repository-Wide)**:
+  - `go build` passes cleanly for Core binaries (`.`, `armsend`, `armwallet`, `gui`) (exit 0).
+  - `go vet ./...` and `go vet -tags testhooks ./...` pass with 0 errors (exit 0).
+  - `staticcheck -tags testhooks ./...` passes repository-wide with 0 diagnostics (exit 0; all core, cli, node, gui, and bridge packages pass cleanly).
+  - Core package unit test suites verified in TASK-012 Phase B: `core` (147.9s), `node` (103.4s), `miner` (11.8s), `wallet` (11.2s), `gui` (4.5s), and `cli/...` (28.9s) all pass cleanly (exit 0); Bridge tests rely on legacy single-signer Ganache fixtures and remain out-of-scope/blocked.
+- [ ] **Repository Sanitization & Clean Snapshot**:
   - Public snapshot generator scripts verified: [`scripts/make_public_snapshot.sh`](../scripts/make_public_snapshot.sh) and [`scripts/make_public_snapshot.ps1`](../scripts/make_public_snapshot.ps1).
   - Prohibited file scan: 0 `*.cookie`, `*.exe`, `*.db`, `wallet.json`, `*.log`, or `scratch/` files.
-  - Automated `gitleaks detect` verification passes with zero secret leaks.
+  - Automated `gitleaks detect` verification: NOT VERIFIED — repository-wide Gitleaks evidence is not available (targeted scans executed in historical evidence; full repository scan not independently verified).
   - Private repo archived; public repo created as `armax-coin`.
 
 ---
@@ -41,7 +42,7 @@ This checklist defines the formal progression gates for the **Sequential Launch 
   - Ensure systemd unit [`systemd/armcoind-testnet.service`](../systemd/armcoind-testnet.service) is enabled and active.
   - Verify P2P port 19335 is open to the internet; RPC port 19333 restricted to `127.0.0.1`.
 - [ ] **Release Artifact Publication**:
-  - Trigger `.github/workflows/release.yml` with tag `v1.0.0`.
+  - Trigger `.github/workflows/release.yml` with tag `v1.0.6`.
   - Verify SHA256SUMS and archive packages for all target platforms.
 - [ ] **Community Announcement**:
   - Publish [`ANNOUNCEMENT_TESTNET.md`](../ANNOUNCEMENT_TESTNET.md) to community forums (Bitcointalk, Reddit, Discord).

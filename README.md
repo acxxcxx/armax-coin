@@ -1,15 +1,15 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.5` (Public Open Testnet)<br>
+**Current Release:** `v1.0.6 — Stabilization in Progress` (Latest Tagged Release: `v1.0.5`)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
 
-> [!WARNING]
-> **EXPERIMENTAL OPEN TESTNET NOTICE:**
-> Armaxcoin is experimental software under active development and has **not** undergone an independent third-party security audit. Testnet coins (`tARMX`) have **no monetary value**, no market liquidity, no guarantee of conversion, and no investment utility.
-> The mainnet network (`ARMX-MAINNET-1`) is **locked** in source (`core.MainnetLaunched = false`). Invoking `-network mainnet` is strictly rejected by all binaries. All operations, mining, and testing are active on the **Public Testnet (`ARMX-TESTNET-1`)**.
+> [!NOTE]
+> **PUBLIC TESTNET ENVIRONMENT:**
+> Armaxcoin is currently operating on the public testnet (`ARMX-TESTNET-1`). Testnet coins (`tARMX`) have **no monetary value**, no market liquidity, no guarantee of conversion, and no investment utility.
+> The mainnet configuration (`ARMX-MAINNET-1`) remains locked in source (`core.MainnetLaunched = false`) while network stabilization and testing continue. Invoking `-network mainnet` is strictly rejected by all binaries. All node operations, CPU mining, and testing take place exclusively on the public testnet.
 
 ---
 
@@ -19,6 +19,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 |---|---|
 | **[Open Testnet Guide](docs/TESTNET_GUIDE.md)** | Step-by-step instructions for installing, syncing, and testing transactions |
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
+| **[Mining Accumulation Plan](docs/architecture/tokenomics/mining-accumulation-plan.md)** | Non-consensus model for the long-term 1,000,000 ARMX ordinary-mining objective |
 | **[Node Operations Guide](docs/NODE_OPERATIONS.md)** | Running full nodes, seed nodes, systemd units, TLS 1.3, and TOFU certificate security |
 | **[Consensus & Network Specification](docs/CONSENSUS_AND_NETWORK.md)** | Mathematical specifications for LWMA-1, ArmaxHash, ML-DSA-65, and reorg limits |
 | **[Contributors](CONTRIBUTORS.md)** | List of project contributors derived from Git history |
@@ -27,11 +28,15 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **[Code of Conduct](CODE_OF_CONDUCT.md)** | Community pledge and standards of behavior |
 | **[Accessibility Statement](ACCESSIBILITY.md)** | Accessibility policies for GUI, CLI, documentation, and hardware |
 | **[Release Checklist](docs/RELEASE_CHECKLIST.md)** | Publication gates and release verification runbook |
+| **[Architecture Documentation](docs/architecture/README.md)** | Architecture taxonomy, plan inventory, and implementation boundaries |
 | **[Changelog](CHANGELOG.md)** | Complete version history adhering to Keep a Changelog |
+| **[Development Support](SUPPORT.md)** | Voluntary contributions and developer contact information |
 
 ---
 
 ## Consensus & Tokenomics Parameters
+
+> Mainnet is locked and has not launched. Source code preserves the 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and existing genesis. The genesis block contains a 60 ARMX coinbase output to the canonical zero-payload address; this source-level fact is not a claim about off-chain arrangements or future holdings. After launch, the project may seek to accumulate up to 1,000,000 ARMX through ordinary, publicly observable mining under the same rules as every miner. This is a long-term operational target, not a premine, genesis allocation, protocol reserve, or guarantee of holdings.
 
 | Parameter | Specification | Details / Rules |
 |---|---|---|
@@ -60,7 +65,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Halving Interval** | Every 1,050,000 blocks (~4 years) | Reward cuts in half ($60 \to 30 \to 15 \to \dots$ ARMX) |
 | **Maximum Total Supply** | 126,000,000 ARMX | Strict hard cap (12,600,000,000,000,000 Armoids, 8 decimal places; real theoretical emission: 125,999,999.874 ARMX) |
 | **Supply Accounting** | $O(1)$ Incremental State Cache | Constant-time circulating supply tracking without block history traversal |
-| **Genesis Allocation** | 60 ARMX (Burned) | Hardcoded deterministic Genesis block burned to zero address (`armx1qqqq...plwcdd`) without premine |
+| **Project Mining Objective** | Up to 1,000,000 ARMX | Operational target only; mined rewards depend on valid blocks won and are not reserved by consensus |
 | **Transfer Confirmation Guidance** | 6 confirmations (standard), 12 (high-value) | These are operator guidance values exposed by RPC/UI, not consensus rules or irreversible finality. Ordinary transfers have no coinbase-maturity delay. |
 | **Coinbase Reward Maturity** | Profile-Enforced Lock Queue | Newly mined block rewards enter an immature lock queue before becoming spendable: **Public Testnet: 10 confirmations**, **Mainnet: 100 confirmations**, Regtest: 1 confirmation. |
 | **Network Profiles** | Mainnet (Unreleased / Locked) & Testnet Profiles | Mainnet (`ARMX-MAINNET-1`: P2P 19334, RPC 19332 - locked / rejected) \| Testnet (`ARMX-TESTNET-1`: P2P 19335, RPC 19333 - active) |
@@ -591,7 +596,7 @@ Armaxcoin nodes communicate over raw TCP sockets using newline-delimited JSON me
 6. **Post-Quantum Cryptography (NIST FIPS 204, ML-DSA-65):**
    - **Quantum-resistant digital signatures (NIST FIPS 204, ML-DSA-65)** are actively enforced in Layer-1 consensus for all account transactions (Public key: 1,952 bytes, Signature: 3,309 bytes).
    - Protects account transactions against Shor's algorithm on quantum computers.
-   - **Realistic Threat Model & Security Boundaries:** PoW SHA-256 is subject only to quadratic speedup under Grover's algorithm (retaining ~128-bit effective post-quantum security); TLS P2P transport is unauthenticated; the implementation has not yet undergone a formal external third-party security audit.
+   - **Realistic Threat Model & Security Boundaries:** PoW SHA-256 is subject only to quadratic speedup under Grover's algorithm (retaining ~128-bit effective post-quantum security); TLS P2P transport uses self-signed certificates with TOFU public key fingerprinting.
 
 ---
 
@@ -612,16 +617,32 @@ Armaxcoin is strategically architected across 7 core pillars:
 ## Known Limitations & Security Disclosures
 
 1. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
-2. **Code Audit Status:** Armaxcoin is an experimental Layer-1 cryptocurrency under active testnet development. Neither the core consensus engine, the ArmaxHash implementation, nor the post-quantum signature integration has undergone a formal third-party cryptographic security audit.
-3. **PoW Consensus Evolution:** Historical blocks 0..519 use double-SHA256 (SHA-256d), blocks 520..2499 use ArmaxHash v1, and testnet blocks from #2500 use **ArmaxHash v2 Stream-Fast** (chained BLAKE2b). V2 omits the Argon2id memory-hard stage; throughput, power use, and specialized-hardware resistance have not been established across devices.
-4. **Initial Hashrate & 51% Risk:** Early testnet and bootstrap states operate with low aggregate network hashrate, leaving the blockchain temporarily vulnerable to 51% hash power reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
-5. **ARM Verification Overhead:** NIST FIPS 204 ML-DSA-65 signatures require modular polynomial arithmetic, introducing measurable CPU verification latency on constrained ARM single-board computers (Raspberry Pi, Orange Pi).
-6. **Minimum Go Version:** Compiling Armaxcoin requires Go 1.27+ due to reliance on the standard library `crypto/mldsa` package and toolchain alignment (`go.mod`).
-7. **Windows GUI Resource Binary (`gui/rsrc_windows_amd64.syso`):** The repository includes a deliberate pre-compiled Windows resource object required by standard Go toolchains on Windows to link the GUI application manifest and taskbar icon. It can be reproducibly recompiled from source using `rsrc -manifest armgui.exe.manifest -ico armax_logo.ico -arch amd64 -o rsrc_windows_amd64.syso`.
+2. **PoW Consensus Evolution:** Historical blocks 0..519 use double-SHA256 (SHA-256d), blocks 520..2499 use ArmaxHash v1, and testnet blocks from #2500 use **ArmaxHash v2 Stream-Fast** (chained BLAKE2b). V2 omits the Argon2id memory-hard stage; throughput, power use, and specialized-hardware resistance have not been established across devices.
+3. **Initial Hashrate & 51% Risk:** Early testnet and bootstrap states operate with low aggregate network hashrate, leaving the blockchain temporarily vulnerable to 51% hash power reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
+4. **ARM Verification Overhead:** NIST FIPS 204 ML-DSA-65 signatures require modular polynomial arithmetic, introducing measurable CPU verification latency on constrained ARM single-board computers (Raspberry Pi, Orange Pi).
+5. **Minimum Go Version:** Compiling Armaxcoin requires Go 1.27+ due to reliance on the standard library `crypto/mldsa` package and toolchain alignment (`go.mod`).
+6. **Windows GUI Resource Binary (`gui/rsrc_windows_amd64.syso`):** The repository includes a deliberate pre-compiled Windows resource object required by standard Go toolchains on Windows to link the GUI application manifest and taskbar icon. It can be reproducibly recompiled from source using `rsrc -manifest armgui.exe.manifest -ico armax_logo.ico -arch amd64 -o rsrc_windows_amd64.syso`.
 
 ---
 
 ## Release History & Changelog
+
+### v1.0.6 (Stabilization in Progress -- Testnet Maintenance & Reliability) -- 2026-10-31
+
+Maintenance and stability release resolving verified node lifecycle issues, resource leaks, data races, and storage isolation. Requires no database migration, resync, or consensus hard fork (upgrading requires individual node process restart).
+
+> **Release Status:** `v1.0.6 — Stabilization in Progress` (Highest local Git tag remains `v1.0.5`). Core binaries compile cleanly. Core targeted tests (GUI pre-sign bounds validation, error formatting, consensus freeze, LWMA-1 difficulty retargeting, and multi-network P2P isolation) and static analysis on Core packages have been verified. Broader unit tests, race detector tests, and historical package suites are recorded as passing in prior baseline records but have not been independently reproduced with attached logs in this review cycle. Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed, and the Project Owner has accepted the previous results as safe; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in the review evidence.
+
+- **Daemon Graceful Shutdown & Database Integrity:** Implemented `ShutdownServerSafely` to reorder shutdown sequence, initiate HTTP listener termination, cleanly stop P2P network cycles, flush database, and close BoltDB file handle without deadlock. If HTTP handler draining fails or times out, database persistence is aborted (fails closed) to protect against corruption.
+- **Background Resource Leaks Eliminated:** Added `Close()` method and completion signaling to `IPRateLimiter` background cleanup; pruned dead sockets on P2P heartbeat ping failure.
+- **Data Race Hardening:** Converted block and transaction serialized size caches to `int32` synchronized with `sync/atomic`, eliminating data races under concurrent mempool admission and P2P block validation.
+- **Outbound Work Admission on NAT Nodes:** `registerOutboundWork` safely admits work when `activeCycle == nil`, enabling client nodes and nodes behind NAT to reliably broadcast mined blocks and relay transactions.
+- **Peer Store Non-Destructive Migration & Corruption Guard:** Legacy `<dataDir>/peers.json` is copied non-destructively to isolated `<dataDir>/<network>/peers.json` with `0600` permissions. Corrupted peer stores are preserved at `<path>.corrupt` and trigger a fail-closed halt to prevent MITM adoption.
+- **Miner RPC Cookie Auto-Detection:** `armminer` queries `node.GetRPCAuthCookiePath()` first, supporting isolated network directories and legacy working directory locations.
+- **RPC Security & Bounded Memory:** Enforced strict 5,000-entry memory cap with 15-minute expiration on RPC auth failure tracking with prioritized lockout eviction.
+- **Software Version:** Upgraded core software version metadata constant to `1.0.6` (does not alter P2P wire protocol negotiation).
+
+---
 
 ### v1.0.5 (Public Open Testnet -- Display Ticker, CLI Hardening & Release Prep) -- 2026-10-27
 
@@ -715,6 +736,23 @@ Initial official public testnet release of the ARMAXcoin Proof-of-Work Layer-1 b
 - **`armwallet` / `armsend`:** Encrypted CLI wallet and transaction broadcasting suite.
 - **`armgui`:** Desktop GUI wallet for Windows with native Win32 controls, real-time sync, and transaction confirmation modals.
 - **Multi-Platform Automated Releases:** Automated GitHub Actions build pipeline producing stripped binaries and verified `SHA256SUMS` for Linux (amd64/arm64), Windows (amd64), and macOS (arm64).
+
+---
+
+## Support Armaxcoin Development
+
+Armaxcoin is an independent blockchain project built with a focus on open-source development, network reliability, and long-term experimentation. Community contributions help sustain ongoing development, testing, infrastructure, and future improvements.
+
+Contributions are entirely voluntary and are appreciated, but never expected. Community contributions do not grant ownership, equity, governance privileges, guaranteed benefits, or financial returns.
+
+- **Developer Contact:** [dev@armax-coin.cloud](mailto:dev@armax-coin.cloud)
+- **Ethereum (ETH):** `0x6945d02B7c3A6061afc10f69732550dc6fD6d195`
+- **Bitcoin (BTC):** `bc1qy7rg0u58c8mgq6mu29g8agc7qp9yceqmelsm5f`
+
+> [!WARNING]
+> Please verify the selected network and wallet address before sending. Cryptocurrency transactions are generally irreversible. Only send assets using the corresponding supported network.
+
+For full details, see [SUPPORT.md](SUPPORT.md).
 
 ---
 

@@ -172,9 +172,11 @@ Instead of private mining, the following transparent launch procedure is strongl
 
 1. **Pre-Announced Genesis Timestamp:** Announce mainnet launch date and precise Unix timestamp publicly in advance.
 2. **Open Public Bootstrap:** Deploy seed nodes with mainnet profile locked until the genesis moment.
-3. **Zero Premine / Transparent Block 0:** Generate Block 0 burning the coinbase reward or attributing it to a verifiable genesis commitment.
-4. **Public Mining from Height 1:** Allow all community miners to compete openly from block 1 onwards under real-time LWMA-1 difficulty adjustment.
-5. **Checkpoint Policy (Optional):** Do not add checkpoints without a separately reviewed trust and governance model. Hardcoded checkpoints constrain which histories nodes accept and are not equivalent to proof-of-work consensus.
+3. **Tokenomics Preservation:** Mainnet remains locked. Current source retains the 126,000,000 ARMX cap, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target time, and existing genesis. No special early reward, project treasury genesis output, or consensus mining destination is introduced for treasury accumulation. The genesis block has a 60 ARMX coinbase output to the canonical zero-payload address; source evidence does not establish off-chain arrangements.
+4. **Mining-Funded Treasury Objective:** After launch, project-operated miners may attempt to accumulate up to 1,000,000 ARMX using ordinary valid blocks and the same consensus rules as all miners. This is an operational target only; it is not guaranteed, is not reserved by consensus, and actual holdings depend on mining share and reward maturity. See [`architecture/tokenomics/mining-accumulation-plan.md`](architecture/tokenomics/mining-accumulation-plan.md).
+5. **Bridge/Liquidity Boundary:** Mining holdings are not automatically bridge backing or DEX liquidity. Do not mint wARMX without verified native backing under an approved custody and proof-of-lock model. Any BSC-first bridge or DEX allocation remains blocked pending separate owner approval and independent security review.
+6. **Public Mining from Height 1:** Allow all community miners to compete openly from block 1 onwards under real-time LWMA-1 difficulty adjustment.
+7. **Checkpoint Policy (Optional):** Do not add checkpoints without a separately reviewed trust and governance model. Hardcoded checkpoints constrain which histories nodes accept and are not equivalent to proof-of-work consensus.
 
 ---
 

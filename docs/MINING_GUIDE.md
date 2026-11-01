@@ -72,36 +72,23 @@ The miner interacts with the local `armcoind` RPC daemon to fetch mining candida
 Launch `armminer` specifying your reward address and thread count:
 
 ```bash
-# Mine with 4 threads
+# Solo mining via local daemon RPC (auto-detects cookie):
 ./armminer -network testnet \
   -miner armx1cdj242tzwrp5uutzyktj0p4jsyl0s06ahxfk3xzv0vqgnn438e7s2ps308 \
   -threads 4 \
   -daemon http://127.0.0.1:19333
 ```
 
-On Windows:
+On Windows (PowerShell):
 ```powershell
 .\armminer.exe -network testnet -miner armx1... -threads 4 -daemon http://127.0.0.1:19333
 ```
 
-### Expected Output
-
-The following is illustrative; actual hashrate and log details depend on the node, hardware, and current network state.
-
-```text
-==================================================
- ARMAXCOIN (tARMX) - MULTI-THREADED MINER
-==================================================
-[+] Network Profile  : TESTNET
-[+] Miner Address    : armx1...
-[+] Worker Threads   : 4
-[+] Target RPC Node  : http://127.0.0.1:19333
-[+] Algorithm Active : armaxhash-v2 (Stream-Fast Chained BLAKE2b)
-==================================================
-[10:35:10] [*] Mining Block #2550 (armaxhash-v2) | Prev: 0029b3104e12... | Txs: 1 | Diff: 4.0000 | Reward: 60 tARMX
-[10:35:20] [ Mining] Block #2550 | 4 threads | 5.82 MH/s (Total: 58200000 hashes, 10s)
-[10:35:45] [OK BLOCK SOLVED!] Height #2550 | Hash: 0000b48f129c1e... | Nonce: 4920148 | Diff: 4
-```
+#### Miner Authentication Options
+When connecting to `armcoind`, `armminer` supports three authentication mechanisms:
+1. **RPC Cookie (Default):** Auto-detected from `<dataDir>/<network>/armax.cookie` (v1.0.6 isolated location), root `armax.cookie`, or `$ARMX_DATA_DIR`.
+2. **Pre-Shared Mine Key (`X-Mine-Key`):** If the node was launched with `-minekey <secret>`, pass `-key <secret>` to `armminer`.
+3. **HTTP Basic Auth:** If the node was configured with `-rpcuser <user> -rpcpassword <pass>`, pass `-user <user> -pass <pass>` to `armminer`.
 
 ---
 
@@ -133,6 +120,11 @@ Verify that `"miner"` matches your address and `"merkle_root"` reflects the coin
 
 ---
 
-## 7. Pool Mining Notice
+## 7. Pool & Stratum Support
 
-The current open testnet supports **solo mining** through HTTP RPC block-template polling and block submission (`/getblocktemplate` and `/submitblock`). Stratum protocol support and mining pool software are planned and are not currently active.
+- **Solo Mining Architecture:** The primary and verified testnet mining path is **solo mining** against the local `armcoind` daemon via HTTP RPC (`GET /getmininginfo`, `GET /getblocktemplate`, `POST /block/submit`). The node daemon itself does **not** host a Stratum server.
+- **Stratum v1 Client:** `armminer` includes a built-in native Stratum v1 TCP client (`stratum+tcp://`) supporting difficulty target negotiation, per-thread nonce partitioning, clean job handling, and multi-endpoint failover:
+  ```bash
+  ./armminer -pool stratum+tcp://pool.example.com:3333 -user worker1 -pass x -threads 4
+  ```
+- **Operational Boundary:** External Stratum mining pool software is operated independently outside this repository and has not been evaluated in live public staging. Node operators and miners should verify compatibility on isolated test setups before production deployment.

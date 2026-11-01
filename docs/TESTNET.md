@@ -1,10 +1,18 @@
 # Armaxcoin Public Testnet Operations & Node Operator Guide
 
+Welcome to the public open testnet for **Armaxcoin** (`armax-coin`). This comprehensive guide provides complete, step-by-step instructions for setting up a full node, generating a post-quantum wallet, syncing the blockchain, mining, testing transactions, and operating production seed/validator infrastructure.
+
+> [!WARNING]
+> **TESTNET WARNING:**
+> The Armaxcoin public testnet is an experimental environment for development, integration, and security testing. Testnet coins (`tARMX`) hold **no monetary value**, cannot be traded for fiat or real assets, and carry no guarantee of conversion to mainnet assets. Chain state may be reset if critical consensus issues are identified.
+
+---
+
 ## 1. Network Profile & Port Specifications
 
 The Armaxcoin Public Testnet (`ARMX-TESTNET-1`) operates under isolated network parameters defined in `core/network.go`. Testnet nodes NEVER peer with or accept blocks from Mainnet.
 
-**Ticker:** The GUI, explorer, and CLI (`armsend`, `armwallet`) display `tARMX` on testnet. Network ID, on-chain values, and addresses are unchanged.
+**Ticker:** The GUI, explorer, and CLI (`armsend`, `armwallet`) display `tARMX` on testnet. Network ID, on-chain values, and addresses are unchanged. Mainnet uses `ARMX`.
 
 | Service | Port | Network Interface Binding | Firewall Policy |
 |---|---|---|---|
@@ -12,14 +20,91 @@ The Armaxcoin Public Testnet (`ARMX-TESTNET-1`) operates under isolated network 
 | **JSON-RPC Management API** | **19333** | `127.0.0.1:19333` (Loopback only) | **DENY INBOUND** (Localhost Only) |
 | **Web Explorer & Inspector** | **19341** | *(Planned / Removed)* | Inactive / Unreleased |
 
+| Parameter | Testnet Value | Note |
+|---|---|---|
+| **Network ID** | `ARMX-TESTNET-1` | Enforces network isolation from Mainnet/Regtest |
+| **Target Block Time** | `120` seconds (2 minutes) | Controlled by LWMA-1 difficulty adjustment ($N=60$) |
+| **Initial Block Reward** | `60.00000000 tARMX` | Halves every 1,050,000 blocks |
+| **PoW Algorithm** | ArmaxHash v2 (active from block #2500) | Chained BLAKE2b Stream-Fast (CPU & ARM optimized). Historical: SHA-256d (0-519), ArmaxHash v1 (520-2499) |
+| **Signature Scheme** | NIST FIPS 204 ML-DSA-65 | Post-quantum lattice-based digital signatures |
+| **Data Directory** | Linux: `~/.armax/testnet`<br>Windows: `%APPDATA%\Armax\testnet` | Default database and keystore location |
+
 > [!CRITICAL]
-> **RPC Security Isolation (Loopback Only):**  
-> The JSON-RPC daemon (`armcoind` port 19333 on testnet, 19332 on mainnet) exposes internal node mutation and status endpoints (`/mine`, `/block/submit`, `/peers`). It **MUST NEVER** be bound to `0.0.0.0` or exposed to public inbound internet traffic.  
+> **RPC Security Isolation (Loopback Only):**
+> The JSON-RPC daemon (`armcoind` port 19333 on testnet, 19332 on mainnet) exposes internal node mutation and status endpoints (`/mine`, `/block/submit`, `/peers`). It **MUST NEVER** be bound to `0.0.0.0` or exposed to public inbound internet traffic.
 > Local administrative CLI tools authenticate via the ephemeral, restrictive `armax.cookie` file on localhost. If remote administrative access is required, node operators must use an SSH tunnel (`ssh -L 19333:127.0.0.1:19333 user@server`) or an authenticated reverse proxy with TLS.
 
 ---
 
-## 2. Seed Node Infrastructure & DNS Setup
+## 2. System Requirements & Quickstart
+
+### System Requirements
+
+- **Supported Platforms:**
+  - Linux `amd64` (x86_64 servers & desktops, Ubuntu 22.04+, Debian 12+)
+  - Linux `arm64` (Raspberry Pi 4/5, Armbian, AWS Graviton)
+  - Windows `amd64` (Windows 10/11, Windows Server 64-bit)
+  - macOS `arm64` (Apple Silicon M1/M2/M3/M4)
+- **Minimum Hardware:**
+  - 2 CPU cores
+  - 2 GB RAM (4 GB recommended if running both node and miner)
+  - 10 GB free disk space (SSD recommended)
+- **Toolchain (if building from source):**
+  - **Go 1.27 or higher** (required for `crypto/mldsa`)
+  - Git
+
+### Step 1: Clone and Build
+
+```bash
+git clone https://github.com/acxxcxx/armax-coin.git
+cd armax-coin
+
+# Verify Go version (requires Go 1.27+)
+go version
+
+# Build all binaries
+go build -o armcoind main.go
+go build -o armwallet ./cli/armwallet
+go build -o armsend ./cli/armsend
+go build -o armminer miner/miner.go
+```
+
+On Windows (PowerShell):
+```powershell
+.\build.ps1
+```
+
+### Step 2: Start the Testnet Node (`armcoind`)
+
+```bash
+# In testnet mode (default when -network is omitted)
+./armcoind -network testnet
+```
+
+Expected startup output:
+```text
+==================================================
+ ARMAXCOIN (tARMX) - DAEMON & P2P NODE
+==================================================
+[+] Network Profile  : TESTNET
+[+] Blockchain Height: ...
+[P2P] Loaded known peers from .../peers.json
+[DNS Seed] Resolved 'testnet-seed1.armax-coin.cloud'...
+[OK] RPC Daemon active on 127.0.0.1:19333 | P2P Network active on port 19335
+[P2P] Node actively listening on port 19335 (Network ID: ARMX-TESTNET-1)...
+```
+
+### Step 3: Check Node Status
+
+In a second terminal:
+```bash
+curl -s http://127.0.0.1:19333/stats | jq .
+```
+Response displays the current block height, difficulty, cumulative chainwork, peer count, and network identity.
+
+---
+
+## 3. Seed Node Infrastructure & DNS Setup
 
 A dedicated testnet seed node provides reliable 24/7 block dissemination:
 - **Operating System:** Ubuntu 22.04 LTS or Debian 12 (x86_64 or aarch64/ARM64).
@@ -29,10 +114,22 @@ A dedicated testnet seed node provides reliable 24/7 block dissemination:
   - Create standard DNS `A` records pointing to your public seed IP (e.g., `testnet-seed1.armax-coin.cloud` -> `<YOUR_SEED_PUBLIC_IP>`).
   - Set DNS TTL to **300 seconds** (5 minutes) to facilitate rapid failover if an IP address migrates.
   - Multi-seed round-robin: Multiple seed node IPs can be mapped to the same apex or subdomain (`testnet-seed.armax-coin.cloud`) to enable automatic client load balancing and peer discovery.
+- **Official Testnet Seed Nodes:**
+  - `testnet-seed1.armax-coin.cloud:19335`
+  - `testnet-seed2.armax-coin.cloud:19335`
+  - `testnet-seed3.armax-coin.cloud:19335`
+
+Manual peer registration via RPC requires configured RPC credentials:
+```bash
+curl -X POST http://127.0.0.1:19333/peers \
+  -u "$ARMX_RPC_USER:$ARMX_RPC_PASSWORD" \
+  -H "Content-Type: application/json" \
+  -d '{"peer": "testnet-seed1.armax-coin.cloud:19335"}'
+```
 
 ---
 
-## 3. Firewall Configuration (UFW) & Health Monitoring
+## 4. Firewall Configuration (UFW) & Health Monitoring
 
 Enforce strict ingress policies on public seed and validator nodes:
 
@@ -63,7 +160,7 @@ Use the built-in health monitor script to verify connectivity and security:
 
 ---
 
-## 4. Systemd Service Deployment
+## 5. Systemd Service Deployment
 
 Create an unprivileged system user and install the testnet systemd unit:
 
@@ -90,7 +187,7 @@ sudo journalctl -u armcoind-testnet -f
 
 ---
 
-## 5. Mining on Testnet
+## 6. Mining on Testnet
 
 Mining on testnet is executed using the multi-threaded `armminer` CPU mining engine:
 
@@ -112,8 +209,8 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 - **Local Multi-Threaded Engine:** `armminer` queries `/getblocktemplate` from `armcoind`, constructs the candidate block with coinbase reward, and runs parallel worker threads across `-threads N` local CPU workers.
 - **Proof-of-Work Algorithm Migration:**
   - **Height $0 \le H < 520$:** Legacy SHA-256d PoW. All historical blocks remain valid and preserved.
-   - **Height $520 \le H < 2500$:** **ArmaxHash v1** (BLAKE2b-512 prehash derived from the network ID and header, Argon2id with 2,048 KiB, 1 lane, 2 iterations, then BLAKE2b-256 finalization; see `docs/CONSENSUS_AND_NETWORK.md`).
-   - **Height $H \ge 2500$ (active on testnet):** Stream-Fast **ArmaxHash v2** (BLAKE2b-512 over the `ARMX-POW-V2\0` domain, version, network ID, and header, followed by BLAKE2b-256). The fixed-header `HashV2` benchmark reports 0 allocations/op; it does not measure complete block validation or end-to-end miner throughput.
+  - **Height $520 \le H < 2500$:** **ArmaxHash v1** (BLAKE2b-512 prehash derived from the network ID and header, Argon2id with 2,048 KiB, 1 lane, 2 iterations, then BLAKE2b-256 finalization; see `docs/CONSENSUS_AND_NETWORK.md`).
+  - **Height $H \ge 2500$ (active on testnet):** Stream-Fast **ArmaxHash v2** (BLAKE2b-512 over the `ARMX-POW-V2\0` domain, version, network ID, and header, followed by BLAKE2b-256). The fixed-header `HashV2` benchmark reports 0 allocations/op; it does not measure complete block validation or end-to-end miner throughput.
 - **Console Telemetry:** Prints real-time hashrate metrics (`H/s`, `kH/s`, `MH/s`) and solve timestamps every stats interval.
 - **Dynamic Tip Adaptation:** Automatically queries daemon tip height and aborts stale rounds if a competing peer mines a block first (`HTTP 409 Conflict`).
 - **Coinbase Maturity (10 Confirmations on Testnet, 100 on Mainnet):** Freshly mined block rewards enter an on-chain immature queue and cannot be spent until 10 blocks (testnet) or 100 blocks (mainnet) have been confirmed on top of them (consensus-enforced, storage schema v3).
@@ -149,7 +246,51 @@ For running multiple local nodes on the same host, use ports in the 29000-range 
 
 ---
 
-## 6. Backup and Disaster Recovery
+## 7. Client CLI Operations: Wallet & Transactions
+
+Armaxcoin uses post-quantum ML-DSA-65 keys derived from standard 24-word BIP-39 recovery mnemonics. Keystores are protected using Argon2id password encryption.
+
+### Wallet Management (`armwallet`)
+
+#### Create a New Testnet Wallet:
+```bash
+./armwallet -network testnet -create -wallet testnet_wallet.json
+```
+You will be prompted to enter a strong passphrase and securely record your 24-word recovery phrase.
+
+#### Check Wallet Address and Balance:
+```bash
+# Display the address stored in the keystore
+./armwallet -network testnet -address -wallet testnet_wallet.json
+
+# Query the address balance from the running node
+./armwallet -network testnet -balance <WALLET_ADDRESS>
+```
+
+### Sending Testnet Transactions (`armsend`)
+
+To send testnet coins to another address:
+```bash
+./armsend -network testnet \
+  -wallet testnet_wallet.json \
+  -to <RECIPIENT_ADDRESS> \
+  -amount 10.0 \
+  -fee 0.00011
+```
+Or specify amounts directly in atomic Armoids ($1\text{ tARMX} = 10^8\text{ Armoids}$):
+```bash
+./armsend -network testnet \
+  -wallet testnet_wallet.json \
+  -to <RECIPIENT_ADDRESS> \
+  -amount-armoids 1000000000 \
+  -fee-armoids 11000
+```
+
+All transaction signing occurs strictly client-side within `armsend`. Your encrypted wallet private keys are never transmitted to the node or network.
+
+---
+
+## 8. Backup and Disaster Recovery
 
 The testnet blockchain state is stored in `<datadir>/testnet/blockchain.db` (bbolt ACID key-value store).
 
@@ -177,7 +318,7 @@ sudo systemctl start armcoind-testnet
 
 ---
 
-## 7. Node Upgrade and Rollback Runbook
+## 9. Node Upgrade and Rollback Runbook
 
 ### Seamless Upgrade Procedure
 1. Verify the current tip height and peer connectivity:
@@ -217,7 +358,7 @@ sudo systemctl start armcoind-testnet
 
 ---
 
-## 8. Manual Testnet Faucet Operator Guide
+## 10. Manual Testnet Faucet Operator Guide
 
 To prevent sybil attacks, resource draining, and spam without introducing complex captcha services, Armaxcoin testnet operates on a **Manual Operator Faucet Model**.
 
@@ -244,4 +385,37 @@ To prevent sybil attacks, resource draining, and spam without introducing comple
      -amount-armoids 100000000 \
      -fee-armoids 11000
    ```
-  *(Sends 1.0 tARMX [100,000,000 Armoids] with a fee of 11,000 Armoids).*
+   *(Sends 1.0 tARMX [100,000,000 Armoids] with a fee of 11,000 Armoids).*
+
+---
+
+## 11. Troubleshooting & Diagnostics
+
+- **Node cannot find peers:**
+  Ensure outbound TCP port `19335` is not blocked by your local firewall or ISP router.
+  Check DNS resolution of seeds:
+  ```bash
+  nslookup testnet-seed1.armax-coin.cloud
+  ```
+- **Port already in use:**
+  Verify another `armcoind` process is not already running:
+  ```bash
+  # Linux / macOS
+  lsof -i :19335
+  # Windows
+  netstat -ano | findstr 19335
+  ```
+- **Connection refused on RPC:**
+  Ensure `armcoind` has completed startup and created `armax.cookie`. The RPC daemon binds strictly to `127.0.0.1:19333` on testnet.
+- **Corrupted testnet database:**
+  To perform a clean resynchronization:
+  ```bash
+  # Linux
+  rm -rf ~/.armax/testnet/blockchain.db ~/.armax/testnet/peers.json
+  ./armcoind -network testnet
+  ```
+  On Windows:
+  ```powershell
+  Remove-Item "$env:APPDATA\Armax\testnet\blockchain.db", "$env:APPDATA\Armax\testnet\peers.json"
+  .\armcoind.exe -network testnet
+  ```

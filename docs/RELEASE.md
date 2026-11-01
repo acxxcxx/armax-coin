@@ -87,7 +87,7 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.5-windows-amd64.zip"
 
 ## 5. Official Release Status
 
-- **Latest Release (`v1.0.5`):** **Active**
+- **Latest locally tagged release (`v1.0.5`):** **Active**
   - **Release Tag:** [`v1.0.5`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.5)
   - **Status:** Public Open Testnet -- Display Ticker (tARMX), CLI Hardening & Release Prep
   - **Target Architectures:**
@@ -96,6 +96,8 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.5-windows-amd64.zip"
     - `armax-v1.0.5-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
     - `armax-v1.0.5-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
   - **Verification:** Automatically validated via GitHub Actions with race detection, staticcheck, govulncheck, and cryptographic SHA256SUMS aggregation.
+
+The local repository contains v1.0.6 changelog and target-release documentation, but no local `v1.0.6` tag. These files do not establish that v1.0.6 is an official published release. Confirm publication from the project's release records before describing it as the latest official release.
 
 - **Previous Maintenance Release (`v1.0.4`):**
   - **Release Tag:** [`v1.0.4`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.4)
@@ -112,4 +114,3 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.5-windows-amd64.zip"
 - **Initial Open Testnet Release (`v1.0.0`):**
   - **Release Tag:** [`v1.0.0`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.0)
   - **Status:** Initial Public Open Testnet Release
-

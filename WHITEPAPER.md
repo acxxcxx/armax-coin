@@ -1,19 +1,21 @@
 # Armaxcoin (ARMX) Technical Whitepaper
 
-**Version:** 1.0.5 (Public Testnet Release)  
-**Ticker:** `ARMX` (mainnet; testnet GUI and explorer display `tARMX`)  
-**Network Profiles:** `ARMX-TESTNET-1` (active default) and `ARMX-MAINNET-1` (locked; not launched)  
-**Consensus:** Proof-of-Work (PoW) with LWMA-1 ($N=60$)  
+**Version:** 1.0.6 (Stabilization in Progress; Latest Tagged Release: v1.0.5)
+**Ticker:** `ARMX` (mainnet; testnet GUI and explorer display `tARMX`)
+**Network Profiles:** `ARMX-TESTNET-1` (active default) and `ARMX-MAINNET-1` (locked; not launched)
+**Consensus:** Proof-of-Work (PoW) with LWMA-1 ($N=60$)
 **Genesis Date:** 2024-03-09 (genesis timestamp date)
-**Seed Nodes:** Operated by core developers; community operators sought  
-**DNS Seed Peers (Testnet):** `testnet-seed1.armax-coin.cloud:19335`, `testnet-seed2.armax-coin.cloud:19335`, `testnet-seed3.armax-coin.cloud:19335`  
+**Seed Nodes:** Operated by core developers; community operators sought
+**DNS Seed Peers (Testnet):** `testnet-seed1.armax-coin.cloud:19335`, `testnet-seed2.armax-coin.cloud:19335`, `testnet-seed3.armax-coin.cloud:19335`
 
 ---
 
 ## 1. Abstract
 Armaxcoin (ARMX) is an open-source Proof-of-Work Layer-1 protocol under public-testnet development. It is experimental software, not a production mainnet system or an investment product.
 
-ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, and cumulative chainwork with BIP-173 Bech32 addresses, 24-word BIP-39 recovery phrases (12-word import is legacy-only), LWMA-1 difficulty adjustment across a 60-block window, Merkle proofs, and bbolt-backed state persistence. Claims about production security remain subject to the mainnet readiness gates and independent audit.
+ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, and cumulative chainwork with BIP-173 Bech32 addresses, 24-word BIP-39 recovery phrases (12-word import is legacy-only), LWMA-1 difficulty adjustment across a 60-block window, Merkle proofs, and bbolt-backed state persistence. Claims about production security remain subject to the mainnet readiness verification gates.
+
+> Mainnet is locked and has not launched. Source code preserves the 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and existing genesis. The genesis block contains a 60 ARMX coinbase output to the canonical zero-payload address; this source-level fact is not a claim about off-chain arrangements or future holdings. After launch, the project may seek to accumulate up to 1,000,000 ARMX through ordinary, publicly observable mining under the same rules as every miner. This is a long-term operational target, not a premine, genesis allocation, protocol reserve, or guarantee of holdings.
 
 ---
 
@@ -37,7 +39,7 @@ ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, an
 | **Halving Interval** | Every 1,050,000 blocks (~4 years) | Reward cuts in half ($60 \to 30 \to 15 \to \dots$ ARMX) |
 | **Maximum Total Supply** | 126,000,000 ARMX | Strict hard cap (12,600,000,000,000,000 Armoids, 8 decimal places; real theoretical emission: 125,999,999.874 ARMX) |
 | **Supply Accounting** | $O(1)$ Incremental State Cache | Constant-time circulating supply tracking without block history traversal |
-| **Genesis Allocation** | 60 ARMX (Burned) | Hardcoded deterministic Genesis block burned to zero address (`armx1qqqq...plwcdd`) without premine |
+| **Project Mining Objective** | Up to 1,000,000 ARMX | Operational target only; actual holdings depend on ordinary mining performance; not a protocol allocation |
 | **Block Template Interface** | `/getblocktemplate` JSON RPC | Bounded candidate block template endpoint for external miners |
 | **RPC Security** | Loopback by default; authenticated TLS for public RPC | A non-loopback bind requires explicit opt-in, Basic Auth, and configured TLS certificate/key files; `/chain` is bounded to 50 blocks |
 | **P2P Synchronization** | Chunked Range & Chainwork Sync | Range-based block streaming (`GET_BLOCK_RANGE`) with cumulative chainwork reorg |
@@ -73,7 +75,7 @@ To protect against quantum preimage attacks and avoid typos, Armaxcoin employs t
 Every Armaxcoin address begins with **`armx1`** and is exactly 63 characters long in lowercase Bech32 (e.g. `armx17nqa4uyewe8elsn4w8qfygjv7aafkkzj25r8antzdmecwnhpd28sayl2yl`). The Genesis miner burn address consists of 32 zero bytes (`armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd`).
 
 ### 3.3 BIP-39 Deterministic Mnemonic Recovery & Keystore
-Armaxcoin defaults to 256 bits of cryptographic entropy producing a **24-word BIP-39 mnemonic phrase** (12-word phrases are supported with warning). 
+Armaxcoin defaults to 256 bits of cryptographic entropy producing a **24-word BIP-39 mnemonic phrase** (12-word phrases are supported with warning).
 
 Keystores only store the 32-byte seed encrypted via **Argon2id** key derivation and **AES-256-GCM** (or XChaCha20-Poly1305) authenticated encryption with strict file permissions (`0600`). Passphrases are prompted securely from the terminal or environment variables and never logged or accepted via CLI command-line arguments.
 
@@ -256,7 +258,7 @@ graph TD
     A --> F[5. Lightweight Smart Contracts]
     A --> G[6. Small-Hardware PoW Consensus]
     A --> H[7. Democratic On-Chain Governance]
-    
+
     style B fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#fff
     style D fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#fff
     style E fill:#3498db,stroke:#2980b9,stroke-width:2px,color:#fff
@@ -310,7 +312,7 @@ A rigorous blockchain design requires transparency regarding operational boundar
 
 1. **Quantum-Resistant Digital Signatures (NIST FIPS 204, ML-DSA-65):** User transactions employ module-lattice signatures resistant to Shor's algorithm. However, this does not eliminate all quantum attack vectors: SHA-256 PoW mining remains subject to quadratic Grover speedups ($\approx 128\text{-bit}$ effective quantum security).
 2. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
-3. **Code Audit Status:** The codebase and cryptographic implementations have not yet undergone a formal third-party security audit.
+3. **Mainnet Readiness & Verification:** Protocol readiness, network stabilization, and operational release criteria are tracked under formal verification gates (see [Mainnet Readiness Checklist](docs/MAINNET_READINESS.md)).
 4. **Reorganization Policy (720 Blocks):** The node rejects reorganizations deeper than 720 blocks. Reorganizations within that limit remain possible, so the limit is not transaction finality. A partition beyond the limit may require coordinated operator recovery.
 5. **RPC Daemon Isolation:** The RPC daemon (`armcoind`) binds strictly to loopback (`127.0.0.1`). Exposing the RPC port to public interfaces without strong authentication introduces severe security risks.
 6. **Key Management & Signing Architecture:** Key generation, keystore management, and post-quantum signing are performed exclusively by the local client tools (`armwallet`, `armsend`, `armgui`). No private keys are generated, stored, or processed in web browsers; public web interfaces and explorers are read-only and broadcast-only.

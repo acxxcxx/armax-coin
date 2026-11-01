@@ -27,7 +27,7 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [color=red][b]CRITICAL EXPERIMENTAL TESTNET DISCLAIMER:[/b][/color]
 [list]
 [*] [b]Zero Economic Value:[/b] Testnet coins ([font=monospace]tARMX[/font]) carry [b]NO monetary value[/b], no investment utility, and no guarantee of exchange listing or token conversion.
-[*] [b]Code Audit Status:[/b] The consensus engine, ArmaxHash implementation, and cryptographic integration are experimental and have [b]NOT yet undergone an independent third-party security audit[/b].
+[*] [b]Experimental Testnet:[/b] The consensus engine, ArmaxHash implementation, and cryptographic integration are active testnet implementations focused on verification and protocol stabilization.
 [*] [b]State Reset Possibility:[/b] As an active development testnet, blockchain state may be reset if critical protocol flaws are discovered.
 [*] [b]Mainnet Status:[/b] Mainnet is [b]locked in source[/b] ([font=monospace]core.MainnetLaunched = false[/font]). Invoking [font=monospace]-network mainnet[/font] is strictly rejected by all binaries.
 [/list]
@@ -50,7 +50,8 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [*] [b]Initial Block Reward:[/b] 60.00000000 tARMX (6,000,000,000 Armoids)
 [*] [b]Halving Interval:[/b] Every 1,050,000 blocks (~4.0 years on 120s cadence)
 [*] [b]Maximum Hard Cap:[/b] 126,000,000 tARMX (12,600,000,000,000,000 Armoids, 8 decimal places)
-[*] [b]Premine / Founder Allocation:[/b] [b]0% (Zero Premine, Zero ICO, Zero Developer Tax)[/b]
+[*] [b]Mainnet Tokenomics Status:[/b] Mainnet remains locked and has not launched. Existing consensus settings remain unchanged: 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and the current genesis. The source-defined 60 ARMX genesis coinbase goes to the canonical zero-payload address; no separate project treasury genesis output is defined in that source. This is not a statement about off-chain arrangements.
+[*] [b]Long-term Mining Objective:[/b] After launch, the project may seek to accumulate up to 1,000,000 ARMX through ordinary mining under the same rules as all miners. It is not a premine, genesis allocation, or protocol reserve, and there is no guarantee of reaching it. Bridge backing and DEX liquidity require separate decisions and reviews.
 [*] [b]Genesis Block Allocation:[/b] 60 tARMX burned to unspendable zero address ([font=monospace]armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd[/font])
 [*] [b]Genesis Block Hash:[/b] [font=monospace]0000000dc84202e63a340a2439625fbf9cea5cb7b84119f93d52cff39f63a68b[/font]
 [*] [b]Genesis Merkle Root:[/b] [font=monospace]808a4007681dd123133bfe106b101d251ff0d2d023f600384394673bfc03768d[/font]
@@ -135,7 +136,7 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 
 [b][size=14pt]5. Security Disclosures & Known Limitations[/size][/b]
 [list]
-[*] [b]Experimental Codebase:[/b] Neither the consensus engine nor the post-quantum cryptographic integration has undergone an external third-party security audit.
+[*] [b]Active Testnet Stabilization:[/b] The network is operating under continuous peer validation, multi-node synchronization testing, and consensus verification.
 [*] [b]P2P Transport Security (TOFU):[/b] TLS 1.3 and Trust On First Use (TOFU) pinning are active by default. While TOFU prevents ongoing passive surveillance and subsequent tampering, initial contact remains vulnerable to active in-path MITM adversaries without out-of-band seed pins.
 [*] [b]RPC Isolation:[/b] RPC daemon binds strictly to [font=monospace]127.0.0.1[/font]. Mutating endpoints require local cookie authentication ([font=monospace]armax.cookie[/font]) or HTTP Basic Auth. Binding to external interfaces requires explicit TLS certificates and credentials.
 [*] [b]Low Bootstrap Hashrate & 51% Risk:[/b] During early testnet testing with few active miners, the network is susceptible to 51% hashrate spikes. Reorganizations are bounded by consensus to 720 blocks (~24 hours).

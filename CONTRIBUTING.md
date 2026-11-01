@@ -14,7 +14,7 @@ All contributors and community participants are expected to adhere to our [Code 
 
 ## 2. Experimental Status & Security Boundaries
 
-- **Experimental Software:** Armaxcoin is currently deployed in an open testnet phase (`ARMX-TESTNET-1`). It has not undergone an independent third-party security audit.
+- **Experimental Software:** Armaxcoin is currently deployed in an active open testnet phase (`ARMX-TESTNET-1`) for public verification and protocol stabilization.
 - **No Financial Guarantees:** Testnet coins (`tARMX`) have no monetary value, no guarantee of conversion, and no financial utility.
 - **Vulnerability Reporting:** Do **NOT** open public GitHub issues for security vulnerabilities, consensus bypasses, or denial-of-service vectors. Follow the responsible disclosure procedures defined in [SECURITY.md](SECURITY.md).
 

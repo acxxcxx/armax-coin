@@ -7,9 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.6] - Stabilization in Progress
+
+> **Release Status:** `v1.0.6 — Stabilization in Progress` (Target release; highest local Git tag remains `v1.0.5`).
+> Core node test suites, race detection, and binary compilations are recorded as passing in prior maintenance records, but have not been independently re-verified with attached execution logs in this publication review cycle. The initial baseline records legacy bridge fixture subprocess failures (`TestLocalGoRelayerE2E` and `TestSignedEVMWriter*`) due to a legacy 4-argument deployment fixture against the 6-argument `WrappedArmaxcoin` Revision 6.1.1 constructor and obsolete role checks. Release-wide test status remains not independently verified. Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed and accepted as safe by the Project Owner; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in the review evidence. This release is undergoing final validation and stabilization.
+> Maintenance release for active Testnet; no hard fork, no soft fork, no consensus alterations. Existing genesis, PoW, chainwork, and block timestamps remain unchanged.
+
+### Added
+- **Additive RPC Response Headers & Telemetry:**
+  - Added additive `X-Network-ID` HTTP response header to mining endpoints (`/getmininginfo`, `/getblocktemplate`).
+  - Added `peers_seeds` and `peers_candidates` telemetry fields to `/stats` and `/status` RPC endpoints.
+  - Added `/peers?filter=active` query parameter to return strictly active verified P2P sessions.
+- **Node Diagnostic Subsystem:**
+  - Added node diagnostic CLI flags: `-getblockchaininfo`, `-getnetworkinfo`, `-getpeerinfo`, `-getmempoolinfo`, and `-checkhealth`.
+
+### Fixed
+- **Daemon Graceful Shutdown & Fail-Closed BoltDB Safety (`node/server.go`):** Implemented exported `ShutdownServerSafely(server, peerServer, limiter, bc, timeout)` which terminates HTTP listeners, P2P network cycles, and rate limiters. If HTTP shutdown times out or fails, BoltDB close/flush is explicitly ABORTED (fail-closed), guaranteeing that in-flight HTTP handlers cannot access a closed BoltDB instance or cause panics and corruption.
+- **Background Goroutine Lifecycle in IP Rate Limiter (`node/server.go`):** Added `stopChan chan struct{}`, `doneChan chan struct{}`, `stopOnce sync.Once`, and `Close()` method to `IPRateLimiter`. `Close()` blocks on `doneChan`, guaranteeing that the background cleanup goroutine has completely terminated before `Close()` returns.
+- **Concurrent Serialized Size Cache & Invalidation (`core/block.go`, `core/transaction.go`):** Converted `cachedSize` to `int32` synchronized with atomic load/store operations (`atomic.LoadInt32`, `atomic.StoreInt32`). Added `InvalidateCache()` on `Block` and `Transaction` and integrated cache clearing into `tx.Sign()`. Eliminates data race detected by `go test -race` during concurrent mempool admission, RPC queries, and P2P block validation.
+- **P2P Heartbeat Session Pointer Identity (`node/p2p.go`):** In `startPeerSessionHeartbeat()`, captured exact session instance pointer `targetSess` into the heartbeat goroutine and passed it directly to `p.dropOutboundSession(targetAddr, targetSess)`, preventing dead session teardown from erroneously dropping replacement sessions registered under the same address.
+- **P2P Outbound Work Admission & NAT Node Relay (`node/p2p.go`):** Added `registerOutboundWork() (done func(), admitted bool)` synchronized under `lifecycleLock.RLock()` to track outbound broadcasts and relays on the active cycle's `WaitGroup` while running, and reject work immediately once the server is stopping or stopped. Nodes without an active inbound listener cycle (`activeCycle == nil`, e.g. behind NAT or client nodes) safely admit work without panicking, enabling reliable block broadcast and transaction relay.
+- **RPC Auth Tracker Memory Bounds & Prioritized Lockout Eviction (`node/auth.go`):** Added timestamp tracking (`lastFail time.Time`) and a 3-pass prioritized eviction policy: expired entries first, non-locked failure records (1-4 attempts) second (preserving actively failing IP), and an emergency cap at 5,000 entries. Strictly protects active unexpired lockouts from being flushed by high-volume IP flood scans while bounding memory usage.
+- **P2P Dashboard & Seed Telemetry Deduplication (`node/p2p.go`, `node/server.go`, `gui/main.go`, `gui/main_unix.go`):** Fixed double-counting where configured DNS seeds and their resolved physical IPs were stored and displayed as separate entries. Added endpoint normalization (`seedHostToIPs`, `seedIPToHosts`), active verified session tracking (`activeInboundConns`, `GetPeersActive()`), and differentiated endpoints in `/stats`, `/status`, and `/peers?filter=active`.
+- **P2P Endpoint IPv6 Normalization (`node/p2p.go`):** Preserved IPv6 bracket notation `[::1]:port` in `normalizePeerEndpoint` to prevent incorrect port stripping and collision with IPv4 loopback `127.0.0.1:port`.
+- **Peer Store Migration Non-Destructive Invariant (`node/p2p.go`):** Migrated legacy peer store `<dataDir>/peers.json` into network-isolated `<dataDir>/<network>/peers.json` non-destructively with `0600` permissions. The legacy file is left intact and unmodified for safe downgrade compatibility.
+- **Fail-Closed Peer Store Corruption Handling (`node/p2p.go`):** If a peer store file is corrupted or schema-invalid, it is preserved at `<path>.corrupt` (with timestamped forensic fallback), TOFU auto-pinning is disabled, and `savePeers()` aborts to prevent overwriting disk state.
+- **Miner RPC Auth Cookie Path Resolution (`miner/miner.go`):** Updated `cookieCandidates` to query `node.GetRPCAuthCookiePath()` first, supporting both isolated `<dataDir>/<network>/armax.cookie` and legacy working directory locations.
+- **Genesis Merkle Root Calculation Isolation (`core/genesis.go`):** Explicitly specified network profiles for Regtest and Soak genesis Merkle roots (`CalculateMerkleRootForNetwork`), preventing global network state mutation during parallel unit tests from altering consensus genesis identities.
+- **GUI Pre-Sign Bounds Validation & Error Formatting (`gui/main.go`, `gui/gui_test.go`):** Added pre-sign validation bounds check in `queryNonceAndSignGUITransaction` rejecting non-positive amounts, out-of-bounds fees, or sums exceeding `MaxSupply` before contacting RPC or signing. Decoupled internal Go error string from UI modal alerts, returning lowercase `errors.New("transaction amount or fee exceeds permitted bounds")` per Go ST1005 convention.
+
+### Security
+- **Post-Quantum Cryptographic Integrity Audit (`core/pqsig/pqsig.go`, `core/transaction.go`):** Audited transaction signature and validation pipeline. Confirmed 100% adherence to NIST FIPS 204 (ML-DSA-65), SigAlg identifier `0x01` (`SigAlgMLDSA65`), Context `ARMX-TX-V1`. Confirmed zero ECDSA exists in transaction signing or validation logic.
+- **TOFU Pinning Fail-Closed Protection:** Peer store corruption triggers immediate fail-closed state, disabling unpinned trust-on-first-use adoption.
+
+### Tests
+- **Test Hooks & Concurrency Validation (`core/testhooks.go`):** Added `SetTxCachedSizeForTesting` and deferred mainnet network unlocking in `LockNetworkForTesting()`.
+- **Miner Flow In-Process Test Suite (`node/miner_compat_test.go`):** Added automated regression tests verifying mining info, block template structure, `X-Mine-Key`, and Basic auth flow.
+- **P2P Exchange & Verification Suites (`node/p2p_block_exchange_test.go`, `node/p2p_peer_validation_test.go`):** Added in-depth validation of chunked block exchange, chainwork reorganization, and loopback address boundary checks.
+- **Cross-Chain Bridge & EVM Contracts:** Baseline evidence records a 100% pass rate for local EVM smart contract tests (`npm test` in `contracts/`, 11/11 tests recorded passed) and Stage P3-A Go multisig relayer offline unit tests (7/7 suites passed). Full Go bridge package execution (`go test ./bridge`) is blocked by legacy fixture subprocess failures (`TestLocalGoRelayerE2E` and `TestSignedEVMWriter*`) caused by a 4-argument deployment fixture against the 6-argument `WrappedArmaxcoin` Revision 6.1.1 constructor and obsolete role checks. Full end-to-end bridge test suite re-execution has not been independently run with attached logs, and bridge publication readiness is tracked independently from Core Node v1.0.6.
+
+### Documentation
+- Consolidated and audited technical documentation across `README.md`, `CHANGELOG.md`, `WHITEPAPER.md`, `docs/CONSENSUS_AND_NETWORK.md`, `docs/NODE_OPERATIONS.md`, `docs/MINING_GUIDE.md`, and `docs/releases/v1.0.6.md`.
+
+### Known Issues & Compatibility Notes
+- **Live Mixed-Version Operation:** Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed and accepted as safe by the Project Owner; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in review evidence. Upgrading operators are advised to follow standard rolling restart procedures.
+- **Mining Daemon Architecture:** The core daemon (`armcoind`) does not host a Stratum server; it provides HTTP RPC block templates. `armminer` includes a Stratum v1 TCP client for external pools, but pool infrastructure is operated independently.
+- **Windows Test Suite I/O Cadence:** The full `node` test suite under Windows may require ~250 seconds due to bbolt database creation and teardown overhead under local antivirus filesystem hooks; full execution of this suite has not been independently re-run or verified with logs in this review cycle.
+
 ## [v1.0.5] - 2026-10-27
 
 > **Note:** `v1.0.2` was never released or tagged. The release sequence is `v1.0.0`, `v1.0.1`, `v1.0.3`, `v1.0.4`, `v1.0.5`.
+> See the [v1.0.5 release notes](docs/releases/v1.0.5.md), including the copied artifact checksums and their verification note.
 
 ### Version
 - Bumped the protocol/software version to `1.0.5` (`core/consensus.go`, GUI footer, Windows manifest, `scripts/build-release.ps1`). `scripts/verify-release.sh` now takes the expected version as an optional second argument (default `v1.0.5`) and strips the surrounding quotes from the printed recovery phrase, which previously made its mnemonic-restore step fail.
