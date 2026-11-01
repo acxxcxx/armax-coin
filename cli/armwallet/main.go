@@ -276,6 +276,7 @@ func createWallet(filePath string, force bool) {
 		fmt.Fprintf(os.Stderr, "[-] Failed to create wallet: %v\n", err)
 		os.Exit(1)
 	}
+	defer w.Zeroize()
 
 	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
 	if err != nil {
@@ -309,6 +310,7 @@ func restoreWallet(mnemonic, filePath string, force bool) {
 		fmt.Fprintf(os.Stderr, "[-] Failed to restore wallet from mnemonic: %v\n", err)
 		os.Exit(1)
 	}
+	defer w.Zeroize()
 
 	backupPath, err := wallet.CreateNewWalletKeystore(w, passphrase, filePath, force)
 	if err != nil {
@@ -328,6 +330,19 @@ func showAddress(filePath string) {
 	showAddresses(filePath)
 }
 
+func validateKeystoreMetadata(ks *wallet.KeystoreFile) error {
+	if ks == nil || strings.TrimSpace(ks.Address) == "" {
+		return fmt.Errorf("keystore contains empty or missing address")
+	}
+	if ks.Crypto.Ciphertext != "" && ks.PublicKey != "" && core.ValidateAddress(ks.Address) {
+		derivedAddr, err := wallet.AddressFromPubKeyHex(strings.TrimSpace(ks.PublicKey))
+		if err != nil || !core.MatchAddress(ks.Address, derivedAddr) {
+			return fmt.Errorf("keystore metadata mismatch: address %s does not match public key", ks.Address)
+		}
+	}
+	return nil
+}
+
 func showAddresses(filePath string) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -338,6 +353,10 @@ func showAddresses(filePath string) {
 	var ks wallet.KeystoreFile
 	if err := json.Unmarshal(data, &ks); err != nil {
 		fmt.Fprintln(os.Stderr, "[-] Invalid keystore file format:", err)
+		os.Exit(1)
+	}
+	if err := validateKeystoreMetadata(&ks); err != nil {
+		fmt.Fprintf(os.Stderr, "[-] Keystore integrity error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -361,7 +380,7 @@ func backupWallet(sourcePath, destPath string) {
 
 	// Validate source is valid keystore JSON without exposing secrets
 	var ks wallet.KeystoreFile
-	if err := json.Unmarshal(data, &ks); err != nil || ks.Address == "" {
+	if err := json.Unmarshal(data, &ks); err != nil || validateKeystoreMetadata(&ks) != nil {
 		fmt.Fprintf(os.Stderr, "[-] Refusing to backup corrupted keystore file '%s'\n", sourcePath)
 		os.Exit(1)
 	}
@@ -435,6 +454,7 @@ func walletCheck(filePath string) {
 		fmt.Println("==================================================")
 		os.Exit(1)
 	}
+	defer w.Zeroize()
 
 	if !core.ValidateAddress(w.Address) {
 		fmt.Fprintln(os.Stderr, "[-] Wallet integrity check failed: stored address is not valid Bech32")
@@ -503,7 +523,7 @@ func rescanWallet(filePath string, daemonURL string, httpGet func(string) (*http
 		os.Exit(1)
 	}
 	var ks wallet.KeystoreFile
-	if err := json.Unmarshal(data, &ks); err != nil {
+	if err := json.Unmarshal(data, &ks); err != nil || validateKeystoreMetadata(&ks) != nil {
 		fmt.Fprintln(os.Stderr, "[-] Invalid keystore file format:", err)
 		os.Exit(1)
 	}

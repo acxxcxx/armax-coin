@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/acxxcxx/armax-coin/core/pqsig"
 )
@@ -32,7 +33,7 @@ type Transaction struct {
 	HashLock   string `json:"hash_lock,omitempty"` // 64 hex chars (SHA-256 hash lock for HTLC/Lightning channel)
 	TimeLock   int64  `json:"time_lock,omitempty"` // Expiration timestamp or block height for refund
 	Preimage   string `json:"preimage,omitempty"`  // Secret preimage revealed to claim HTLC funds
-	cachedSize int    `json:"-"`                   // Cached serialized byte size [C-28, C-34]
+	cachedSize int32  `json:"-"`                   // Cached serialized byte size [C-28, C-34, v1.0.6]
 }
 
 // Hash produces a canonical double-SHA256 (SHA-256d) digest of the transaction data
@@ -130,17 +131,23 @@ func (tx *Transaction) MarkSignatureVerified() {
 	globalSigVerifyCache.Unlock()
 }
 
-// Size returns the approximate serialized byte size of the transaction, caching the result [C-28, C-34]
+// Size returns the approximate serialized byte size of the transaction, caching the result [C-28, C-34, v1.0.6]
 func (tx *Transaction) Size() int {
-	if tx.cachedSize > 0 {
-		return tx.cachedSize
+	if cached := atomic.LoadInt32(&tx.cachedSize); cached > 0 {
+		return int(cached)
 	}
 	data, err := json.Marshal(tx)
 	if err != nil {
 		return 0
 	}
-	tx.cachedSize = len(data)
-	return tx.cachedSize
+	sz := int32(len(data))
+	atomic.StoreInt32(&tx.cachedSize, sz)
+	return int(sz)
+}
+
+// InvalidateCache resets the cached serialized byte size of the transaction [v1.0.6]
+func (tx *Transaction) InvalidateCache() {
+	atomic.StoreInt32(&tx.cachedSize, 0)
 }
 
 // Sign signs the transaction using an ML-DSA-65 PrivateKey [P2-2]
@@ -158,7 +165,7 @@ func (tx *Transaction) Sign(privKey *pqsig.PrivateKey) error {
 		return err
 	}
 	tx.Signature = hex.EncodeToString(sig)
-	tx.cachedSize = 0
+	atomic.StoreInt32(&tx.cachedSize, 0)
 	return nil
 }
 

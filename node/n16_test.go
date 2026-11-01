@@ -90,7 +90,7 @@ func TestN16_PrivateAndSelfAddressRejection(t *testing.T) {
 
 	bc := core.NewBlockchain(1)
 	defer bc.Close()
-	ps := NewPeerServer(core.MainnetP2PPort, bc)
+	ps := NewPeerServer(core.MainnetP2PPort, bc, t.TempDir(), "ARMX-MAINNET-1")
 
 	// Attempt to add private and loopback addresses
 	ps.AddPeer("127.0.0.1:" + core.MainnetP2PPort)

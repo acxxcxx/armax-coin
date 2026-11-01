@@ -25,7 +25,7 @@ func TestC28_C34_CachedSizeOnBlockAndTx(t *testing.T) {
 	if sz1 <= 0 {
 		t.Fatalf("expected positive tx size, got %d", sz1)
 	}
-	if tx.cachedSize != sz1 {
+	if int(tx.cachedSize) != sz1 {
 		t.Fatalf("expected tx.cachedSize to be set to %d, got %d", sz1, tx.cachedSize)
 	}
 
@@ -34,7 +34,7 @@ func TestC28_C34_CachedSizeOnBlockAndTx(t *testing.T) {
 	if bsz1 <= 0 {
 		t.Fatalf("expected positive block size, got %d", bsz1)
 	}
-	if b.cachedSize != bsz1 {
+	if int(b.cachedSize) != bsz1 {
 		t.Fatalf("expected b.cachedSize to be set to %d, got %d", bsz1, b.cachedSize)
 	}
 }

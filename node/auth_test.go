@@ -2,6 +2,7 @@ package node
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -161,6 +162,7 @@ func TestRPCAuth_Concurrency(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			req := httptest.NewRequest(http.MethodPost, "/rpc", nil)
+			req.RemoteAddr = fmt.Sprintf("192.0.2.%d:12345", id+1)
 			if id%2 == 0 {
 				req.Header.Set("Authorization", basicAuthVal)
 				if !Authenticate(req) {
@@ -176,6 +178,62 @@ func TestRPCAuth_Concurrency(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+// TestRPCAuth_EmptyCookieBypassRejected verifies that when GlobalAuth.Cookie is empty
+// (e.g. uninitialized or after failed cookie persistence), sending __cookie__:"" does NOT bypass auth [Security Audit].
+func TestRPCAuth_EmptyCookieBypassRejected(t *testing.T) {
+	ResetRPCAuthForTesting()
+	defer ResetRPCAuthForTesting()
+
+	emptyCookieHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte("__cookie__:"))
+	req := httptest.NewRequest(http.MethodPost, "/mine", nil)
+	req.RemoteAddr = "198.51.100.77:54321"
+	req.Header.Set("Authorization", emptyCookieHeader)
+
+	if Authenticate(req) {
+		t.Fatalf("SECURITY FAILURE: Empty cookie credential (__cookie__:) bypassed RPC authentication!")
+	}
+}
+
+// TestRPCAuth_MalformedHeaderTriggersLockout verifies that repeated malformed Authorization headers
+// record brute-force failures and lock out the offending IP after 5 attempts [Security Audit].
+func TestRPCAuth_MalformedHeaderTriggersLockout(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("ARMX_DATA_DIR", tempDir)
+	ResetRPCAuthForTesting()
+	defer ResetRPCAuthForTesting()
+
+	if err := InitRPCAuth("validuser", "validpass"); err != nil {
+		t.Fatalf("InitRPCAuth failed: %v", err)
+	}
+
+	attackerIP := "198.51.100.88:50000"
+	malformedHeaders := []string{
+		"Bearer token123",
+		"Basic !!!not_base64!!!",
+		"Basic " + base64.StdEncoding.EncodeToString([]byte("nocolonseparator")),
+		"Digest realm=test",
+		"Basic " + base64.StdEncoding.EncodeToString([]byte("stillnocolon")),
+	}
+
+	for i, hdr := range malformedHeaders {
+		req := httptest.NewRequest(http.MethodPost, "/submitblock", nil)
+		req.RemoteAddr = attackerIP
+		req.Header.Set("Authorization", hdr)
+		if Authenticate(req) {
+			t.Fatalf("Attempt %d with malformed header %q was accepted!", i+1, hdr)
+		}
+	}
+
+	// 6th attempt even with valid credentials must be rejected due to active IP lockout
+	validBasic := "Basic " + base64.StdEncoding.EncodeToString([]byte("validuser:validpass"))
+	reqLocked := httptest.NewRequest(http.MethodPost, "/submitblock", nil)
+	reqLocked.RemoteAddr = attackerIP
+	reqLocked.Header.Set("Authorization", validBasic)
+	if Authenticate(reqLocked) {
+		t.Fatalf("Expected IP %s to be locked out after 5 malformed Authorization attempts!", attackerIP)
+	}
 }
 
 // TestRPCAuth_AtomicReplacementFailurePreservesExisting verifies that if an atomic replace

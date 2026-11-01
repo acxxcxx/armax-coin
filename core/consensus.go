@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// Version defines the canonical software and consensus protocol release version [R-10]
-	Version = "1.0.5"
+	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.6]
+	Version = "1.0.6"
 
 	// MaxReorganizationDepth defines the maximum depth of reorganization allowed (prevents deep 51% history overwrites, 720 blocks = ~1 day at 120s) [D-05]
 	MaxReorganizationDepth = 720
@@ -768,6 +768,20 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 		}
 	}
 
+	// Snapshot current in-memory state before mutating so we can roll back cleanly if disk persistence fails
+	prevChain := bc.Chain
+	prevState := bc.State
+	prevSupply := bc.cachedSupply
+	prevWork := bc.cachedWork
+	prevTotalTx := bc.cachedTotalTx
+	prevDifficulty := bc.Difficulty
+	prevReward := bc.BlockReward
+	prevMempool := append([]Transaction(nil), bc.Mempool...)
+	prevUndos := make(map[int]*BlockUndoRecord, len(bc.undoHistory))
+	for k, v := range bc.undoHistory {
+		prevUndos[k] = v
+	}
+
 	for _, oTx := range orphanedTxs {
 		if _, confirmed := candidateTxMap[oTx.HashHex()]; !confirmed {
 			// [F6-PERF] Cryptographic signature verification for orphaned transactions re-entering mempool
@@ -777,8 +791,11 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 		}
 	}
 
-	// Replace active chain and state atomically
-	bc.Chain = append(bc.Chain[:ancestorIndex+1], newBlocks...)
+	// Replace active chain and state atomically using a fresh slice backing array
+	nextChain := make([]Block, ancestorIndex+1+len(newBlocks))
+	copy(nextChain, bc.Chain[:ancestorIndex+1])
+	copy(nextChain[ancestorIndex+1:], newBlocks)
+	bc.Chain = nextChain
 	bc.State = clonedState
 	bc.cachedSupply = runningSupply
 	bc.cachedWork = candidateWork
@@ -805,6 +822,15 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 	bc.CleanMempoolLocked()
 	if !bc.storeFailed && bc.StoragePath != "IN_MEMORY" && (bc.db != nil || bc.StoragePath != "") {
 		if err := bc.SaveToFile(); err != nil {
+			bc.Chain = prevChain
+			bc.State = prevState
+			bc.cachedSupply = prevSupply
+			bc.cachedWork = prevWork
+			bc.cachedTotalTx = prevTotalTx
+			bc.Difficulty = prevDifficulty
+			bc.BlockReward = prevReward
+			bc.Mempool = prevMempool
+			bc.undoHistory = prevUndos
 			return fmt.Errorf("failed to persist blockchain state to disk after reorg: %w", err)
 		}
 	}

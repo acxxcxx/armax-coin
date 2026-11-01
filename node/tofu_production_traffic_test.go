@@ -101,8 +101,9 @@ func startMockTLSServerOnAddr(t *testing.T, cert tls.Certificate, addr string) (
 						NetworkID: msg.NetworkID,
 						Type:      "HEIGHT_RESPONSE",
 						Payload: HeightResponse{
-							Height:    10,
-							Chainwork: "1000",
+							Height:     10,
+							Chainwork:  "1000",
+							LatestHash: "0000000000000000000000000000000000000000000000000000000000000001",
 						},
 					})
 				case "GET_PEERS":
@@ -150,6 +151,9 @@ func startMockTLSServerOnAddr(t *testing.T, cert tls.Certificate, addr string) (
 // 2. Reconnecting after store reload with same certificate succeeds.
 // 3. Reconnecting with an altered certificate fails before application message is trusted.
 func TestTOFU_ProductionPath_QueryP2P_PinPersisted(t *testing.T) {
+	ClearPeerServers()
+	defer ClearPeerServers()
+
 	tempDir := t.TempDir()
 	t.Setenv("ARMX_DATA_DIR", tempDir)
 
@@ -326,6 +330,9 @@ func TestTOFU_PlaintextPeerRejected_WhenRequireTLSFalse(t *testing.T) {
 // TestTOFU_PersistenceFailure_PinNotTrusted verifies that when peer store persistence fails,
 // the connection fails closed and no unpersisted pin is treated as trusted.
 func TestTOFU_PersistenceFailure_PinNotTrusted(t *testing.T) {
+	ClearPeerServers()
+	defer ClearPeerServers()
+
 	tempDir := t.TempDir()
 	t.Setenv("ARMX_DATA_DIR", tempDir)
 
@@ -390,6 +397,9 @@ func TestTOFU_PersistenceFailure_PinNotTrusted(t *testing.T) {
 // 2. When the first save fails, neither connection succeeds.
 // 3. Different fingerprints cannot be repinned or accepted after a failed save.
 func TestTOFU_ConcurrentFirstContact_BlockedOrFailingSave(t *testing.T) {
+	ClearPeerServers()
+	defer ClearPeerServers()
+
 	tempDir := t.TempDir()
 	t.Setenv("ARMX_DATA_DIR", tempDir)
 
@@ -1069,10 +1079,6 @@ func TestTOFU_PeerStore_InitFailuresAndMigration_SafeHalt(t *testing.T) {
 
 	// 3. Backward-compatible migration of legacy peer store with valid pins
 	migDir := t.TempDir()
-	legacyMainnetDir := filepath.Join(migDir, "mainnet")
-	if err := os.MkdirAll(legacyMainnetDir, 0755); err != nil {
-		t.Fatalf("Failed to create legacy dir: %v", err)
-	}
 	legacyStore := VersionedPeerStore{
 		Version:   1,
 		NetworkID: "ARMX-MAINNET-1",
@@ -1085,7 +1091,7 @@ func TestTOFU_PeerStore_InitFailuresAndMigration_SafeHalt(t *testing.T) {
 		},
 	}
 	legacyBytes, _ := json.MarshalIndent(legacyStore, "", "  ")
-	if err := os.WriteFile(filepath.Join(legacyMainnetDir, PeersFile), legacyBytes, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(migDir, PeersFile), legacyBytes, 0644); err != nil {
 		t.Fatalf("Failed to write legacy store: %v", err)
 	}
 
@@ -1095,7 +1101,7 @@ func TestTOFU_PeerStore_InitFailuresAndMigration_SafeHalt(t *testing.T) {
 	}
 
 	// Verify migrated file exists at canonical path
-	canonicalPath := filepath.Join(migDir, PeersFile)
+	canonicalPath := filepath.Join(migDir, "mainnet", PeersFile)
 	if _, err := os.Stat(canonicalPath); err != nil {
 		t.Fatalf("Expected migrated file at %s, got: %v", canonicalPath, err)
 	}
@@ -1109,11 +1115,7 @@ func TestTOFU_PeerStore_InitFailuresAndMigration_SafeHalt(t *testing.T) {
 
 	// 4. Corrupted legacy store prevents startup
 	corruptDir := t.TempDir()
-	corruptLegacyDir := filepath.Join(corruptDir, "mainnet")
-	if err := os.MkdirAll(corruptLegacyDir, 0755); err != nil {
-		t.Fatalf("Failed to create corrupt legacy dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(corruptLegacyDir, PeersFile), []byte("{invalid-json"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(corruptDir, PeersFile), []byte("{invalid-json"), 0644); err != nil {
 		t.Fatalf("Failed to write corrupt legacy store: %v", err)
 	}
 
@@ -1161,9 +1163,9 @@ func TestTOFU_NetworkIDValidation_RejectUnsupportedAndMismatch(t *testing.T) {
 		wantCanon string
 		wantSub   string
 	}{
-		{"ARMX-MAINNET-1", "ARMX-MAINNET-1", ""},
-		{"MAINNET", "ARMX-MAINNET-1", ""},
-		{"mainnet", "ARMX-MAINNET-1", ""},
+		{"ARMX-MAINNET-1", "ARMX-MAINNET-1", "mainnet"},
+		{"MAINNET", "ARMX-MAINNET-1", "mainnet"},
+		{"mainnet", "ARMX-MAINNET-1", "mainnet"},
 		{"ARMX-TESTNET-1", "ARMX-TESTNET-1", "testnet"},
 		{"TESTNET", "ARMX-TESTNET-1", "testnet"},
 		{"testnet", "ARMX-TESTNET-1", "testnet"},
@@ -1294,17 +1296,13 @@ func TestTOFU_LifecycleSetters_MemoryAndDiskIsolation(t *testing.T) {
 
 	// 2. Legacy store with wrong NetworkID
 	dir2 := t.TempDir()
-	legacyMainDir := filepath.Join(dir2, "mainnet")
-	if err := os.MkdirAll(legacyMainDir, 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
-	}
 	wrongNetStore := VersionedPeerStore{
 		Version:   1,
 		NetworkID: "ARMX-REGTEST-1", // Mismatch for mainnet candidate
 		Peers:     []*PeerInfo{},
 	}
 	wrongBytes, _ := json.Marshal(wrongNetStore)
-	if err := os.WriteFile(filepath.Join(legacyMainDir, PeersFile), wrongBytes, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir2, PeersFile), wrongBytes, 0644); err != nil {
 		t.Fatalf("Failed to write wrong net store: %v", err)
 	}
 
@@ -1321,17 +1319,13 @@ func TestTOFU_LifecycleSetters_MemoryAndDiskIsolation(t *testing.T) {
 
 	// 3. Legacy store with unsupported schema version
 	dir3 := t.TempDir()
-	legacyMainDir3 := filepath.Join(dir3, "mainnet")
-	if err := os.MkdirAll(legacyMainDir3, 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
-	}
 	badVerStore := VersionedPeerStore{
 		Version:   99, // Unsupported schema version
 		NetworkID: "ARMX-MAINNET-1",
 		Peers:     []*PeerInfo{},
 	}
 	badVerBytes, _ := json.Marshal(badVerStore)
-	if err := os.WriteFile(filepath.Join(legacyMainDir3, PeersFile), badVerBytes, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir3, PeersFile), badVerBytes, 0644); err != nil {
 		t.Fatalf("Failed to write bad ver store: %v", err)
 	}
 
@@ -1348,17 +1342,13 @@ func TestTOFU_LifecycleSetters_MemoryAndDiskIsolation(t *testing.T) {
 
 	// 4. Failed migration write
 	dir4 := t.TempDir()
-	legacyMainDir4 := filepath.Join(dir4, "mainnet")
-	if err := os.MkdirAll(legacyMainDir4, 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
-	}
 	validStore := VersionedPeerStore{
 		Version:   1,
 		NetworkID: "ARMX-MAINNET-1",
 		Peers:     []*PeerInfo{},
 	}
 	validBytes, _ := json.Marshal(validStore)
-	if err := os.WriteFile(filepath.Join(legacyMainDir4, PeersFile), validBytes, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir4, PeersFile), validBytes, 0644); err != nil {
 		t.Fatalf("Failed to write valid store: %v", err)
 	}
 

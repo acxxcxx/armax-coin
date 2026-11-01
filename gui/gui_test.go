@@ -4,13 +4,17 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/acxxcxx/armax-coin/core"
+	"github.com/acxxcxx/armax-coin/wallet"
 )
 
 // TestGUIBalanceResponseGetConfirmed verifies GetConfirmed logic
@@ -666,5 +670,191 @@ func TestGUIQueryValidatedNodeEndpoint_ResponseBodyMismatchRejected(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "network mismatch on response body") {
 		t.Fatalf("expected 'network mismatch on response body', got: %v", err)
+	}
+}
+
+// TestAF05_GUIPreSignValidationAndSigningFlow verifies that GUI send preparation:
+//  1. Rejects amount and fee strings over permitted MaxSupply bounds before querying RPC or signing.
+//  2. Aborts before signing when /balance returns HTTP non-200.
+//  3. Aborts before signing when /stats or /balance returns an incorrect X-Network-ID.
+//  4. Aborts before signing when available balance is insufficient.
+//  5. Signs a valid ML-DSA-65 transaction when network identity and balance are valid.
+func TestAF05_GUIPreSignValidationAndSigningFlow(t *testing.T) {
+	senderWallet, err := wallet.NewWallet()
+	if err != nil {
+		t.Fatalf("NewWallet sender failed: %v", err)
+	}
+	defer senderWallet.Zeroize()
+
+	recipientWallet, err := wallet.NewWallet()
+	if err != nil {
+		t.Fatalf("NewWallet recipient failed: %v", err)
+	}
+	defer recipientWallet.Zeroize()
+
+	// 1. Validate amount/fee input string bounds (validateGUISendAmounts)
+	if _, _, _, _, ok := validateGUISendAmounts("126000001.00000000", "0.00011000"); ok {
+		t.Fatalf("expected amount > MaxSupply to be rejected by validateGUISendAmounts")
+	}
+	if _, _, _, _, ok := validateGUISendAmounts("1.00000000", "126000001.00000000"); ok {
+		t.Fatalf("expected fee > MaxSupply to be rejected by validateGUISendAmounts")
+	}
+	if _, _, _, _, ok := validateGUISendAmounts("126000000.00000000", "0.00011000"); ok {
+		t.Fatalf("expected amount + fee > MaxSupply to be rejected by validateGUISendAmounts")
+	}
+	amt, fee, _, _, ok := validateGUISendAmounts("2.50000000", "0.00011000")
+	if !ok || amt != 250_000_000 || fee != 11000 {
+		t.Fatalf("expected valid amount/fee to pass validateGUISendAmounts, got ok=%v amt=%d fee=%d", ok, amt, fee)
+	}
+
+	var statsCalls int32
+	var balanceCalls int32
+	var statsNetID = "ARMX-TESTNET-1"
+	var balanceNetID = "ARMX-TESTNET-1"
+	var balanceStatus int32 = http.StatusOK
+	var availBal int64 = 50 * core.CoinUnit
+	var mu sync.Mutex
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/stats":
+			atomic.AddInt32(&statsCalls, 1)
+			mu.Lock()
+			sNet := statsNetID
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Network-ID", sNet)
+			_, _ = fmt.Fprintf(w, `{"height":100,"blocks":101,"network_id":%q}`, sNet)
+		case "/balance":
+			atomic.AddInt32(&balanceCalls, 1)
+			mu.Lock()
+			bNet := balanceNetID
+			status := int(atomic.LoadInt32(&balanceStatus))
+			bal := availBal
+			mu.Unlock()
+			if bNet != "" {
+				w.Header().Set("X-Network-ID", bNet)
+			}
+			if status != http.StatusOK {
+				http.Error(w, "balance failure", status)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"address":%q,"balance":%d,"confirmed_balance":%d,"pending_balance":%d,"nonce":3,"pending_nonce":3,"next_nonce":4}`,
+				senderWallet.Address, bal, bal, bal)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	// Use a wallet copy with nil PrivateKey for negative tests to prove tx.Sign is never reached
+	noKeyWallet := &wallet.Wallet{
+		Address:   senderWallet.Address,
+		PublicKey: senderWallet.PublicKey,
+	}
+
+	// 2. Out-of-bounds amount/fee in queryNonceAndSignGUITransaction aborts before any RPC call
+	atomic.StoreInt32(&statsCalls, 0)
+	atomic.StoreInt32(&balanceCalls, 0)
+	if tx, _, _, _, err := queryNonceAndSignGUITransaction(srv.URL, "ARMX-TESTNET-1", noKeyWallet, recipientWallet.Address, core.MaxSupply, 11000); err == nil || tx != nil {
+		t.Fatalf("expected amount + fee > MaxSupply to abort before RPC, got tx=%v err=%v", tx, err)
+	}
+	if atomic.LoadInt32(&statsCalls) != 0 || atomic.LoadInt32(&balanceCalls) != 0 {
+		t.Fatalf("expected 0 RPC calls on out-of-bounds amount+fee, got stats=%d balance=%d", statsCalls, balanceCalls)
+	}
+
+	// 3. /balance HTTP non-200 aborts before signing
+	atomic.StoreInt32(&balanceStatus, http.StatusBadGateway)
+	tx, _, title, msg, err := queryNonceAndSignGUITransaction(srv.URL, "ARMX-TESTNET-1", noKeyWallet, recipientWallet.Address, 1*core.CoinUnit, 11000)
+	if err == nil || tx != nil || title != "RPC Error" || !strings.Contains(msg, "HTTP 502") {
+		t.Fatalf("expected HTTP 502 on /balance to abort with RPC Error, got tx=%v title=%q msg=%q err=%v", tx, title, msg, err)
+	}
+
+	// 4. Incorrect X-Network-ID on /stats or /balance aborts before signing
+	atomic.StoreInt32(&balanceStatus, http.StatusOK)
+	mu.Lock()
+	balanceNetID = "ARMX-MAINNET-1"
+	mu.Unlock()
+	tx, _, title, _, err = queryNonceAndSignGUITransaction(srv.URL, "ARMX-TESTNET-1", noKeyWallet, recipientWallet.Address, 1*core.CoinUnit, 11000)
+	if err == nil || tx != nil || title != "Network Mismatch" {
+		t.Fatalf("expected X-Network-ID mismatch on /balance to abort with Network Mismatch, got tx=%v title=%q err=%v", tx, title, err)
+	}
+
+	mu.Lock()
+	statsNetID = "ARMX-MAINNET-1"
+	balanceNetID = "ARMX-TESTNET-1"
+	mu.Unlock()
+	atomic.StoreInt32(&balanceCalls, 0)
+	tx, _, title, _, err = queryNonceAndSignGUITransaction(srv.URL, "ARMX-TESTNET-1", noKeyWallet, recipientWallet.Address, 1*core.CoinUnit, 11000)
+	if err == nil || tx != nil || title != "Network Mismatch" || atomic.LoadInt32(&balanceCalls) != 0 {
+		t.Fatalf("expected X-Network-ID mismatch on /stats to abort before /balance, got tx=%v title=%q balanceCalls=%d err=%v", tx, title, balanceCalls, err)
+	}
+
+	// 5. Insufficient balance aborts before signing
+	mu.Lock()
+	statsNetID = "ARMX-TESTNET-1"
+	balanceNetID = "ARMX-TESTNET-1"
+	availBal = 1000 // less than 1 ARMX + 11000 fee
+	mu.Unlock()
+	tx, _, title, _, err = queryNonceAndSignGUITransaction(srv.URL, "ARMX-TESTNET-1", noKeyWallet, recipientWallet.Address, 1*core.CoinUnit, 11000)
+	if err == nil || tx != nil || title != "Insufficient Balance" {
+		t.Fatalf("expected insufficient balance to abort before signing, got tx=%v title=%q err=%v", tx, title, err)
+	}
+
+	// 6. Sufficient balance and matching network signs a valid ML-DSA-65 transaction
+	mu.Lock()
+	availBal = 50 * core.CoinUnit
+	mu.Unlock()
+	signedTx, nonce, title, msg, err := queryNonceAndSignGUITransaction(srv.URL, "ARMX-TESTNET-1", senderWallet, recipientWallet.Address, 250_000_000, 11000)
+	if err != nil || signedTx == nil {
+		t.Fatalf("expected valid GUI pre-sign + sign to succeed, got title=%q msg=%q err=%v", title, msg, err)
+	}
+	if nonce != 4 || signedTx.Nonce != 4 || signedTx.Amount != 250_000_000 || signedTx.Fee != 11000 {
+		t.Fatalf("unexpected signed transaction fields: %+v (nonce=%d)", signedTx, nonce)
+	}
+	if err := signedTx.VerifyWithError(); err != nil {
+		t.Fatalf("GUI signed transaction failed ML-DSA-65 verification: %v", err)
+	}
+}
+
+// TestGUICreateAndSignTransaction_BoundsErrorFormat verifies that queryNonceAndSignGUITransaction
+// rejects out-of-bounds amounts and returns standard lowercased error strings [v1.0.6].
+func TestGUICreateAndSignTransaction_BoundsErrorFormat(t *testing.T) {
+	w, err := wallet.NewWallet()
+	if err != nil {
+		t.Fatalf("failed to create wallet: %v", err)
+	}
+	defer w.Zeroize()
+
+	testCases := []struct {
+		name string
+		amt  int64
+		fee  int64
+	}{
+		{"ZeroAmount", 0, 11000},
+		{"NegativeAmount", -1, 11000},
+		{"NegativeFee", 100000, -1},
+		{"AmountExceedsMaxSupply", core.MaxSupply + 1, 11000},
+		{"FeeExceedsMaxSupply", 100000, core.MaxSupply + 1},
+		{"SumExceedsMaxSupply", core.MaxSupply, 1},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tx, nonce, title, msg, err := queryNonceAndSignGUITransaction("http://127.0.0.1:19333", "ARMX-TESTNET-1", w, w.Address, tc.amt, tc.fee)
+			if err == nil || tx != nil || nonce != 0 {
+				t.Fatalf("expected error on bounds violation, got tx=%v nonce=%d err=%v", tx, nonce, err)
+			}
+			if title != "Invalid Amount" {
+				t.Errorf("expected title 'Invalid Amount', got %q", title)
+			}
+			if msg != "Transaction amount or fee exceeds permitted bounds" {
+				t.Errorf("expected UI msg 'Transaction amount or fee exceeds permitted bounds', got %q", msg)
+			}
+			if err.Error() != "transaction amount or fee exceeds permitted bounds" {
+				t.Errorf("expected Go error 'transaction amount or fee exceeds permitted bounds', got %q", err.Error())
+			}
+		})
 	}
 }

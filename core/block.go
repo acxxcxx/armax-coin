@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"time"
 
 	"github.com/acxxcxx/armax-coin/armaxhash"
@@ -22,7 +23,7 @@ type Block struct {
 	Miner        string        `json:"miner"`
 	Difficulty   int           `json:"difficulty"` // Human-readable difficulty integer
 	Target       string        `json:"target"`     // Exact 256-bit Proof of Work target ceiling (64 hex characters)
-	cachedSize   int           `json:"-"`          // Cached serialized byte size [C-28, C-34]
+	cachedSize   int32         `json:"-"`          // Cached serialized byte size [C-28, C-34, v1.0.6]
 }
 
 // CalculateMerkleRoot returns the binary Merkle root of the block's transactions
@@ -126,17 +127,23 @@ func (b *Block) PoWAlgorithm() string {
 	return "sha256d"
 }
 
-// Size returns the approximate serialized byte size of the block, caching the result [C-28, C-34]
+// Size returns the approximate serialized byte size of the block, caching the result [C-28, C-34, v1.0.6]
 func (b *Block) Size() int {
-	if b.cachedSize > 0 {
-		return b.cachedSize
+	if cached := atomic.LoadInt32(&b.cachedSize); cached > 0 {
+		return int(cached)
 	}
 	data, err := json.Marshal(b)
 	if err != nil {
 		return 0
 	}
-	b.cachedSize = len(data)
-	return b.cachedSize
+	sz := int32(len(data))
+	atomic.StoreInt32(&b.cachedSize, sz)
+	return int(sz)
+}
+
+// InvalidateCache resets the cached serialized byte size of the block [v1.0.6]
+func (b *Block) InvalidateCache() {
+	atomic.StoreInt32(&b.cachedSize, 0)
 }
 
 // NewBlock constructs a new Block instance with Merkle root computation

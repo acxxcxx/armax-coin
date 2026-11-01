@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +25,8 @@ func TestInboundOnlyPeerCountsActive(t *testing.T) {
 	port := fmt.Sprintf("%d", l.Addr().(*net.TCPAddr).Port)
 	_ = l.Close()
 
-	dbPath := filepath.Join(t.TempDir(), "blockchain.db")
+	baseDir := t.TempDir()
+	dbPath := filepath.Join(baseDir, "blockchain.db")
 
 	bc, err := core.NewBlockchainWithStoragePath(1, dbPath)
 	if err != nil {
@@ -32,7 +34,7 @@ func TestInboundOnlyPeerCountsActive(t *testing.T) {
 	}
 	defer bc.Close()
 
-	ps := NewPeerServer(port, bc)
+	ps := NewPeerServer(port, bc, filepath.Join(baseDir, "server"))
 	ps.Peers = []string{}
 	ps.AllowPrivatePeers = true
 	ps.DisableSubnetLimit = true
@@ -53,36 +55,38 @@ func TestInboundOnlyPeerCountsActive(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Wait for connection handler to register active connection
+	// A bare TCP connection is not a validated peer session.
 	time.Sleep(100 * time.Millisecond)
 
 	active := ps.GetPeersActive()
-	if active < 1 {
-		t.Fatalf("Expected peers_active >= 1 on node receiving inbound connection, got %d", active)
+	if active != 0 {
+		t.Fatalf("Expected peers_active == 0 before TLS/application handshake, got %d", active)
 	}
 
-	// Verify /stats HTTP RPC endpoint returns peers_active >= 1 and peers_known
-	handler := NewRPCHandler(bc, ps, nil, nil)
-	req := httptest.NewRequest("GET", "/stats", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("Expected /stats code 200, got %d", rec.Code)
-	}
-
-	var stats map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
-		t.Fatalf("Failed to parse /stats json: %v", err)
-	}
-
-	activeFromStats, ok := stats["peers_active"].(float64)
-	if !ok || int(activeFromStats) < 1 {
-		t.Fatalf("Expected /stats peers_active >= 1, got %v", stats["peers_active"])
-	}
-
-	if _, ok := stats["peers_known"]; !ok {
-		t.Fatalf("Expected /stats to contain peers_known")
+	for _, path := range []string{"/stats", "/status", "/peers?filter=active"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		NewRPCHandler(bc, ps, nil, nil).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Expected %s code 200, got %d", path, rec.Code)
+		}
+		if strings.HasPrefix(path, "/peers") {
+			var peers []string
+			if err := json.Unmarshal(rec.Body.Bytes(), &peers); err != nil {
+				t.Fatalf("Failed to parse %s: %v", path, err)
+			}
+			if len(peers) != 0 {
+				t.Fatalf("Expected no active peers from %s before handshake, got %v", path, peers)
+			}
+			continue
+		}
+		var stats map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+			t.Fatalf("Failed to parse %s: %v", path, err)
+		}
+		if int(stats["peers_active"].(float64)) != 0 {
+			t.Fatalf("Expected %s peers_active == 0 before handshake, got %v", path, stats["peers_active"])
+		}
 	}
 
 	// Close inbound connection and verify peers_active returns to 0
@@ -112,10 +116,12 @@ func TestOutboundOnlyPeerCountsActive(t *testing.T) {
 	}
 	defer bcB.Close()
 
-	psB := NewPeerServer(portB, bcB)
+	psB := NewPeerServer(portB, bcB, filepath.Join(t.TempDir(), "peer-b"))
 	psB.Peers = []string{}
 	psB.AllowPrivatePeers = true
 	psB.DisableSubnetLimit = true
+	psB.RequireTLS = true
+	psB.P2PTOFU = true
 	go psB.StartServer()
 	defer psB.Stop()
 
@@ -130,24 +136,40 @@ func TestOutboundOnlyPeerCountsActive(t *testing.T) {
 	}
 	defer bcA.Close()
 
-	psA := NewPeerServer(portA, bcA)
+	psA := NewPeerServer(portA, bcA, filepath.Join(t.TempDir(), "peer-a"))
 	psA.Peers = []string{}
 	psA.AllowPrivatePeers = true
 	psA.DisableSubnetLimit = true
+	psA.RequireTLS = true
+	psA.P2PTOFU = true
 	go psA.StartServer()
 	defer psA.Stop()
 
 	time.Sleep(100 * time.Millisecond)
 
 	// 3. Node A initiates outbound connection to Node B
-	connOut, release, err := psA.DialPeer("127.0.0.1:"+portB, 2*time.Second)
+	transportConn, releaseTransport, err := psA.DialPeer("127.0.0.1:"+portB, 2*time.Second)
 	if err != nil {
-		t.Fatalf("Failed to dial peer B: %v", err)
+		t.Fatalf("TLS/TOFU transport setup failed: %v", err)
 	}
-	defer func() {
-		_ = connOut.Close()
-		release()
-	}()
+	time.Sleep(50 * time.Millisecond)
+	if psA.GetPeersActive() != 0 || psB.GetPeersActive() != 0 {
+		t.Fatalf("TLS/TOFU without application handshake counted active: outbound=%d inbound=%d", psA.GetPeersActive(), psB.GetPeersActive())
+	}
+	_ = transportConn.Close()
+	releaseTransport()
+
+	result, err := psA.QueryPeer("127.0.0.1:"+portB, Message{
+		NetworkID: psA.GetNetworkID(),
+		Type:      "GET_HEIGHT",
+	}, 2*time.Second)
+	if err != nil {
+		t.Fatalf("GET_HEIGHT handshake failed: %v", err)
+	}
+	if result == nil || result.Type != "HEIGHT_RESPONSE" {
+		t.Fatalf("Expected HEIGHT_RESPONSE handshake, got %#v", result)
+	}
+	waitForPeerActiveCount(t, psB, 1)
 
 	active := psA.GetPeersActive()
 	if active < 1 {
@@ -155,22 +177,46 @@ func TestOutboundOnlyPeerCountsActive(t *testing.T) {
 	}
 
 	// 4. Verify /stats reflects outbound peer in peers_active
-	handlerA := NewRPCHandler(bcA, psA, nil, nil)
-	req := httptest.NewRequest("GET", "/stats", nil)
-	rec := httptest.NewRecorder()
-	handlerA.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("Expected /stats code 200, got %d", rec.Code)
+	for _, path := range []string{"/stats", "/status", "/peers?filter=active"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		NewRPCHandler(bcA, psA, nil, nil).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("Expected %s code 200, got %d", path, rec.Code)
+		}
+		if strings.HasPrefix(path, "/peers") {
+			var peers []string
+			if err := json.Unmarshal(rec.Body.Bytes(), &peers); err != nil || len(peers) != 1 {
+				t.Fatalf("Expected one validated active peer from %s, got %v (err %v)", path, peers, err)
+			}
+			continue
+		}
+		var stats map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+			t.Fatalf("Failed to parse %s: %v", path, err)
+		}
+		if int(stats["peers_active"].(float64)) < 1 {
+			t.Fatalf("Expected %s peers_active >= 1, got %v", path, stats["peers_active"])
+		}
 	}
 
-	var stats map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
-		t.Fatalf("Failed to parse /stats json: %v", err)
+	psA.outboundMu.Lock()
+	session := psA.outboundSessions["127.0.0.1:"+portB]
+	psA.outboundMu.Unlock()
+	psA.dropOutboundSession("127.0.0.1:"+portB, session)
+	for attempt := 0; attempt < 20 && psB.GetPeersActive() != 0; attempt++ {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if psB.GetPeersActive() != 0 || psA.GetPeersActive() != 0 {
+		t.Fatalf("Expected both peers to become inactive after disconnect; outbound=%d inbound=%d", psA.GetPeersActive(), psB.GetPeersActive())
 	}
 
-	activeFromStats, ok := stats["peers_active"].(float64)
-	if !ok || int(activeFromStats) < 1 {
-		t.Fatalf("Expected /stats peers_active >= 1, got %v", stats["peers_active"])
+	result, err = psA.QueryPeer("127.0.0.1:"+portB, Message{
+		NetworkID: psA.GetNetworkID(),
+		Type:      "GET_HEIGHT",
+	}, 2*time.Second)
+	if err != nil || result == nil || result.Type != "HEIGHT_RESPONSE" {
+		t.Fatalf("Expected successful reconnect handshake, got response %#v and error %v", result, err)
 	}
+	waitForPeerActiveCount(t, psB, 1)
 }

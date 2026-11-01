@@ -396,10 +396,10 @@ func TestStorage_FullWriteAndMiningLifecycleAfterReadOnlyCheck(t *testing.T) {
 }
 
 // TestCheckpoints_ConsensusNetworkIdentityStrictness verifies:
-// 1. validateBlockContext rejects missing chain history (cannot determine network identity).
-// 2. validateBlockContext rejects unrecognized genesis anchors (anti-silent fallback).
-// 3. Mainnet and Testnet blocks validate cleanly in alternation in a single process,
-//    even when the global ActiveNetwork is switched to the opposing network.
+//  1. validateBlockContext rejects missing chain history (cannot determine network identity).
+//  2. validateBlockContext rejects unrecognized genesis anchors (anti-silent fallback).
+//  3. Mainnet and Testnet blocks validate cleanly in alternation in a single process,
+//     even when the global ActiveNetwork is switched to the opposing network.
 func TestCheckpoints_ConsensusNetworkIdentityStrictness(t *testing.T) {
 	LockNetworkForTesting(t)
 	EnableLocalMainnet()
@@ -443,11 +443,11 @@ func TestCheckpoints_ConsensusNetworkIdentityStrictness(t *testing.T) {
 	}
 	defer mainBC.Close()
 
-	_ = SetNetwork("testnet")
-	testDB := filepath.Join(tempDir, "testnet", "blockchain.db")
+	_ = SetNetwork("regtest")
+	testDB := filepath.Join(tempDir, "regtest", "blockchain.db")
 	testBC, err := NewBlockchainWithStoragePath(1, testDB)
 	if err != nil {
-		t.Fatalf("Failed to initialize testnet blockchain: %v", err)
+		t.Fatalf("Failed to initialize regtest blockchain: %v", err)
 	}
 	defer testBC.Close()
 
@@ -458,24 +458,24 @@ func TestCheckpoints_ConsensusNetworkIdentityStrictness(t *testing.T) {
 		t.Fatalf("Failed to mine mainnet block: %v", err)
 	}
 
-	// Mine 1 block on testnet
-	_ = SetNetwork("testnet")
+	// Mine 1 block on regtest
+	_ = SetNetwork("regtest")
 	testBlock, err := testBC.MineBlockWithErr(GenesisMiner)
 	if err != nil {
-		t.Fatalf("Failed to mine testnet block: %v", err)
+		t.Fatalf("Failed to mine regtest block: %v", err)
 	}
 
-	// Alternate: Set global network to Testnet, validate Mainnet block
-	_ = SetNetwork("testnet")
+	// Alternate: Set global network to Regtest, validate Mainnet block
+	_ = SetNetwork("regtest")
 	prevMain := mainBC.Chain[0]
 	if err := validateBlockContext(&mainBlock, &prevMain, []Block{prevMain}); err != nil {
-		t.Fatalf("Failed to validate Mainnet block when global profile was set to Testnet: %v", err)
+		t.Fatalf("Failed to validate Mainnet block when global profile was set to Regtest: %v", err)
 	}
 
-	// Alternate: Set global network to Mainnet, validate Testnet block
+	// Alternate: Set global network to Mainnet, validate Regtest block
 	_ = SetNetwork("mainnet")
 	prevTest := testBC.Chain[0]
 	if err := validateBlockContext(&testBlock, &prevTest, []Block{prevTest}); err != nil {
-		t.Fatalf("Failed to validate Testnet block when global profile was set to Mainnet: %v", err)
+		t.Fatalf("Failed to validate Regtest block when global profile was set to Mainnet: %v", err)
 	}
 }

@@ -444,3 +444,131 @@ func TestKeystore_ConcurrentOperations(t *testing.T) {
 		}
 	}
 }
+
+// TestKeystore_TamperedAddressOrPublicKeyRejected verifies that if the unencrypted address or public_key
+// fields in a keystore JSON file are tampered with, DecryptAndLoadKeystore rejects the keystore [Security Audit].
+func TestKeystore_TamperedAddressOrPublicKeyRejected(t *testing.T) {
+	tempDir := t.TempDir()
+	ksPath := filepath.Join(tempDir, "wallet.json")
+	passphrase := "IntegrityPassphrase2026!"
+
+	w1, err := NewWallet()
+	if err != nil {
+		t.Fatalf("NewWallet 1 failed: %v", err)
+	}
+	w2, err := NewWallet()
+	if err != nil {
+		t.Fatalf("NewWallet 2 failed: %v", err)
+	}
+
+	if err := EncryptAndSaveKeystore(w1, passphrase, ksPath); err != nil {
+		t.Fatalf("EncryptAndSaveKeystore failed: %v", err)
+	}
+
+	rawBytes, err := os.ReadFile(ksPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+
+	// 1. Tamper with stored Address
+	var ksTamperedAddr KeystoreFile
+	if err := json.Unmarshal(rawBytes, &ksTamperedAddr); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	ksTamperedAddr.Address = w2.Address
+	tamperedAddrPath := filepath.Join(tempDir, "tampered_addr.json")
+	dataAddr, _ := json.MarshalIndent(ksTamperedAddr, "", "  ")
+	_ = os.WriteFile(tamperedAddrPath, dataAddr, 0600)
+
+	if _, err := DecryptAndLoadKeystore(passphrase, tamperedAddrPath); err == nil || !strings.Contains(err.Error(), "keystore integrity failure") {
+		t.Fatalf("Expected keystore integrity failure when stored address is tampered, got: %v", err)
+	}
+
+	// 2. Tamper with stored PublicKey
+	var ksTamperedPub KeystoreFile
+	if err := json.Unmarshal(rawBytes, &ksTamperedPub); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	ksTamperedPub.PublicKey = w2.PublicKey
+	tamperedPubPath := filepath.Join(tempDir, "tampered_pub.json")
+	dataPub, _ := json.MarshalIndent(ksTamperedPub, "", "  ")
+	_ = os.WriteFile(tamperedPubPath, dataPub, 0600)
+
+	if _, err := DecryptAndLoadKeystore(passphrase, tamperedPubPath); err == nil || !strings.Contains(err.Error(), "keystore integrity failure") {
+		t.Fatalf("Expected keystore integrity failure when stored public key is tampered, got: %v", err)
+	}
+}
+
+// TestAF08_EstimateMinMempoolFeeFallbackAndBestEffortZeroization verifies:
+//  1. EstimateMinMempoolFee returns the 11,000 Armoids fallback when wallet or PrivateKey is nil.
+//  2. EstimateMinMempoolFee returns 11,000 Armoids for a normal signed ML-DSA-65 transaction.
+//  3. Wallet.Zeroize() performs best-effort clearing: overwrites Seed32 with zeros, clears the
+//     Mnemonic string field reference, and sets the PrivateKey pointer to nil (without claiming
+//     hard erasure of immutable Go string allocations or opaque stdlib mldsa internals).
+func TestAF08_EstimateMinMempoolFeeFallbackAndBestEffortZeroization(t *testing.T) {
+	if got := EstimateMinMempoolFee(nil, "", 0, 0); got != 11000 {
+		t.Fatalf("EstimateMinMempoolFee(nil) = %d, want 11000", got)
+	}
+	if got := EstimateMinMempoolFee(&Wallet{Address: "armx1test"}, "", 0, 0); got != 11000 {
+		t.Fatalf("EstimateMinMempoolFee(&Wallet{PrivateKey:nil}) = %d, want 11000", got)
+	}
+
+	w, err := NewWallet()
+	if err != nil {
+		t.Fatalf("NewWallet failed: %v", err)
+	}
+	recipient, err := NewWallet()
+	if err != nil {
+		t.Fatalf("NewWallet recipient failed: %v", err)
+	}
+
+	if got := EstimateMinMempoolFee(w, recipient.Address, 100000000, 1); got != 11000 {
+		t.Fatalf("EstimateMinMempoolFee(validWallet) = %d, want 11000", got)
+	}
+
+	var zeroSeed [32]byte
+	if w.Seed32 == zeroSeed {
+		t.Fatalf("expected non-zero Seed32 before Zeroize")
+	}
+	if w.Mnemonic == "" {
+		t.Fatalf("expected non-empty Mnemonic before Zeroize")
+	}
+	if w.PrivateKey == nil {
+		t.Fatalf("expected non-nil PrivateKey before Zeroize")
+	}
+
+	w.Zeroize()
+
+	if w.Seed32 != zeroSeed {
+		t.Fatalf("expected Seed32 to be all zeros after Zeroize, got %x", w.Seed32)
+	}
+	if w.Mnemonic != "" {
+		t.Fatalf("expected Mnemonic field reference to be empty after Zeroize, got %q", w.Mnemonic)
+	}
+	if w.PrivateKey != nil {
+		t.Fatalf("expected PrivateKey pointer to be nil after Zeroize")
+	}
+
+	// Ensure nil receiver is safe
+	var nilWallet *Wallet
+	nilWallet.Zeroize()
+}
+
+// FuzzKeystoreParameterValidation verifies that ValidateKDFParameters and ValidateMnemonic
+// never panic on arbitrary fuzzed inputs [Security Audit].
+func FuzzKeystoreParameterValidation(f *testing.F) {
+	f.Add(uint32(65536), uint32(3), uint8(2), "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about")
+	f.Add(uint32(0), uint32(0), uint8(0), "")
+	f.Add(uint32(999999999), uint32(999), uint8(255), "invalid mnemonic words here")
+
+	f.Fuzz(func(t *testing.T, mem uint32, iter uint32, par uint8, mnemonic string) {
+		kdf := KDFParams{
+			Memory:      mem,
+			Iterations:  iter,
+			Parallelism: par,
+			Salt:        "0123456789abcdef0123456789abcdef",
+		}
+		_ = ValidateKDFParameters(kdf)
+		_, _ = ValidateMnemonic(mnemonic)
+	})
+}

@@ -76,6 +76,9 @@ func createLargeBlock(t *testing.T, bc *core.Blockchain, senderAcc *testAccount,
 // TestP2_5_LargeBlockOverNewBlockAndGetBlockRange tests that a large block (~550 KB with ML-DSA-65 txs)
 // can be transferred via NEW_BLOCK and retrieved via GET_BLOCK_RANGE without hitting rate limits.
 func TestP2_5_LargeBlockOverNewBlockAndGetBlockRange(t *testing.T) {
+	core.SetTargetOverrideForTesting(core.DifficultyToTarget(1))
+	defer core.SetTargetOverrideForTesting(nil)
+
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	t.Setenv("ARMX_ALLOW_PRIVATE_PEERS", "1")
 

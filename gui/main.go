@@ -114,6 +114,8 @@ type StatsResponse struct {
 	Blocks            int     `json:"blocks"`
 	PeersActive       int     `json:"peers_active"`
 	PeersKnown        int     `json:"peers_known"`
+	PeersSeeds        int     `json:"peers_seeds"`
+	PeersCandidates   int     `json:"peers_candidates"`
 	PeersCount        int     `json:"peers_count"`
 	Peers             int     `json:"peers"`
 	Difficulty        int     `json:"difficulty"`
@@ -2610,6 +2612,102 @@ func loadTransactionsHistory(mw *walk.MainWindow) {
 	}()
 }
 
+// validateGUISendAmounts validates amount and fee strings against MaxSupply bounds before signing [AF-05].
+func validateGUISendAmounts(amtStr, feeStr string) (amtArmoids, feeArmoids int64, errTitle, errMsg string, ok bool) {
+	amt, err := core.ParseArmxDecimal(amtStr)
+	if err != nil || amt <= 0 {
+		return 0, 0, "Invalid Amount", fmt.Sprintf("Invalid %s amount: %v", armxTicker(), err), false
+	}
+	var fee int64 = 0
+	if strings.TrimSpace(feeStr) != "" {
+		parsedFee, err := core.ParseArmxDecimal(feeStr)
+		if err != nil {
+			return 0, 0, "Invalid Fee", fmt.Sprintf("Invalid %s fee: %v", armxTicker(), err), false
+		}
+		fee = parsedFee
+	}
+	if amt > core.MaxSupply-fee {
+		return 0, 0, "Invalid Amount", fmt.Sprintf("Total amount + fee exceeds maximum supply (%s)", formatArmx(core.MaxSupply)), false
+	}
+	return amt, fee, "", "", true
+}
+
+// queryNonceAndSignGUITransaction validates daemon network identity (/stats and /balance X-Network-ID),
+// /balance HTTP 200 status, amount/fee bounds, and available balance BEFORE calling tx.Sign [AF-05].
+func queryNonceAndSignGUITransaction(
+	daemonURL string,
+	expectedNetID string,
+	signingWallet *wallet.Wallet,
+	to string,
+	amtArmoids int64,
+	feeArmoids int64,
+) (*core.Transaction, int64, string, string, error) {
+	if amtArmoids <= 0 || amtArmoids > core.MaxSupply || feeArmoids < 0 || feeArmoids > core.MaxSupply || amtArmoids > core.MaxSupply-feeArmoids {
+		msg := "Transaction amount or fee exceeds permitted bounds"
+		return nil, 0, "Invalid Amount", msg, errors.New("transaction amount or fee exceeds permitted bounds")
+	}
+
+	// Verify node is online and on the matching network profile
+	nodeNet := verifyNodeNetwork(daemonURL, expectedNetID)
+	if !nodeNet.Match {
+		msg := fmt.Sprintf("Cannot send transaction: daemon validation failed (%v)", nodeNet.Err)
+		return nil, 0, "Network Mismatch", msg, errors.New(msg)
+	}
+
+	// Query next nonce and balance
+	client := http.Client{Timeout: 5 * time.Second}
+	bResp, err := client.Get(fmt.Sprintf("%s/balance?address=%s", daemonURL, signingWallet.Address))
+	if err != nil {
+		msg := fmt.Sprintf("Failed to query nonce: %v", err)
+		return nil, 0, "RPC Error", msg, errors.New(msg)
+	}
+	defer bResp.Body.Close()
+	if bResp.StatusCode != http.StatusOK {
+		msg := fmt.Sprintf("Failed to query nonce (HTTP %d)", bResp.StatusCode)
+		return nil, 0, "RPC Error", msg, errors.New(msg)
+	}
+	if netHdr := strings.TrimSpace(bResp.Header.Get("X-Network-ID")); netHdr != "" && !strings.EqualFold(netHdr, expectedNetID) {
+		msg := fmt.Sprintf("Network mismatch on /balance: daemon reported %s, expected %s", netHdr, expectedNetID)
+		return nil, 0, "Network Mismatch", msg, errors.New(msg)
+	}
+
+	var bal BalanceResponse
+	if err := json.NewDecoder(bResp.Body).Decode(&bal); err != nil {
+		msg := fmt.Sprintf("Invalid balance response from daemon: %v", err)
+		return nil, 0, "RPC Error", msg, errors.New(msg)
+	}
+
+	avail := bal.PendingBalance
+	if avail == 0 {
+		avail = bal.GetConfirmed()
+	}
+	if avail < amtArmoids+feeArmoids {
+		msg := fmt.Sprintf("Total required: %s\nAvailable balance: %s", formatArmx(amtArmoids+feeArmoids), formatArmx(avail))
+		return nil, 0, "Insufficient Balance", msg, errors.New(msg)
+	}
+
+	txNonce := bal.NextNonce
+	if txNonce <= 0 {
+		txNonce = bal.PendingNonce + 1
+	}
+
+	tx := core.Transaction{
+		Sender:    signingWallet.Address,
+		SenderPub: signingWallet.PublicKey,
+		Recipient: to,
+		Amount:    amtArmoids,
+		Fee:       feeArmoids,
+		Nonce:     txNonce,
+	}
+
+	if err := tx.Sign(signingWallet.PrivateKey); err != nil {
+		msg := fmt.Sprintf("Post-quantum signature creation failed: %v", err)
+		return nil, 0, "Sign Error", msg, errors.New(msg)
+	}
+
+	return &tx, txNonce, "", "", nil
+}
+
 func sendTransaction(mw *walk.MainWindow, leTo, leAmt, leFee, lePass *walk.LineEdit, teResult *walk.TextEdit) {
 	to := strings.TrimSpace(leTo.Text())
 	amtStr := strings.TrimSpace(leAmt.Text())
@@ -2625,17 +2723,10 @@ func sendTransaction(mw *walk.MainWindow, leTo, leAmt, leFee, lePass *walk.LineE
 		return
 	}
 
-	amtArmoids, err := core.ParseArmxDecimal(amtStr)
-	if err != nil || amtArmoids <= 0 {
-		walk.MsgBox(mw, "Invalid Amount", fmt.Sprintf("Invalid %s amount: %v", armxTicker(), err), walk.MsgBoxIconError)
+	amtArmoids, feeArmoids, errTitle, errMsg, ok := validateGUISendAmounts(amtStr, feeStr)
+	if !ok {
+		walk.MsgBox(mw, errTitle, errMsg, walk.MsgBoxIconError)
 		return
-	}
-
-	var feeArmoids int64 = 0
-	if feeStr != "" {
-		if parsedFee, err := core.ParseArmxDecimal(feeStr); err == nil {
-			feeArmoids = parsedFee
-		}
 	}
 
 	// Obtain sender signing wallet
@@ -2658,6 +2749,11 @@ func sendTransaction(mw *walk.MainWindow, leTo, leAmt, leFee, lePass *walk.LineE
 		leFee.SetText(core.FormatArmxDecimal(feeArmoids))
 	}
 
+	if amtArmoids > core.MaxSupply-feeArmoids {
+		walk.MsgBox(mw, "Invalid Amount", fmt.Sprintf("Total amount + fee exceeds maximum supply (%s)", formatArmx(core.MaxSupply)), walk.MsgBoxIconError)
+		return
+	}
+
 	totalRequired := amtArmoids + feeArmoids
 	if totalRequired > currentBalance {
 		walk.MsgBox(mw, "Insufficient Balance",
@@ -2673,48 +2769,22 @@ func sendTransaction(mw *walk.MainWindow, leTo, leAmt, leFee, lePass *walk.LineE
 	}
 
 	go func() {
-		// Verify node is online and on the matching network profile
-		nodeNet := verifyNodeNetwork(rpcURL, activeNetwork.NetworkID)
-		if !nodeNet.Match {
-			mw.Synchronize(func() {
-				walk.MsgBox(mw, "Network Mismatch", fmt.Sprintf("Cannot send transaction: daemon validation failed (%v)", nodeNet.Err), walk.MsgBoxIconError)
-			})
-			return
-		}
-
-		// Query next nonce
-		client := http.Client{Timeout: 5 * time.Second}
-		bResp, err := client.Get(fmt.Sprintf("%s/balance?address=%s", rpcURL, signingWallet.Address))
+		txPtr, txNonce, errTitle, errMsg, err := queryNonceAndSignGUITransaction(
+			rpcURL,
+			activeNetwork.NetworkID,
+			signingWallet,
+			to,
+			amtArmoids,
+			feeArmoids,
+		)
 		if err != nil {
 			mw.Synchronize(func() {
-				walk.MsgBox(mw, "RPC Error", fmt.Sprintf("Failed to query nonce: %v", err), walk.MsgBoxIconError)
+				walk.MsgBox(mw, errTitle, errMsg, walk.MsgBoxIconError)
 			})
 			return
 		}
-		defer bResp.Body.Close()
-		var bal BalanceResponse
-		_ = json.NewDecoder(bResp.Body).Decode(&bal)
-
-		txNonce := bal.NextNonce
-		if txNonce <= 0 {
-			txNonce = bal.PendingNonce + 1
-		}
-
-		tx := core.Transaction{
-			Sender:    signingWallet.Address,
-			SenderPub: signingWallet.PublicKey,
-			Recipient: to,
-			Amount:    amtArmoids,
-			Fee:       feeArmoids,
-			Nonce:     txNonce,
-		}
-
-		if err := tx.Sign(signingWallet.PrivateKey); err != nil {
-			mw.Synchronize(func() {
-				walk.MsgBox(mw, "Sign Error", fmt.Sprintf("Post-quantum signature creation failed: %v", err), walk.MsgBoxIconError)
-			})
-			return
-		}
+		tx := *txPtr
+		client := http.Client{Timeout: 5 * time.Second}
 
 		txData, _ := json.Marshal(tx)
 		postResp, err := client.Post(rpcURL+"/tx/new", "application/json", bytes.NewBuffer(txData))
@@ -3139,7 +3209,7 @@ func queryNodeDiagnostics(teConsole *walk.TextEdit) {
 
 func queryNodePeers(teConsole *walk.TextEdit) {
 	go func() {
-		data, _, err := queryValidatedNodeEndpoint(rpcURL, "/peers", activeNetwork.NetworkID, 3*time.Second)
+		data, _, err := queryValidatedNodeEndpoint(rpcURL, "/peers?filter=active", activeNetwork.NetworkID, 3*time.Second)
 		if err != nil {
 			teConsole.Synchronize(func() {
 				teConsole.SetText(fmt.Sprintf("[-] Node peers query rejected: network validation failed: %v", err))

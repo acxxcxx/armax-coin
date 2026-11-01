@@ -254,4 +254,3 @@ func TestStratumDryRunAndEndToEndMiningSession(t *testing.T) {
 		t.Fatal("timed out waiting for mock Stratum server to verify submitted share")
 	}
 }
-

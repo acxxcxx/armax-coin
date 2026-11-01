@@ -15,6 +15,11 @@ signing_keys/
 GPG_*.txt
 WINDOWS_*.txt
 
+# Local bridge deployment configuration (keep the template only)
+.env
+.env.*
+!.env.example
+
 # Local Blockchain Databases & Backups
 blockchain.db
 blockchain.db.tmp
@@ -79,3 +84,7 @@ mainnet/
 testnet/
 regtest/
 soak/
+
+# Node.js dependencies
+node_modules/
+contracts/node_modules/

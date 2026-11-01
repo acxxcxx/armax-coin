@@ -185,6 +185,8 @@ func MnemonicToSeed(mnemonic, passphrase string) []byte {
 	normPassphrase := NormalizePassphrase(passphrase)
 	password := []byte(normMnemonic)
 	salt := []byte("mnemonic" + normPassphrase)
+	defer clear(password)
+	defer clear(salt)
 	return pbkdf2SHA512(password, salt, 2048, 64)
 }
 
@@ -204,7 +206,9 @@ func WalletFromMnemonic(mnemonic, passphrase string, accountIndex uint32) (*Wall
 	}
 
 	bip39Seed := MnemonicToSeed(cleanMnemonic, passphrase)
+	defer clear(bip39Seed)
 	seed32, err := pqsig.DeriveSeedFromBIP39(bip39Seed, accountIndex)
+	defer clear(seed32[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive account seed: %w", err)
 	}

@@ -150,15 +150,15 @@ func TestRegtest_MessageRejection(t *testing.T) {
 			t.Fatalf("regtest PeerServer must reject non-loopback peer address!")
 		}
 	}
-	regtestServer.AddPeer("127.0.0.1:29334") // Loopback IP
+	regtestServer.AddPeer("127.0.0.1:29335") // Loopback IP
 	foundLoopback := false
 	for _, p := range regtestServer.GetPeers() {
-		if p == "127.0.0.1:29334" {
+		if p == "127.0.0.1:29335" {
 			foundLoopback = true
 		}
 	}
 	if !foundLoopback {
-		t.Fatalf("regtest PeerServer should have accepted loopback peer 127.0.0.1:29334")
+		t.Fatalf("regtest PeerServer should have accepted loopback peer 127.0.0.1:29335")
 	}
 	t.Logf("[OK] Regtest PeerServer correctly rejected non-loopback peer and accepted loopback peer")
 }

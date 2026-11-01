@@ -328,8 +328,11 @@ func main() {
 
 	// 3. Estimate Fee Mode
 	if *estimateFeePtr {
-		typicalTxSize := 3500 // Typical post-quantum ML-DSA-65 transaction size
-		estFee := core.CalculateMinMempoolFee(typicalTxSize)
+		typicalTxSize := 10800 // Typical post-quantum ML-DSA-65 serialized JSON transaction size (~10.8 KB)
+		estFee := wallet.EstimateMinMempoolFee(nil, "", 0, 0)
+		if minBySize := core.CalculateMinMempoolFee(typicalTxSize); minBySize > estFee {
+			estFee = minBySize
+		}
 		if *jsonPtr {
 			out, _ := json.Marshal(map[string]interface{}{
 				"typical_size_bytes": typicalTxSize,
@@ -406,6 +409,9 @@ func main() {
 	// Resolve send amount (priority: -amount-armoids, then -amount, then -amount-armx)
 	var finalAmount int64 = 0
 	if *amountArmoidsPtr > 0 {
+		if *amountArmoidsPtr > core.MaxSupply {
+			exitError(*jsonPtr, fmt.Sprintf("Invalid -amount-armoids '%d': exceeds maximum supply (%d)", *amountArmoidsPtr, core.MaxSupply))
+		}
 		finalAmount = *amountArmoidsPtr
 	} else if *amountPtr != "" {
 		parsed, err := core.ParseArmxDecimal(*amountPtr)
@@ -424,6 +430,9 @@ func main() {
 	// Resolve transaction fee
 	var userFee int64 = 0
 	if *feeArmoidsPtr > 0 {
+		if *feeArmoidsPtr > core.MaxSupply {
+			exitError(*jsonPtr, fmt.Sprintf("Invalid -fee-armoids '%d': exceeds maximum supply (%d)", *feeArmoidsPtr, core.MaxSupply))
+		}
 		userFee = *feeArmoidsPtr
 	} else if *feePtr != "" {
 		parsedFee, err := core.ParseArmxDecimal(*feePtr)
@@ -436,6 +445,14 @@ func main() {
 	if *toPtr == "" || finalAmount <= 0 {
 		printUsage()
 		os.Exit(2)
+	}
+
+	preSignMinFee := userFee
+	if fallbackFee := wallet.EstimateMinMempoolFee(nil, "", 0, 0); preSignMinFee < fallbackFee {
+		preSignMinFee = fallbackFee
+	}
+	if finalAmount > core.MaxSupply-preSignMinFee {
+		exitError(*jsonPtr, fmt.Sprintf("Transaction amount (%d) + fee (%d) exceeds maximum supply (%d)", finalAmount, preSignMinFee, core.MaxSupply))
 	}
 
 	if !core.ValidateAddress(*toPtr) {
@@ -451,6 +468,7 @@ func main() {
 	if err != nil {
 		exitError(*jsonPtr, fmt.Sprintf("Failed to unlock wallet keystore '%s': %v", targetWalletFile, err))
 	}
+	defer w.Zeroize()
 
 	if !*jsonPtr {
 		fmt.Printf("[~] Querying account nonce and balance from %s...\n", daemonURL)
@@ -462,9 +480,31 @@ func main() {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		exitError(*jsonPtr, fmt.Sprintf("Failed to query balance from daemon (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(body))))
+	}
+	if netHeader := strings.TrimSpace(resp.Header.Get("X-Network-ID")); netHeader != "" && !strings.EqualFold(netHeader, activeNet.NetworkID) {
+		exitError(*jsonPtr, fmt.Sprintf("Network mismatch: daemon is on %s, expected %s", netHeader, activeNet.NetworkID))
+	}
+
 	var balResp BalanceResponse
 	if err := json.Unmarshal(body, &balResp); err != nil {
 		exitError(*jsonPtr, fmt.Sprintf("Invalid response from daemon: %s", string(body)))
+	}
+
+	preSignAvailBal := balResp.PendingBalance
+	if balResp.ImmatureBalance > 0 || balResp.SpendableBalance > 0 {
+		preSignAvailBal = balResp.SpendableBalance
+	}
+	if preSignAvailBal < finalAmount+preSignMinFee {
+		preSignTotal := finalAmount + preSignMinFee
+		if balResp.ImmatureBalance > 0 {
+			exitError(*jsonPtr, fmt.Sprintf("Insufficient spendable balance: has %.8f %s spendable (%.8f %s immature < %d blocks), requires %.8f %s (amount %.8f + fee %.8f)",
+				float64(preSignAvailBal)/1e8, core.ActiveTicker(), float64(balResp.ImmatureBalance)/1e8, core.ActiveTicker(), activeNet.CoinbaseMaturity,
+				float64(preSignTotal)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(preSignMinFee)/1e8))
+		}
+		exitError(*jsonPtr, fmt.Sprintf("Insufficient balance: has %.8f %s, requires %.8f %s (amount %.8f + fee %.8f)",
+			float64(preSignAvailBal)/1e8, core.ActiveTicker(), float64(preSignTotal)/1e8, core.ActiveTicker(), float64(finalAmount)/1e8, float64(preSignMinFee)/1e8))
 	}
 
 	if !*jsonPtr {
@@ -514,6 +554,9 @@ func main() {
 		}
 	}
 
+	if finalAmount > core.MaxSupply-tx.Fee {
+		exitError(*jsonPtr, fmt.Sprintf("Transaction amount (%d) + fee (%d) exceeds maximum supply (%d)", finalAmount, tx.Fee, core.MaxSupply))
+	}
 	totalCost := finalAmount + tx.Fee
 	availBal := balResp.PendingBalance
 	if balResp.ImmatureBalance > 0 || balResp.SpendableBalance > 0 {

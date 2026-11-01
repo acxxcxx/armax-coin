@@ -204,13 +204,10 @@ func migrateLegacyPeerStore(targetPath string, canonicalNetID string, subDir str
 			return fmt.Errorf("unsupported legacy peer store version %d in %s", store.Version, legacyPath)
 		}
 		if store.NetworkID == canonicalNetID {
-			if migrateLegacyWriteFileHook != nil {
-				if err := writeFn(targetPath, data, 0600); err != nil {
-					return fmt.Errorf("failed to write migrated peer store to %s: %w", targetPath, err)
-				}
-			} else {
-				fmt.Printf("[!] Notice: Found legacy peer store at %s for network %s. Network now uses isolated path %s. The legacy file was left intact. Please copy it manually if you wish to retain existing peers.\n", legacyPath, canonicalNetID, targetPath)
+			if err := writeFn(targetPath, data, 0600); err != nil {
+				return fmt.Errorf("failed to write migrated peer store to %s: %w", targetPath, err)
 			}
+			fmt.Printf("[!] Notice: Found legacy peer store at %s for network %s. Copied to isolated path %s. The legacy file was left intact.\n", legacyPath, canonicalNetID, targetPath)
 			return nil
 		}
 		// If parent store belongs to another network, it's not a legacy store for this sub-network
@@ -234,6 +231,24 @@ type PeerInfo struct {
 	Height          int       `json:"height"`
 	NetworkID       string    `json:"network_id"`
 	CertFingerprint string    `json:"cert_fingerprint,omitempty"` // [F1] SHA-256 certificate pubkey fingerprint for TOFU pinning
+}
+
+// PeerEntry represents the deduplicated public representation of a peer [v1.0.6]
+type PeerEntry struct {
+	CanonicalID     string `json:"canonical_id"`
+	DisplayAddress  string `json:"display_address"`
+	Endpoint        string `json:"endpoint"`
+	CertFingerprint string `json:"cert_fingerprint,omitempty"`
+	AuthMode        string `json:"auth_mode,omitempty"`
+	IsSeed          bool   `json:"is_seed"`
+	IsActive        bool   `json:"is_active"`
+}
+
+func peerAuthMode(certFingerprint string) string {
+	if certFingerprint != "" {
+		return "tofu_verified"
+	}
+	return "unauthenticated"
 }
 
 // ServerLifecycleState defines the operational lifecycle states of PeerServer.
@@ -279,6 +294,7 @@ type serverCycle struct {
 
 type PeerServer struct {
 	Port                 string
+	Bind                 string
 	netIDVal             atomic.Pointer[string] // Single synchronized source of truth for runtime queries [C-33]
 	DataDir              string                 // Custom instance data directory for isolated peer storage [P1-A]
 	peerStorePath        string                 // [P1-A] Resolved immutable peer store path
@@ -303,8 +319,16 @@ type PeerServer struct {
 	syncMu               sync.Mutex
 	syncingHosts         map[string]bool
 	seedMu               sync.RWMutex
-	seedPeers            []string             // configured seeds (host:port or DNS name), re-dialed after isolation
-	seedAddrs            map[string]struct{}  // resolved seed addresses, never evicted from the peer store
+	seedPeers            []string            // configured seeds (host:port or DNS name), re-dialed after isolation
+	seedAddrs            map[string]struct{} // resolved seed addresses, never evicted from the peer store
+	seedHostToIPs        map[string][]string // DNS seed endpoint -> resolved IP endpoints mapping [v1.0.6 dashboard fix]
+	seedIPToHosts        map[string][]string // resolved IP endpoint -> DNS seed endpoints mapping [v1.0.6 dashboard fix]
+	resolveSeed          func(string, bool) []string
+	seedRefreshGen       uint64
+	inboundSessionsMu    sync.RWMutex
+	activeInboundConns   map[net.Conn]string // active inbound connections -> remote address [v1.0.6 dashboard fix]
+	inboundIdentityMu    sync.Mutex
+	inboundFingerprints  map[string]struct{}  // Durable network-scoped TOFU pins for inbound TLS client identities
 	expectedChains       map[string]time.Time // [N-04] tracks requested chains to reject unsolicited CHAIN_RESPONSE
 	orphanLock           sync.Mutex
 	orphanBlocks         map[string]*orphanBlockEntry // [N-06, N-17] orphan block buffer keyed by Block.Hash
@@ -436,10 +460,11 @@ type outboundPeerSession struct {
 	release     func()
 
 	// Serializes request-response exchanges on this connection.
-	mu        sync.Mutex
-	closed    atomic.Bool
-	lastUsed  atomic.Int64
-	closeOnce sync.Once
+	mu                 sync.Mutex
+	closed             atomic.Bool
+	handshakeValidated atomic.Bool // Valid GET_HEIGHT exchange; not proof of identity when TOFU is disabled.
+	lastUsed           atomic.Int64
+	closeOnce          sync.Once
 }
 
 func (s *outboundPeerSession) close() {
@@ -537,7 +562,10 @@ func (p *PeerServer) isSelfPeerAddress(peerAddress string) bool {
 	if err != nil || portStr != p.Port {
 		return false
 	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
+	if host == "" || host == "0.0.0.0" || host == "::" || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(strings.TrimSpace(host)); ip != nil && ip.IsLoopback() {
 		return true
 	}
 	if isOwnPublicInterfaceIP(host) {
@@ -607,8 +635,23 @@ func (p *PeerServer) clearAllPeerUnreachable() {
 // SetSeedPeers records the configured seed list so the node can re-dial it after
 // losing connectivity. Seeds are protected from eviction and are re-added on demand.
 func (p *PeerServer) SetSeedPeers(seeds []string) {
+	uniqueSeeds := make([]string, 0, len(seeds))
+	seen := make(map[string]struct{}, len(seeds))
+	for _, seed := range seeds {
+		seed = strings.TrimSpace(seed)
+		if seed == "" {
+			continue
+		}
+		key := normalizePeerEndpoint(seed)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		uniqueSeeds = append(uniqueSeeds, seed)
+	}
 	p.seedMu.Lock()
-	p.seedPeers = append([]string(nil), seeds...)
+	p.seedPeers = uniqueSeeds
+	p.seedRefreshGen++
 	p.seedMu.Unlock()
 	p.reseedPeers(true)
 }
@@ -639,29 +682,268 @@ func (p *PeerServer) IsLocalMainnet() bool {
 	return canon == "ARMX-MAINNET-1" && core.IsLocalMainnet()
 }
 
+func normalizePeerEndpoint(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = strings.Trim(addr, "[]")
+		port = ""
+	} else {
+		host = strings.Trim(host, "[]")
+	}
+
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
+		host = "127.0.0.1"
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if ip4 := ip.To4(); ip4 != nil {
+			if port != "" {
+				return ip4.String() + ":" + port
+			}
+			return ip4.String()
+		}
+		// Canonical compressed IPv6 format
+		if port != "" {
+			return "[" + ip.String() + "]:" + port
+		}
+		return "[" + ip.String() + "]"
+	}
+
+	lowerHost := strings.ToLower(host)
+	if port != "" {
+		return lowerHost + ":" + port
+	}
+	return lowerHost
+}
+
+func (p *PeerServer) areEndpointsEquivalent(addr1, addr2 string) bool {
+	if addr1 == addr2 {
+		return true
+	}
+	n1 := normalizePeerEndpoint(addr1)
+	n2 := normalizePeerEndpoint(addr2)
+	if n1 == n2 {
+		return true
+	}
+
+	if p == nil {
+		return false
+	}
+
+	p.seedMu.RLock()
+	defer p.seedMu.RUnlock()
+
+	for _, a1 := range []string{addr1, n1} {
+		if ips, ok := p.seedHostToIPs[a1]; ok {
+			for _, ip := range ips {
+				if normalizePeerEndpoint(ip) == n2 {
+					return true
+				}
+			}
+		}
+		if hosts, ok := p.seedIPToHosts[a1]; ok {
+			for _, h := range hosts {
+				if normalizePeerEndpoint(h) == n2 {
+					return true
+				}
+			}
+		}
+	}
+
+	for _, a2 := range []string{addr2, n2} {
+		if ips, ok := p.seedHostToIPs[a2]; ok {
+			for _, ip := range ips {
+				if normalizePeerEndpoint(ip) == n1 {
+					return true
+				}
+			}
+		}
+		if hosts, ok := p.seedIPToHosts[a2]; ok {
+			for _, h := range hosts {
+				if normalizePeerEndpoint(h) == n1 {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// getDisplayAddress returns the user-facing display label for a peer endpoint [v1.0.6]
+// DNS seeds have priority and are displayed as their DNS hostnames; public non-seed peers display as IP.
+func (p *PeerServer) getDisplayAddress(addr string) string {
+	if p == nil || addr == "" {
+		return addr
+	}
+	norm := normalizePeerEndpoint(addr)
+
+	p.seedMu.RLock()
+	defer p.seedMu.RUnlock()
+
+	// 1. If it matches a configured seed directly
+	for _, seed := range p.seedPeers {
+		if normalizePeerEndpoint(seed) == norm || strings.EqualFold(seed, addr) {
+			return seed
+		}
+	}
+
+	// 2. If it is a resolved IP of a known DNS seed
+	for _, key := range []string{norm, addr} {
+		if hosts, ok := p.seedIPToHosts[key]; ok && len(hosts) > 0 {
+			return hosts[0]
+		}
+	}
+
+	// 3. Otherwise, for public non-seed peers, display as normalized endpoint
+	return norm
+}
+
+// getCanonicalPeerID returns the stable, deduplicated identity for a peer [v1.0.6]
+// Prioritizes TOFU cert fingerprint when available; otherwise uses resolved endpoint identity.
+func (p *PeerServer) getCanonicalPeerID(addr string, certFingerprint string) string {
+	if certFingerprint != "" {
+		return "fp:" + strings.ToLower(strings.TrimSpace(certFingerprint))
+	}
+	if p == nil || addr == "" {
+		return "endpoint:" + addr
+	}
+	norm := normalizePeerEndpoint(addr)
+
+	p.seedMu.RLock()
+	defer p.seedMu.RUnlock()
+
+	// If this is a DNS seed hostname that has resolved to IP(s),
+	// canonical network identity is the resolved IP endpoint.
+	for _, key := range []string{norm, addr} {
+		if ips, ok := p.seedHostToIPs[key]; ok && len(ips) > 0 {
+			return "endpoint:" + normalizePeerEndpoint(ips[0])
+		}
+	}
+
+	// Otherwise, canonical identity is the normalized endpoint itself
+	return "endpoint:" + norm
+}
+
+// isSeedEndpoint checks if an address corresponds to a known DNS seed or its resolved IP [v1.0.6]
+func (p *PeerServer) isSeedEndpoint(addr string) bool {
+	if p == nil || addr == "" {
+		return false
+	}
+	norm := normalizePeerEndpoint(addr)
+	p.seedMu.RLock()
+	defer p.seedMu.RUnlock()
+
+	for _, s := range p.seedPeers {
+		if normalizePeerEndpoint(s) == norm || strings.EqualFold(s, addr) {
+			return true
+		}
+	}
+	for _, key := range []string{norm, addr} {
+		if _, ok := p.seedIPToHosts[key]; ok {
+			return true
+		}
+		if _, ok := p.seedAddrs[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *PeerServer) reseedPeers(verbose bool) {
 	if p.IsLocalMainnet() {
 		return
 	}
-	p.seedMu.RLock()
+	p.seedMu.Lock()
+	p.seedRefreshGen++
+	refreshGen := p.seedRefreshGen
 	seeds := append([]string(nil), p.seedPeers...)
-	p.seedMu.RUnlock()
-	if len(seeds) == 0 {
-		return
+	resolveSeed := p.resolveSeed
+	p.seedMu.Unlock()
+	if resolveSeed == nil {
+		resolveSeed = resolveDNSSeed
 	}
+
+	hostToIPs := make(map[string][]string)
+	ipToHosts := make(map[string][]string)
+	seedAddrs := make(map[string]struct{})
+	seenSeeds := make(map[string]struct{})
 	for _, seed := range seeds {
 		if p.isShuttingDown() {
 			return
 		}
-		for _, addr := range resolveDNSSeed(seed, verbose) {
-			p.seedMu.Lock()
-			if p.seedAddrs == nil {
-				p.seedAddrs = make(map[string]struct{})
+		seedKey := normalizePeerEndpoint(seed)
+		if _, exists := seenSeeds[seedKey]; exists {
+			continue
+		}
+		seenSeeds[seedKey] = struct{}{}
+		uniqueIPs := make(map[string]struct{})
+		for _, addr := range resolveSeed(seed, verbose) {
+			addr = strings.TrimSpace(addr)
+			if addr == "" {
+				continue
 			}
-			p.seedAddrs[addr] = struct{}{}
-			p.seedMu.Unlock()
-			p.clearPeerUnreachable(addr)
-			_ = p.AddPeer(addr)
+			normalized := normalizePeerEndpoint(addr)
+			if _, exists := uniqueIPs[normalized]; exists {
+				continue
+			}
+			uniqueIPs[normalized] = struct{}{}
+			hostToIPs[seed] = append(hostToIPs[seed], addr)
+			if seedKey != seed {
+				hostToIPs[seedKey] = append(hostToIPs[seedKey], addr)
+			}
+			ipToHosts[addr] = append(ipToHosts[addr], seed)
+			if normalized != addr {
+				ipToHosts[normalized] = append(ipToHosts[normalized], seed)
+			}
+			seedAddrs[addr] = struct{}{}
+			seedAddrs[normalized] = struct{}{}
+		}
+	}
+
+	p.seedMu.Lock()
+	if refreshGen != p.seedRefreshGen {
+		p.seedMu.Unlock()
+		return
+	}
+	oldAddrs := p.seedAddrs
+	p.seedAddrs = seedAddrs
+	p.seedHostToIPs = hostToIPs
+	p.seedIPToHosts = ipToHosts
+	p.seedMu.Unlock()
+
+	removedStalePeers := false
+	if len(oldAddrs) > 0 {
+		p.Lock.Lock()
+		for staleAddr := range oldAddrs {
+			if _, stillSeeded := seedAddrs[staleAddr]; stillSeeded {
+				continue
+			}
+			if _, trusted := p.triedPeers[staleAddr]; !trusted {
+				if _, exists := p.newPeers[staleAddr]; exists {
+					delete(p.newPeers, staleAddr)
+					removedStalePeers = true
+				}
+			}
+		}
+		p.rebuildPeersListLocked()
+		p.Lock.Unlock()
+	}
+	if removedStalePeers {
+		if err := p.savePeers(); err != nil {
+			fmt.Printf("[P2P] Failed to persist removal of stale DNS seed peers: %v\n", err)
+		}
+	}
+
+	for addr := range seedAddrs {
+		p.clearPeerUnreachable(addr)
+		if err := p.AddPeer(addr); err != nil {
+			fmt.Printf("[P2P] Failed to refresh DNS seed peer %s: %v\n", addr, err)
 		}
 	}
 }
@@ -1739,33 +2021,40 @@ func NewPeerServer(port string, bc *core.Blockchain, opts ...string) *PeerServer
 	instTLS, _ := EnsureNodeTLSConfig(dataDir)
 
 	ps := &PeerServer{
-		Port:               port,
-		DataDir:            dataDir,
-		tlsConfig:          instTLS,
-		peerStorePath:      path,
-		peerStoreInitErr:   initErr,
-		peerStoreCorrupted: initErr != nil,
-		Peers:              []string{},
-		newPeers:           make(map[string]*PeerInfo),
-		triedPeers:         make(map[string]*PeerInfo),
-		Blockchain:         bc,
-		MaxPeers:           MaxPeersDefault,
-		subnetConns:        make(map[string]int),
-		AllowPrivatePeers:  isPrivatePeersAllowedForNetwork(canonicalNetID),
-		DHT:                NewRoutingTable(":" + port),
-		seenTxs:            make(map[string]time.Time),
-		seenBlks:           make(map[string]time.Time),
-		relayedTxs:         make(map[string]map[string]time.Time),
-		syncingHosts:       make(map[string]bool),
-		expectedChains:     make(map[string]time.Time),
-		orphanBlocks:       make(map[string]*orphanBlockEntry),
-		orphanTxs:          make(map[string]*orphanTxEntry),
-		banScores:          make(map[string]int),
-		bannedIPs:          make(map[string]time.Time),
-		rateTrackers:       make(map[string]*peerRateTracker),
-		pendingTOFU:        make(map[string]*pendingPin),
-		failedPins:         make(map[string]string),
-		quitChan:           make(chan struct{}),
+		Port:                port,
+		DataDir:             dataDir,
+		tlsConfig:           instTLS,
+		peerStorePath:       path,
+		peerStoreInitErr:    initErr,
+		peerStoreCorrupted:  initErr != nil,
+		Peers:               []string{},
+		newPeers:            make(map[string]*PeerInfo),
+		triedPeers:          make(map[string]*PeerInfo),
+		Blockchain:          bc,
+		MaxPeers:            MaxPeersDefault,
+		subnetConns:         make(map[string]int),
+		AllowPrivatePeers:   isPrivatePeersAllowedForNetwork(canonicalNetID),
+		DHT:                 NewRoutingTable(":" + port),
+		seenTxs:             make(map[string]time.Time),
+		seenBlks:            make(map[string]time.Time),
+		relayedTxs:          make(map[string]map[string]time.Time),
+		syncingHosts:        make(map[string]bool),
+		expectedChains:      make(map[string]time.Time),
+		orphanBlocks:        make(map[string]*orphanBlockEntry),
+		orphanTxs:           make(map[string]*orphanTxEntry),
+		banScores:           make(map[string]int),
+		bannedIPs:           make(map[string]time.Time),
+		rateTrackers:        make(map[string]*peerRateTracker),
+		pendingTOFU:         make(map[string]*pendingPin),
+		failedPins:          make(map[string]string),
+		quitChan:            make(chan struct{}),
+		outboundSessions:    make(map[string]*outboundPeerSession),
+		inflightDials:       make(map[string]*inflightPeerDial),
+		seedAddrs:           make(map[string]struct{}),
+		seedHostToIPs:       make(map[string][]string),
+		seedIPToHosts:       make(map[string][]string),
+		activeInboundConns:  make(map[net.Conn]string),
+		inboundFingerprints: make(map[string]struct{}),
 	}
 	ps.netIDVal.Store(&canonicalNetID)
 	ps.loadPeers()
@@ -1785,12 +2074,22 @@ func (p *PeerServer) GetState() ServerLifecycleState {
 	return p.state
 }
 
-// Stop gracefully closes the listener, aborts active connections, waits for server goroutines, and terminates background tasks [T-06, P1-A].
-func (p *PeerServer) Stop() {
+// StopWithTimeout initiates graceful teardown of the P2P networking cycle and waits
+// up to timeout for all cycle workers, connections, and loops to fully drain [FIX-01, v1.0.6].
+// Returns stopped=true if all workers cleanly drained and the cycle completed,
+// or stopped=false if the operation timed out.
+func (p *PeerServer) StopWithTimeout(timeout time.Duration) bool {
+	if p == nil {
+		return true
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
 	p.lifecycleLock.Lock()
 	if p.state == ServerStateStopped {
 		p.lifecycleLock.Unlock()
-		return // Idempotent: already stopped
+		return true // Idempotent: already stopped
 	}
 
 	cycle := p.activeCycle
@@ -1798,7 +2097,7 @@ func (p *PeerServer) Stop() {
 		p.state = ServerStateStopped
 		p.serverStarted = false
 		p.lifecycleLock.Unlock()
-		return
+		return true
 	}
 
 	if p.state == ServerStateStopping {
@@ -1809,10 +2108,10 @@ func (p *PeerServer) Stop() {
 
 		select {
 		case <-doneChan:
-			return
-		case <-time.After(5 * time.Second):
+			return true
+		case <-time.After(timeout):
 			fmt.Printf("[P2P] Concurrent Stop timed out waiting for cycle %d shutdown\n", cycle.id)
-			return
+			return false
 		}
 	}
 
@@ -1851,13 +2150,19 @@ func (p *PeerServer) Stop() {
 	select {
 	case <-doneChan:
 		// Clean shutdown completed; state is safely ServerStateStopped.
-		return
-	case <-time.After(5 * time.Second):
+		return true
+	case <-time.After(timeout):
 		// Requirement 1.4: Do NOT change state to STOPPED just because timeout expired.
 		// Keep state as ServerStateStopping and report timeout clearly.
 		fmt.Printf("[P2P] Stop timed out waiting for cycle %d workers to drain\n", cycle.id)
-		return
+		return false
 	}
+}
+
+// Stop gracefully closes the listener, aborts active connections, waits for server goroutines,
+// and terminates background tasks with default 5-second timeout [T-06, P1-A, v1.0.6].
+func (p *PeerServer) Stop() {
+	_ = p.StopWithTimeout(5 * time.Second)
 }
 
 var (
@@ -2052,15 +2357,47 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 	return true
 }
 
-// rebuildPeersListLocked synchronizes p.Peers slice with tried and new peer tables
+// rebuildPeersListLocked synchronizes p.Peers slice with tried and new peer tables,
+// strictly deduplicating peer identities so DNS seed hostnames and resolved IPs are not counted twice [v1.0.6].
 func (p *PeerServer) rebuildPeersListLocked() {
 	var list []string
-	for addr := range p.triedPeers {
-		list = append(list, addr)
+	seen := make(map[string]struct{})
+	seenDisplay := make(map[string]struct{})
+
+	for addr, info := range p.triedPeers {
+		fp := ""
+		if info != nil {
+			fp = info.CertFingerprint
+		}
+		canonID := p.getCanonicalPeerID(addr, fp)
+		if _, exists := seen[canonID]; !exists {
+			seen[canonID] = struct{}{}
+			displayAddr := p.getDisplayAddress(addr)
+			if _, taken := seenDisplay[displayAddr]; taken {
+				displayAddr = normalizePeerEndpoint(addr)
+			}
+			seenDisplay[displayAddr] = struct{}{}
+			list = append(list, displayAddr)
+		}
 	}
-	for addr := range p.newPeers {
-		list = append(list, addr)
+
+	for addr, info := range p.newPeers {
+		fp := ""
+		if info != nil {
+			fp = info.CertFingerprint
+		}
+		canonID := p.getCanonicalPeerID(addr, fp)
+		if _, exists := seen[canonID]; !exists {
+			seen[canonID] = struct{}{}
+			displayAddr := p.getDisplayAddress(addr)
+			if _, taken := seenDisplay[displayAddr]; taken {
+				displayAddr = normalizePeerEndpoint(addr)
+			}
+			seenDisplay[displayAddr] = struct{}{}
+			list = append(list, displayAddr)
+		}
 	}
+
 	p.Peers = list
 }
 
@@ -2268,9 +2605,10 @@ func (p *PeerServer) RecordPeerFailure(addr string) error {
 
 // VersionedPeerStore represents the on-disk peer storage format [Phase 5]
 type VersionedPeerStore struct {
-	Version   int         `json:"version"`
-	NetworkID string      `json:"network_id"`
-	Peers     []*PeerInfo `json:"peers"`
+	Version             int         `json:"version"`
+	NetworkID           string      `json:"network_id"`
+	Peers               []*PeerInfo `json:"peers"`
+	InboundFingerprints []string    `json:"inbound_fingerprints,omitempty"`
 }
 
 // GetPeerStoreInitErr returns any error encountered while creating or deriving the peer store path [P1-A]
@@ -2465,6 +2803,11 @@ func (p *PeerServer) loadPeers() {
 			p.preserveCorruptPeerStore(path, data, fmt.Sprintf("Peer store has invalid/missing peers list in %s", path))
 			return
 		}
+		for _, fingerprint := range store.InboundFingerprints {
+			if fingerprint != "" {
+				p.inboundFingerprints[fingerprint] = struct{}{}
+			}
+		}
 
 		for _, info := range store.Peers {
 			if info == nil || info.Address == "" || p.isSelfPeerAddress(info.Address) {
@@ -2524,6 +2867,9 @@ func (p *PeerServer) loadPeers() {
 
 func (p *PeerServer) preserveCorruptPeerStore(path string, data []byte, reason string) {
 	p.peerStoreCorrupted = true
+	if p.peerStoreInitErr == nil {
+		p.peerStoreInitErr = errors.New(reason)
+	}
 	corruptBackup := path + ".corrupt"
 	if _, err := os.Stat(corruptBackup); os.IsNotExist(err) {
 		_ = os.WriteFile(corruptBackup, data, 0600)
@@ -2589,9 +2935,13 @@ func (p *PeerServer) savePeersLocked() error {
 	}
 
 	store := VersionedPeerStore{
-		Version:   1,
-		NetworkID: p.getNetworkIDLocked(),
-		Peers:     make([]*PeerInfo, 0, len(p.triedPeers)+len(p.newPeers)),
+		Version:             1,
+		NetworkID:           p.getNetworkIDLocked(),
+		Peers:               make([]*PeerInfo, 0, len(p.triedPeers)+len(p.newPeers)),
+		InboundFingerprints: make([]string, 0, len(p.inboundFingerprints)),
+	}
+	for fingerprint := range p.inboundFingerprints {
+		store.InboundFingerprints = append(store.InboundFingerprints, fingerprint)
 	}
 	// Deep-copy every PeerInfo value while holding p.Lock.RLock() [P1 Final Blocker]
 	for _, info := range p.triedPeers {
@@ -2758,9 +3108,12 @@ func (p *PeerServer) startPeerDiscoveryGossip(cycle *serverCycle) {
 			default:
 			}
 
-			cycle.wg.Add(1)
-			go func(target string) {
-				defer cycle.wg.Done()
+			done, admitted := p.registerOutboundWork()
+			if !admitted {
+				return
+			}
+			go func(target string, doneFunc func()) {
+				defer doneFunc()
 
 				select {
 				case <-cycle.quitChan:
@@ -2844,7 +3197,7 @@ func (p *PeerServer) startPeerDiscoveryGossip(cycle *serverCycle) {
 						}
 					}
 				}
-			}(peer)
+			}(peer, done)
 		}
 	}
 }
@@ -2932,7 +3285,11 @@ func (p *PeerServer) StartServer() {
 		serverStartingHook()
 	}
 
-	listenAddr := ":" + p.Port
+	listenHost := p.Bind
+	if listenHost == "" {
+		listenHost = ""
+	}
+	listenAddr := net.JoinHostPort(listenHost, p.Port)
 	if p.IsLocalMainnet() {
 		listenAddr = net.JoinHostPort("127.0.0.1", p.Port)
 	}
@@ -3138,16 +3495,31 @@ func (p *PeerServer) runCycle(cycle *serverCycle, listener net.Listener) {
 			cycle.connsMu.Unlock()
 		}
 
-		cycle.wg.Add(1)
-		go func(sc net.Conn, sn string) {
+		done, admitted := p.registerOutboundWork()
+		if !admitted {
+			cycle.connsMu.Lock()
+			delete(cycle.activeConns, secureConn)
+			cycle.connsMu.Unlock()
+			_ = secureConn.Close()
+			atomic.AddInt32(&p.ActiveConns, -1)
+			p.connLock.Lock()
+			p.subnetConns[remoteSubnet]--
+			if p.subnetConns[remoteSubnet] <= 0 {
+				delete(p.subnetConns, remoteSubnet)
+			}
+			p.connLock.Unlock()
+			return
+		}
+
+		go func(sc net.Conn, sn string, doneFunc func()) {
 			defer func() {
 				cycle.connsMu.Lock()
 				delete(cycle.activeConns, sc)
 				cycle.connsMu.Unlock()
-				cycle.wg.Done()
+				doneFunc()
 			}()
 			p.HandleConnection(sc, sn)
-		}(secureConn, remoteSubnet)
+		}(secureConn, remoteSubnet, done)
 	}
 }
 
@@ -3233,7 +3605,17 @@ func readBoundedLine(r *bufio.Reader, maxBytes int) (string, error) {
 
 // HandleConnection processes incoming P2P messages in a persistent stream loop [N-02]
 func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
+	registeredActive := false
+	identityChecked := false
+	pendingFingerprint := ""
+
 	defer func() {
+		if registeredActive {
+			p.inboundSessionsMu.Lock()
+			delete(p.activeInboundConns, conn)
+			p.inboundSessionsMu.Unlock()
+		}
+
 		debugLogf(
 			"[P2P][CONN] inbound closed remote=%s active_before=%d",
 			conn.RemoteAddr().String(),
@@ -3299,8 +3681,19 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 			continue
 		}
 
+		if !identityChecked {
+			pendingFingerprint = extractCertPubkeyFingerprint(conn)
+			if pendingFingerprint != "" && p.P2PTOFU {
+				if err := p.verifyOrRecordInboundIdentity(pendingFingerprint); err != nil {
+					core.LogDebug(core.LogCategoryDiscovery, "Rejected inbound peer identity from %s: %v", remoteAddr, err)
+					return
+				}
+			}
+			identityChecked = true
+		}
+
 		// Extend socket read deadline once peer is authenticated on matching network ID to prevent disconnect/reconnect churn.
-		if readTimeout != AuthenticatedIdleTimeout {
+		if readTimeout != AuthenticatedIdleTimeout && (!p.P2PTOFU || pendingFingerprint != "") {
 			readTimeout = AuthenticatedIdleTimeout
 			if remoteIP != "" && p.Port != "" {
 				if ip := net.ParseIP(remoteIP); ip != nil && !ip.IsLoopback() {
@@ -3328,9 +3721,23 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 				Type:      "HEIGHT_RESPONSE",
 				Payload:   HeightResponse{Height: latest.Index, LatestHash: latest.Hash, Chainwork: cw},
 			})
-			if err == nil {
-				_ = conn.SetWriteDeadline(time.Now().Add(SocketTimeoutDuration))
-				_, _ = conn.Write(append(respData, '\n'))
+			if err != nil {
+				return
+			}
+			_ = conn.SetWriteDeadline(time.Now().Add(SocketTimeoutDuration))
+			if _, err := conn.Write(append(respData, '\n')); err != nil {
+				return
+			}
+			if !registeredActive {
+				if pendingFingerprint != "" || !p.P2PTOFU {
+					p.inboundSessionsMu.Lock()
+					if p.activeInboundConns == nil {
+						p.activeInboundConns = make(map[net.Conn]string)
+					}
+					p.activeInboundConns[conn] = remoteAddr
+					p.inboundSessionsMu.Unlock()
+					registeredActive = true
+				}
 			}
 
 		case "GET_BLOCK_RANGE":
@@ -3493,6 +3900,9 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 			}
 
 		case "PEERS_LIST":
+			if p.P2PTOFU && pendingFingerprint == "" {
+				continue
+			}
 			var peerList []string
 			if json.Unmarshal(msg.Payload, &peerList) == nil {
 				for _, newPeer := range peerList {
@@ -3546,6 +3956,9 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 			}
 
 		case "DHT_NODES":
+			if p.P2PTOFU && pendingFingerprint == "" {
+				continue
+			}
 			var discovered []DHTNodeInfo
 			if err := json.Unmarshal(msg.Payload, &discovered); err == nil {
 				for _, node := range discovered {
@@ -3665,7 +4078,7 @@ func (p *PeerServer) AddPeer(peerAddress string) error {
 		p.triedPeers = make(map[string]*PeerInfo)
 	}
 
-	// Do not duplicate
+	// Do not duplicate exact or equivalent endpoints (DNS seed vs resolved IP) [v1.0.6 dashboard fix]
 	if _, exists := p.triedPeers[peerAddress]; exists {
 		p.Lock.Unlock()
 		return nil
@@ -3673,6 +4086,26 @@ func (p *PeerServer) AddPeer(peerAddress string) error {
 	if _, exists := p.newPeers[peerAddress]; exists {
 		p.Lock.Unlock()
 		return nil
+	}
+	for existing := range p.triedPeers {
+		if p.areEndpointsEquivalent(peerAddress, existing) {
+			p.Lock.Unlock()
+			return nil
+		}
+	}
+	for existing, info := range p.newPeers {
+		if p.areEndpointsEquivalent(peerAddress, existing) {
+			existingHost, _, _ := net.SplitHostPort(existing)
+			newHost, _, _ := net.SplitHostPort(peerAddress)
+			if net.ParseIP(existingHost) == nil && net.ParseIP(newHost) != nil {
+				delete(p.newPeers, existing)
+				p.newPeers[peerAddress] = info
+				info.Address = peerAddress
+				p.rebuildPeersListLocked()
+			}
+			p.Lock.Unlock()
+			return nil
+		}
 	}
 
 	// [N-16] Address book capacity check (MaxAddressBookSize = 1000)
@@ -3734,13 +4167,212 @@ func (p *PeerServer) GetPeers() []string {
 	return peersCopy
 }
 
-// GetPeersActive returns the number of active live inbound and outbound peer connections [L4-8]
+// GetPeersActive returns the number of active, handshaked, deduplicated P2P peer sessions [L4-8, v1.0.6]
 func (p *PeerServer) GetPeersActive() int {
-	active := atomic.LoadInt32(&p.ActiveConns)
-	if active < 0 {
+	if p == nil {
 		return 0
 	}
-	return int(active)
+	return len(p.GetActivePeerEndpoints())
+}
+
+// GetActivePeerEndpoints returns deduplicated remote display addresses of all currently active P2P sessions [v1.0.6]
+func (p *PeerServer) GetActivePeerEndpoints() []string {
+	if p == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	seenDisplay := make(map[string]struct{})
+	var result []string
+
+	// 1. Live outbound sessions
+	p.outboundMu.Lock()
+	for addr, sess := range p.outboundSessions {
+		if sess != nil && !sess.isClosed() && sess.handshakeValidated.Load() {
+			fp := extractCertPubkeyFingerprint(sess.conn)
+			canonID := p.getCanonicalPeerID(addr, fp)
+			if _, exists := seen[canonID]; !exists {
+				seen[canonID] = struct{}{}
+				displayAddr := p.getDisplayAddress(addr)
+				if _, taken := seenDisplay[displayAddr]; taken {
+					displayAddr = normalizePeerEndpoint(addr)
+				}
+				seenDisplay[displayAddr] = struct{}{}
+				result = append(result, displayAddr)
+			}
+		}
+	}
+	p.outboundMu.Unlock()
+
+	// 2. Live inbound sessions
+	p.inboundSessionsMu.RLock()
+	for conn, remoteAddr := range p.activeInboundConns {
+		fp := extractCertPubkeyFingerprint(conn)
+		canonID := p.getCanonicalPeerID(remoteAddr, fp)
+		if _, exists := seen[canonID]; !exists {
+			seen[canonID] = struct{}{}
+			displayAddr := p.getDisplayAddress(remoteAddr)
+			if _, taken := seenDisplay[displayAddr]; taken {
+				displayAddr = normalizePeerEndpoint(remoteAddr)
+			}
+			seenDisplay[displayAddr] = struct{}{}
+			result = append(result, displayAddr)
+		}
+	}
+	p.inboundSessionsMu.RUnlock()
+
+	return result
+}
+
+// GetActivePeerDetails returns structured details of currently active P2P sessions [v1.0.6]
+func (p *PeerServer) GetActivePeerDetails() []PeerEntry {
+	if p == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var result []PeerEntry
+
+	// 1. Live outbound sessions
+	p.outboundMu.Lock()
+	for addr, sess := range p.outboundSessions {
+		if sess != nil && !sess.isClosed() && sess.handshakeValidated.Load() {
+			fp := extractCertPubkeyFingerprint(sess.conn)
+			canonID := p.getCanonicalPeerID(addr, fp)
+			if _, exists := seen[canonID]; !exists {
+				seen[canonID] = struct{}{}
+				disp := p.getDisplayAddress(addr)
+				result = append(result, PeerEntry{
+					CanonicalID:     canonID,
+					DisplayAddress:  disp,
+					Endpoint:        normalizePeerEndpoint(addr),
+					CertFingerprint: fp,
+					AuthMode:        peerAuthMode(fp),
+					IsSeed:          p.isSeedEndpoint(addr),
+					IsActive:        true,
+				})
+			}
+		}
+	}
+	p.outboundMu.Unlock()
+
+	// 2. Live inbound sessions
+	p.inboundSessionsMu.RLock()
+	for conn, remoteAddr := range p.activeInboundConns {
+		fp := extractCertPubkeyFingerprint(conn)
+		canonID := p.getCanonicalPeerID(remoteAddr, fp)
+		if _, exists := seen[canonID]; !exists {
+			seen[canonID] = struct{}{}
+			disp := p.getDisplayAddress(remoteAddr)
+			result = append(result, PeerEntry{
+				CanonicalID:     canonID,
+				DisplayAddress:  disp,
+				Endpoint:        normalizePeerEndpoint(remoteAddr),
+				CertFingerprint: fp,
+				AuthMode:        peerAuthMode(fp),
+				IsSeed:          p.isSeedEndpoint(remoteAddr),
+				IsActive:        true,
+			})
+		}
+	}
+	p.inboundSessionsMu.RUnlock()
+
+	return result
+}
+
+// GetPeerDetails returns structured details of all known peers [v1.0.6]
+func (p *PeerServer) GetPeerDetails() []PeerEntry {
+	if p == nil {
+		return nil
+	}
+	p.Lock.RLock()
+	defer p.Lock.RUnlock()
+
+	seen := make(map[string]struct{})
+	var result []PeerEntry
+
+	activeSet := make(map[string]struct{})
+	for _, ep := range p.GetActivePeerEndpoints() {
+		activeSet[ep] = struct{}{}
+	}
+
+	for addr, info := range p.triedPeers {
+		fp := ""
+		if info != nil {
+			fp = info.CertFingerprint
+		}
+		canonID := p.getCanonicalPeerID(addr, fp)
+		if _, exists := seen[canonID]; !exists {
+			seen[canonID] = struct{}{}
+			disp := p.getDisplayAddress(addr)
+			_, isActive := activeSet[disp]
+			result = append(result, PeerEntry{
+				CanonicalID:     canonID,
+				DisplayAddress:  disp,
+				Endpoint:        normalizePeerEndpoint(addr),
+				CertFingerprint: fp,
+				AuthMode:        peerAuthMode(fp),
+				IsSeed:          p.isSeedEndpoint(addr),
+				IsActive:        isActive,
+			})
+		}
+	}
+
+	for addr, info := range p.newPeers {
+		fp := ""
+		if info != nil {
+			fp = info.CertFingerprint
+		}
+		canonID := p.getCanonicalPeerID(addr, fp)
+		if _, exists := seen[canonID]; !exists {
+			seen[canonID] = struct{}{}
+			disp := p.getDisplayAddress(addr)
+			_, isActive := activeSet[disp]
+			result = append(result, PeerEntry{
+				CanonicalID:     canonID,
+				DisplayAddress:  disp,
+				Endpoint:        normalizePeerEndpoint(addr),
+				CertFingerprint: fp,
+				AuthMode:        peerAuthMode(fp),
+				IsSeed:          p.isSeedEndpoint(addr),
+				IsActive:        isActive,
+			})
+		}
+	}
+
+	return result
+}
+
+// GetPeersSeeds returns the count of configured DNS seeds or bootstrap peers [v1.0.6]
+func (p *PeerServer) GetPeersSeeds() int {
+	if p == nil {
+		return 0
+	}
+	p.seedMu.RLock()
+	defer p.seedMu.RUnlock()
+	return len(p.seedPeers)
+}
+
+// GetPeersCandidates returns the count of untried candidate peers waiting in the address book [v1.0.6]
+func (p *PeerServer) GetPeersCandidates() int {
+	if p == nil {
+		return 0
+	}
+	p.Lock.RLock()
+	defer p.Lock.RUnlock()
+
+	seen := make(map[string]struct{})
+	count := 0
+	for addr, info := range p.newPeers {
+		fp := ""
+		if info != nil {
+			fp = info.CertFingerprint
+		}
+		canonID := p.getCanonicalPeerID(addr, fp)
+		if _, exists := seen[canonID]; !exists {
+			seen[canonID] = struct{}{}
+			count++
+		}
+	}
+	return count
 }
 
 // TrackActiveConn registers an active inbound or outbound connection and returns a cleanup func [L4-8]
@@ -3796,6 +4428,47 @@ func (p *PeerServer) VerifyOrRecordTOFU(peerAddr string, conn net.Conn) error {
 	defer p.lifecycleLock.RUnlock()
 
 	return p.verifyOrRecordTOFULocked(peerAddr, conn)
+}
+
+func (p *PeerServer) verifyOrRecordInboundIdentity(fingerprint string) error {
+	if fingerprint == "" {
+		return errors.New("inbound TLS connection has no client certificate fingerprint")
+	}
+	p.inboundIdentityMu.Lock()
+	defer p.inboundIdentityMu.Unlock()
+
+	p.Lock.RLock()
+	_, trusted := p.inboundFingerprints[fingerprint]
+	p.Lock.RUnlock()
+	if trusted {
+		return nil
+	}
+
+	p.savePeersLock.Lock()
+	defer p.savePeersLock.Unlock()
+
+	p.Lock.Lock()
+	if p.peerStoreCorrupted {
+		p.Lock.Unlock()
+		return errors.New("peer store is corrupt; refusing to trust inbound identity")
+	}
+	if p.inboundFingerprints == nil {
+		p.inboundFingerprints = make(map[string]struct{})
+	}
+	if _, trusted := p.inboundFingerprints[fingerprint]; trusted {
+		p.Lock.Unlock()
+		return nil
+	}
+	p.inboundFingerprints[fingerprint] = struct{}{}
+	p.Lock.Unlock()
+
+	if err := p.savePeersLocked(); err != nil {
+		p.Lock.Lock()
+		delete(p.inboundFingerprints, fingerprint)
+		p.Lock.Unlock()
+		return fmt.Errorf("failed to persist inbound peer identity: %w", err)
+	}
+	return nil
 }
 
 // verifyOrRecordTOFULocked performs the core TOFU verification, in-memory staging, and durable save transaction.
@@ -4018,7 +4691,11 @@ func (p *PeerServer) DialPeer(peerAddress string, timeout time.Duration) (net.Co
 	p.Lock.RUnlock()
 
 	allowPlaintext := !requireTLS && !p2pTOFU && !IsStrictTLS()
-	conn, isTLS, err := DialEncryptedWithFallbackForNetwork(p.GetNetworkID(), peerAddress, timeout, allowPlaintext)
+	var clientIdentity *tls.Certificate
+	if p.tlsConfig != nil && len(p.tlsConfig.Certificates) > 0 {
+		clientIdentity = &p.tlsConfig.Certificates[0]
+	}
+	conn, isTLS, err := dialEncryptedWithFallbackForNetwork(p.GetNetworkID(), peerAddress, timeout, allowPlaintext, clientIdentity)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -4078,7 +4755,7 @@ func isStandardRPCResponseType(respType string) bool {
 	}
 }
 
-// QueryPeer sends a message to a peer over a verified, TOFU-validated connection and waits for the response [P1 Final Fix]
+// QueryPeer sends a P2P request over a persistent session, validates the response network, and waits for the response.
 func (p *PeerServer) QueryPeer(
 	peerAddress string,
 	msg Message,
@@ -4190,11 +4867,34 @@ func (p *PeerServer) QueryPeer(
 			resp.NetworkID,
 		)
 	}
+	if expType != "" && resp.Type != expType {
+		p.dropOutboundSession(peerAddress, session)
+		return nil, fmt.Errorf("unexpected response type from %s: got %q, want %q", peerAddress, resp.Type, expType)
+	}
+	if msg.Type == "GET_HEIGHT" {
+		payload, err := resp.PayloadBytes()
+		if err != nil {
+			p.dropOutboundSession(peerAddress, session)
+			return nil, fmt.Errorf("invalid height response payload from %s: %w", peerAddress, err)
+		}
+		var height HeightResponse
+		if err := json.Unmarshal(payload, &height); err != nil {
+			p.dropOutboundSession(peerAddress, session)
+			return nil, fmt.Errorf("invalid height response payload from %s: %w", peerAddress, err)
+		}
+		hashBytes, hashErr := hex.DecodeString(height.LatestHash)
+		chainwork, chainworkOK := new(big.Int).SetString(height.Chainwork, 10)
+		if height.Height < 0 || hashErr != nil || len(hashBytes) != 32 || !chainworkOK || chainwork.Sign() <= 0 {
+			p.dropOutboundSession(peerAddress, session)
+			return nil, fmt.Errorf("invalid height response fields from %s", peerAddress)
+		}
+		session.handshakeValidated.Store(true)
+	}
 
 	return &resp, nil
 }
 
-// SendMessage sends a message to a peer over a verified, TOFU-validated connection [P1 Final Fix]
+// SendMessage sends a message to a peer over a persistent P2P session.
 func (p *PeerServer) SendMessage(
 	peerAddress string,
 	msg Message,
@@ -4273,9 +4973,12 @@ func (p *PeerServer) startPeerSessionHeartbeat(cycle *serverCycle) {
 					continue
 				}
 
-				cycle.wg.Add(1)
-				go func(targetAddr string) {
-					defer cycle.wg.Done()
+				done, admitted := p.registerOutboundWork()
+				if !admitted {
+					return
+				}
+				go func(targetAddr string, targetSess *outboundPeerSession, doneFunc func()) {
+					defer doneFunc()
 					select {
 					case sem <- struct{}{}:
 						defer func() { <-sem }()
@@ -4291,16 +4994,14 @@ func (p *PeerServer) startPeerSessionHeartbeat(cycle *serverCycle) {
 						},
 						5*time.Second,
 					)
-					if err != nil {
-						return
-					}
-					if response.Type != "DHT_PONG" {
+					if err != nil || response.Type != "DHT_PONG" {
 						p.dropOutboundSession(
 							targetAddr,
-							p.getExistingOutboundSession(targetAddr),
+							targetSess,
 						)
+						return
 					}
-				}(address)
+				}(address, sess, done)
 			}
 		}
 	}
@@ -4315,33 +5016,92 @@ func (p *PeerServer) getExistingOutboundSession(
 	return p.outboundSessions[peerAddress]
 }
 
-// BroadcastBlock broadcasts a block to the specified peers using this PeerServer's TOFU transport [P1-A]
+// registerOutboundWork attempts to register an outbound asynchronous operation with the
+// currently active server cycle.
+//
+// Concurrency & Lifecycle Guarantee [FIX-05, v1.0.6]:
+// Checks p.state under p.lifecycleLock (read mode).
+// If the server is in ServerStateRunning and an active cycle exists with an open quit channel,
+// it increments cycle.wg and returns a cleanup callback and admitted=true.
+// If the server is stopped, stopping, starting, or shutting down, it returns a no-op cleanup
+// and admitted=false. This prevents any goroutines from being scheduled during teardown and
+// eliminates WaitGroup concurrent Add/Wait panics.
+func (p *PeerServer) registerOutboundWork() (done func(), admitted bool) {
+	p.lifecycleLock.RLock()
+	defer p.lifecycleLock.RUnlock()
+
+	if p.state == ServerStateStopping {
+		return func() {}, false
+	}
+	if p.activeCycle == nil {
+		return func() {}, true
+	}
+	if p.state != ServerStateRunning {
+		return func() {}, false
+	}
+
+	cycle := p.activeCycle
+	select {
+	case <-cycle.quitChan:
+		return func() {}, false
+	default:
+	}
+
+	cycle.wg.Add(1)
+	return func() {
+		cycle.wg.Done()
+	}, true
+}
+
+// BroadcastBlock broadcasts a block to the specified peers using this PeerServer's TOFU transport [P1-A, v1.0.6]
 func (p *PeerServer) BroadcastBlock(peerAddresses []string, block core.Block) {
+	if p.isShuttingDown() {
+		return
+	}
 	msg := Message{
 		NetworkID: p.GetNetworkID(),
 		Type:      "NEW_BLOCK",
 		Payload:   block,
 	}
 	for _, peer := range peerAddresses {
-		go func(target string) {
+		done, admitted := p.registerOutboundWork()
+		if !admitted {
+			return
+		}
+		go func(target string, doneFunc func()) {
+			defer doneFunc()
+			if p.isShuttingDown() {
+				return
+			}
 			if err := p.SendMessage(target, msg); err == nil {
 				fmt.Printf("[P2P] Broadcasted block #%d to peer %s\n", block.Index, target)
 			}
-		}(peer)
+		}(peer, done)
 	}
 }
 
-// BroadcastTransaction broadcasts a transaction to the specified peers using this PeerServer's TOFU transport [P1-A]
+// BroadcastTransaction broadcasts a transaction to the specified peers using this PeerServer's TOFU transport [P1-A, v1.0.6]
 func (p *PeerServer) BroadcastTransaction(peerAddresses []string, tx core.Transaction) {
+	if p.isShuttingDown() {
+		return
+	}
 	msg := Message{
 		NetworkID: p.GetNetworkID(),
 		Type:      "NEW_TX",
 		Payload:   tx,
 	}
 	for _, peer := range peerAddresses {
-		go func(target string) {
+		done, admitted := p.registerOutboundWork()
+		if !admitted {
+			return
+		}
+		go func(target string, doneFunc func()) {
+			defer doneFunc()
+			if p.isShuttingDown() {
+				return
+			}
 			_ = p.SendMessage(target, msg)
-		}(peer)
+		}(peer, done)
 	}
 }
 
@@ -4352,15 +5112,26 @@ func (p *PeerServer) GetPeersKnown() int {
 	return len(p.Peers)
 }
 
-// RelayBlock relays a newly accepted block to all connected peers except sender
+// RelayBlock relays a newly accepted block to all connected peers except sender [v1.0.6]
 func (p *PeerServer) RelayBlock(block core.Block, senderAddr string) {
+	if p.isShuttingDown() {
+		return
+	}
 	p.isBlockSeenOrMark(block.Hash)
 	peers := p.GetPeers()
 	for _, peer := range peers {
 		if !isSamePeerOrHost(peer, senderAddr) {
-			go func(target string) {
+			done, admitted := p.registerOutboundWork()
+			if !admitted {
+				return
+			}
+			go func(target string, doneFunc func()) {
+				defer doneFunc()
+				if p.isShuttingDown() {
+					return
+				}
 				_ = p.SendMessage(target, Message{NetworkID: p.GetNetworkID(), Type: "NEW_BLOCK", Payload: block})
-			}(peer)
+			}(peer, done)
 		}
 	}
 }
@@ -4416,14 +5187,20 @@ func (p *PeerServer) RebroadcastMempool() {
 	}
 }
 
-// RelayTransaction relays a transaction asynchronously to eligible peers.
+// RelayTransaction relays a transaction asynchronously to eligible peers [v1.0.6].
 func (p *PeerServer) RelayTransaction(
 	tx core.Transaction,
 	senderAddr string,
 ) {
+	if p.isShuttingDown() {
+		return
+	}
 	txHash := tx.HashHex()
 
 	for _, peer := range p.GetPeers() {
+		if p.isShuttingDown() {
+			return
+		}
 		if isSamePeerOrHost(peer, senderAddr) {
 			continue
 		}
@@ -4435,7 +5212,18 @@ func (p *PeerServer) RelayTransaction(
 			continue
 		}
 
-		go func() {
+		done, admitted := p.registerOutboundWork()
+		if !admitted {
+			p.releaseTxRelay(txHash, target, claimTime)
+			return
+		}
+
+		go func(doneFunc func()) {
+			defer doneFunc()
+			if p.isShuttingDown() {
+				p.releaseTxRelay(txHash, target, claimTime)
+				return
+			}
 			msg := Message{
 				NetworkID: p.GetNetworkID(),
 				Type:      "NEW_TX",
@@ -4461,7 +5249,7 @@ func (p *PeerServer) RelayTransaction(
 				txHash,
 				target,
 			)
-		}()
+		}(done)
 	}
 }
 

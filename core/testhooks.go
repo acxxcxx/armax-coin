@@ -5,6 +5,7 @@ package core
 import (
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -112,6 +113,14 @@ func SetCheckpointsForTesting(ckpts map[int]string) func() {
 	}
 }
 
+// SetTxCachedSizeForTesting sets the cached serialized byte size on a transaction for testing.
+// Only present when built with '-tags testhooks'.
+func SetTxCachedSizeForTesting(tx *Transaction, sz int) {
+	if tx != nil {
+		atomic.StoreInt32(&tx.cachedSize, int32(sz))
+	}
+}
+
 // LockNetworkForTesting serializes unit tests that mutate global network profiles,
 // activation heights, or network hooks. It registers a t.Cleanup callback that
 // automatically restores default network state and releases the lock, guaranteeing
@@ -124,6 +133,7 @@ func LockNetworkForTesting(t testing.TB) {
 		ResetArmaxHashActivationHeightOverride()
 		ResetArmaxHashV2ActivationHeightOverride()
 		SetNetworkForTesting(true)
+		SetAllowMainnetForTesting(true)
 		_ = SetNetwork("testnet")
 		DisableLocalMainnet()
 		unlock()

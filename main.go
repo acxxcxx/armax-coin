@@ -28,8 +28,11 @@ func main() {
 	rpcPortFlag := flag.String("rpcport", "", "Port for RPC Daemon (overrides config)")
 	p2pPortFlag := flag.String("p2p", "", "Port for P2P socket network (deprecated: use -p2pport)")
 	p2pPortNewFlag := flag.String("p2pport", "", "Port for P2P socket network (overrides config)")
-	dataDirFlag := flag.String("datadir", "", "Custom data directory for blockchain database, peers, and logs")
+	p2pBindFlag := flag.String("p2pbind", "", "Interface to bind the P2P listener (default: all interfaces)")
+	dataDirFlag := flag.String("datadir", "", "Custom data directory for blockchain database and peer state")
+	logDirFlag := flag.String("logdir", "", "Directory for daemon log files")
 	peersFlag := flag.String("peers", "", "Comma-separated list of initial P2P peer addresses")
+	noSeedsFlag := flag.Bool("noseeds", false, "Disable configured and default seed peers")
 	mineFlag := flag.Bool("mine", false, "Enable automated background CPU mining")
 	genFlag := flag.Bool("gen", false, "Enable automated background CPU mining (alias for -mine)")
 	minerAddrFlag := flag.String("miner", "", "Miner reward address for background mining")
@@ -160,7 +163,11 @@ func main() {
 	fmt.Println(core.NetworkWarningLine())
 	fmt.Println("==================================================")
 
-	debugLogPath := filepath.Join(cliNet.DataDir, "debug.log")
+	logDir := cliNet.DataDir
+	if *logDirFlag != "" {
+		logDir = *logDirFlag
+	}
+	debugLogPath := filepath.Join(logDir, "debug.log")
 	if err := core.InitLogger(*logLevelFlag, *debugCategoriesFlag, *printToConsoleFlag, debugLogPath); err != nil {
 		fmt.Printf("[-] Warning: Failed to initialize debug.log at %s: %v\n", debugLogPath, err)
 	}
@@ -506,6 +513,9 @@ func main() {
 		if cfg.NetworkID == "" {
 			cfg.NetworkID = activeNet.NetworkID
 		}
+		if *dataDirFlag != "" {
+			cfg.DataDir = *dataDirFlag
+		}
 
 		// Apply CLI overrides if specified
 		if *bindFlag != "" {
@@ -516,6 +526,9 @@ func main() {
 		}
 		if effP2PPort != "" {
 			cfg.P2PPort = effP2PPort
+		}
+		if *p2pBindFlag != "" {
+			cfg.P2PBind = *p2pBindFlag
 		}
 		if *minerAddrFlag != "" {
 			cfg.MinerAddress = *minerAddrFlag
@@ -584,6 +597,9 @@ func main() {
 			if len(cliPeers) > 0 {
 				cfg.SeedPeers = cliPeers
 			}
+		}
+		if *noSeedsFlag {
+			cfg.SeedPeers = nil
 		}
 
 		// Launch background mining worker if enabled

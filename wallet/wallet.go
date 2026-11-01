@@ -71,3 +71,13 @@ func AddressFromPubKeyHex(pubHex string) (string, error) {
 	}
 	return core.PubToAddress(pqsig.SigAlgMLDSA65, pubBytes)
 }
+
+// Zeroize overwrites the 32-byte seed in memory and clears the private key and mnemonic references.
+func (w *Wallet) Zeroize() {
+	if w == nil {
+		return
+	}
+	clear(w.Seed32[:])
+	w.PrivateKey = nil
+	w.ClearMnemonic()
+}

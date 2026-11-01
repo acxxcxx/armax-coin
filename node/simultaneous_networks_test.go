@@ -22,7 +22,7 @@ func TestSimultaneousNetworksIsolated(t *testing.T) {
 	core.SetAllowMainnetForTesting(true)
 	core.SetNetworkForTesting(true)
 	defer func() {
-		core.SetAllowMainnetForTesting(false)
+		core.SetAllowMainnetForTesting(true)
 		core.SetNetworkForTesting(true)
 		_ = core.SetNetwork("testnet")
 	}()

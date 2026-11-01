@@ -134,7 +134,7 @@ func (w *Wallet) ClearMnemonic() {
 // signed by the provided wallet [L3-1].
 func EstimateMinMempoolFee(w *Wallet, recipient string, amount, nonce int64) int64 {
 	if w == nil || w.PrivateKey == nil {
-		return 6000 // Safe default minimum for ~5.4KB post-quantum tx
+		return 11000 // Safe default minimum for ~10.8KB ML-DSA-65 post-quantum tx
 	}
 	dummy := core.Transaction{
 		Sender:    w.Address,
@@ -145,7 +145,7 @@ func EstimateMinMempoolFee(w *Wallet, recipient string, amount, nonce int64) int
 		Nonce:     nonce,
 	}
 	if err := dummy.Sign(w.PrivateKey); err != nil {
-		return 6000
+		return 11000
 	}
 	return core.CalculateMinMempoolFee(dummy.Size())
 }

@@ -551,7 +551,11 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 
 func handlePeers(w http.ResponseWriter, r *http.Request) {
 	client := http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get(rpcURL + "/peers")
+	targetURL := rpcURL + "/peers"
+	if r.URL.RawQuery != "" {
+		targetURL += "?" + r.URL.RawQuery
+	}
+	resp, err := client.Get(targetURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -690,10 +694,17 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var feeArmoids int64 = 0
-	if req.Fee != "" {
-		if f, err := core.ParseArmxDecimal(req.Fee); err == nil {
-			feeArmoids = f
+	if strings.TrimSpace(req.Fee) != "" {
+		f, err := core.ParseArmxDecimal(req.Fee)
+		if err != nil {
+			http.Error(w, "Invalid fee", http.StatusBadRequest)
+			return
 		}
+		feeArmoids = f
+	}
+	if amtArmoids > core.MaxSupply-feeArmoids {
+		http.Error(w, "Amount plus fee exceeds maximum supply", http.StatusBadRequest)
+		return
 	}
 
 	// Verify daemon network identity before preparing or broadcasting transaction
@@ -712,12 +723,17 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Keystore passphrase decryption error: %v", err), http.StatusUnauthorized)
 			return
 		}
+		defer loadedW.Zeroize()
 		signingWallet = loadedW
 	}
 
 	autoFee := wallet.EstimateMinMempoolFee(signingWallet, to, amtArmoids, 0)
 	if feeArmoids < autoFee {
 		feeArmoids = autoFee
+	}
+	if amtArmoids > core.MaxSupply-feeArmoids {
+		http.Error(w, "Amount plus fee exceeds maximum supply", http.StatusBadRequest)
+		return
 	}
 
 	// Fetch next nonce
@@ -728,11 +744,40 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer bResp.Body.Close()
-	var bal struct {
-		PendingNonce int64 `json:"pending_nonce"`
-		NextNonce    int64 `json:"next_nonce"`
+	if bResp.StatusCode != http.StatusOK {
+		http.Error(w, fmt.Sprintf("Failed to query balance (HTTP %d)", bResp.StatusCode), http.StatusBadGateway)
+		return
 	}
-	_ = json.NewDecoder(bResp.Body).Decode(&bal)
+	if netHdr := strings.TrimSpace(bResp.Header.Get("X-Network-ID")); netHdr != "" && !strings.EqualFold(netHdr, core.ActiveNetwork.NetworkID) {
+		http.Error(w, fmt.Sprintf("Network mismatch on /balance: daemon reported %s, expected %s", netHdr, core.ActiveNetwork.NetworkID), http.StatusBadGateway)
+		return
+	}
+	var bal struct {
+		Balance          int64 `json:"balance"`
+		ConfirmedBalance int64 `json:"confirmed_balance"`
+		PendingBalance   int64 `json:"pending_balance"`
+		SpendableBalance int64 `json:"spendable_balance"`
+		PendingNonce     int64 `json:"pending_nonce"`
+		NextNonce        int64 `json:"next_nonce"`
+	}
+	if err := json.NewDecoder(bResp.Body).Decode(&bal); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid balance response: %v", err), http.StatusBadGateway)
+		return
+	}
+	avail := bal.SpendableBalance
+	if avail == 0 {
+		avail = bal.PendingBalance
+	}
+	if avail == 0 {
+		avail = bal.ConfirmedBalance
+	}
+	if avail == 0 {
+		avail = bal.Balance
+	}
+	if avail < amtArmoids+feeArmoids {
+		http.Error(w, "Insufficient balance", http.StatusBadRequest)
+		return
+	}
 
 	txNonce := bal.NextNonce
 	if txNonce <= 0 {
@@ -1440,6 +1485,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <button class="btn btn-secondary" onclick="loadDiagnostics('stats')">Full /stats</button>
         <button class="btn btn-secondary" onclick="loadDiagnostics('peers')">Active /peers</button>
+        <button class="btn btn-secondary" onclick="loadDiagnostics('known_peers')">Known Candidates</button>
         <button class="btn btn-secondary" onclick="loadDiagnostics('chain')">/chain Info</button>
         <button class="btn btn-secondary" onclick="loadDiagnostics('mempool')">/mempool Info</button>
         <button class="btn btn-outline" onclick="document.getElementById('diagConsole').innerText='Console output cleared.'">Clear Console</button>
@@ -1456,7 +1502,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
 </main>
 
 <footer class="statusbar">
-  <div>Armaxcoin Core Desktop Web GUI v1.0.5 | Post-Quantum ML-DSA-65</div>
+  <div>Armaxcoin Core Desktop Web GUI v1.0.6 | Post-Quantum ML-DSA-65</div>
   <div id="lblStatusbarSummary">Node: Connected | Ready</div>
 </footer>
 
@@ -1574,7 +1620,7 @@ async function fetchStats() {
     const activePeers = Number(s.peers_active);
     const pCount = Number.isFinite(activePeers) ? Math.max(0, activePeers) : 0;
     document.getElementById('lblTopPeers').innerText = pCount;
-    document.getElementById('lblStatPeers').innerText = pCount + " connected";
+    document.getElementById('lblStatPeers').innerText = pCount + " active (" + (s.peers_known || 0) + " known)";
     document.getElementById('lblTopDiff').innerText = s.difficulty || 3;
     document.getElementById('lblStatDiff').innerText = "Difficulty " + (s.difficulty || 3) + " (LWMA-1)";
     document.getElementById('lblStatMempool').innerText = (s.mempool_size || s.mempool || 0) + " pending txs";
@@ -1589,7 +1635,7 @@ async function fetchStats() {
     const diagHash = document.getElementById('lblDiagHash');
     if (diagHash) diagHash.innerText = s.latest_hash || "-";
     const diagP = document.getElementById('lblDiagPeers');
-    if (diagP) diagP.innerText = pCount + " active peers (known: " + (s.peers_known || 0) + ")";
+    if (diagP) diagP.innerText = pCount + " active peers (known: " + (s.peers_known || 0) + ", seeds: " + (s.peers_seeds || 0) + ")";
     const diagM = document.getElementById('lblDiagMempool');
     if (diagM) diagM.innerText = (s.mempool_size || s.mempool || 0) + " unconfirmed txs";
     const diagD = document.getElementById('lblDiagDiff');
@@ -2032,13 +2078,22 @@ async function loadDiagnostics(action) {
   c.innerText = "Querying node /" + action + "...";
   try {
     let url = '/api/stats';
-    if (action === 'peers') url = '/api/peers';
+    if (action === 'peers') url = '/api/peers?filter=active';
+    else if (action === 'known_peers') url = '/api/peers';
     else if (action === 'chain') url = '/api/chain';
     else if (action === 'mempool') url = '/api/mempool';
 
     const res = await fetch(url);
     const data = await res.json();
-    c.innerText = "=== NODE /" + action.toUpperCase() + " (" + new Date().toLocaleTimeString() + ") ===\n" + JSON.stringify(data, null, 2);
+    let note = "";
+    if (action === 'peers') {
+      if (Array.isArray(data) && data.length === 0) {
+        note = "\n\n(0 active live P2P sessions connected; candidate peers are listed under Known Candidates)";
+      } else if (Array.isArray(data)) {
+        note = "\n\n(" + data.length + " active live P2P session(s) connected)";
+      }
+    }
+    c.innerText = "=== NODE /" + action.toUpperCase() + " (" + new Date().toLocaleTimeString() + ") ===\n" + JSON.stringify(data, null, 2) + note;
   } catch(e) {
     c.innerText = "Error querying /" + action + ": " + e.message;
   }

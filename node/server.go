@@ -39,45 +39,73 @@ type IPRateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	lastMine map[string]time.Time
+	stopChan chan struct{}
+	doneChan chan struct{}
+	stopOnce sync.Once
 }
 
 func newIPRateLimiter() *IPRateLimiter {
 	limiter := &IPRateLimiter{
 		requests: make(map[string][]time.Time),
 		lastMine: make(map[string]time.Time),
+		stopChan: make(chan struct{}),
+		doneChan: make(chan struct{}),
 	}
 	// Background cleanup of expired IP tracking records
 	go func() {
+		defer close(limiter.doneChan)
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
 		for {
-			time.Sleep(1 * time.Minute)
-			limiter.mu.Lock()
-			cutoff := time.Now().Add(-1 * time.Minute)
-			for ip, times := range limiter.requests {
-				var valid []time.Time
-				for _, t := range times {
-					if t.After(cutoff) {
-						valid = append(valid, t)
+			select {
+			case <-limiter.stopChan:
+				return
+			case <-ticker.C:
+				limiter.mu.Lock()
+				cutoff := time.Now().Add(-1 * time.Minute)
+				for ip, times := range limiter.requests {
+					var valid []time.Time
+					for _, t := range times {
+						if t.After(cutoff) {
+							valid = append(valid, t)
+						}
+					}
+					if len(valid) == 0 {
+						delete(limiter.requests, ip)
+					} else {
+						limiter.requests[ip] = valid
 					}
 				}
-				if len(valid) == 0 {
-					delete(limiter.requests, ip)
-				} else {
-					limiter.requests[ip] = valid
-				}
-			}
 
-			// Clean expired lastMine entries [R-08]
-			cutoffMine := time.Now().Add(-10 * time.Minute)
-			for ip, t := range limiter.lastMine {
-				if t.Before(cutoffMine) {
-					delete(limiter.lastMine, ip)
+				// Clean expired lastMine entries [R-08]
+				cutoffMine := time.Now().Add(-10 * time.Minute)
+				for ip, t := range limiter.lastMine {
+					if t.Before(cutoffMine) {
+						delete(limiter.lastMine, ip)
+					}
 				}
+				limiter.mu.Unlock()
 			}
-			limiter.mu.Unlock()
 		}
 	}()
 	return limiter
 }
+
+// Close terminates the background cleanup goroutine and waits for it to exit [v1.0.6].
+func (l *IPRateLimiter) Close() {
+	if l != nil {
+		l.stopOnce.Do(func() {
+			if l.stopChan != nil {
+				close(l.stopChan)
+			}
+		})
+		if l.doneChan != nil {
+			<-l.doneChan
+		}
+	}
+}
+
+const maxRateLimiterIPs = 10000
 
 func (l *IPRateLimiter) allow(ip string, maxPerMin int) bool {
 	l.mu.Lock()
@@ -86,7 +114,26 @@ func (l *IPRateLimiter) allow(ip string, maxPerMin int) bool {
 	now := time.Now()
 	cutoff := now.Add(-1 * time.Minute)
 
-	times := l.requests[ip]
+	times, exists := l.requests[ip]
+	if !exists && len(l.requests) >= maxRateLimiterIPs {
+		for k, ts := range l.requests {
+			var keep []time.Time
+			for _, t := range ts {
+				if t.After(cutoff) {
+					keep = append(keep, t)
+				}
+			}
+			if len(keep) == 0 {
+				delete(l.requests, k)
+			} else {
+				l.requests[k] = keep
+			}
+		}
+		if len(l.requests) >= maxRateLimiterIPs {
+			return false
+		}
+	}
+
 	var valid []time.Time
 	for _, t := range times {
 		if t.After(cutoff) {
@@ -95,6 +142,7 @@ func (l *IPRateLimiter) allow(ip string, maxPerMin int) bool {
 	}
 
 	if len(valid) >= maxPerMin {
+		l.requests[ip] = valid
 		return false
 	}
 
@@ -106,11 +154,23 @@ func (l *IPRateLimiter) allowMine(ip string, minInterval time.Duration) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	now := time.Now()
 	last, exists := l.lastMine[ip]
-	if exists && time.Since(last) < minInterval {
+	if !exists && len(l.lastMine) >= maxRateLimiterIPs {
+		cutoffMine := now.Add(-10 * time.Minute)
+		for k, t := range l.lastMine {
+			if t.Before(cutoffMine) {
+				delete(l.lastMine, k)
+			}
+		}
+		if len(l.lastMine) >= maxRateLimiterIPs {
+			return false
+		}
+	}
+	if exists && now.Sub(last) < minInterval {
 		return false
 	}
-	l.lastMine[ip] = time.Now()
+	l.lastMine[ip] = now
 	return true
 }
 
@@ -148,6 +208,7 @@ func isAllowedHost(rawHost string, configuredHost string) bool {
 		h = rawHost
 	}
 	h = strings.ToLower(strings.TrimSpace(h))
+	h = strings.TrimPrefix(strings.TrimSuffix(h, "]"), "[")
 	if h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "" {
 		return true
 	}
@@ -159,7 +220,8 @@ func isAllowedHost(rawHost string, configuredHost string) bool {
 		if err != nil {
 			confH = configuredHost
 		}
-		if strings.EqualFold(h, strings.TrimSpace(confH)) {
+		confH = strings.TrimPrefix(strings.TrimSuffix(strings.TrimSpace(confH), "]"), "[")
+		if strings.EqualFold(h, confH) {
 			return true
 		}
 	}
@@ -239,10 +301,14 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		}
 		peersActive := 0
 		peersKnown := 0
+		peersSeeds := 0
+		peersCandidates := 0
 
 		if peerServer != nil {
 			peersActive = peerServer.GetPeersActive()
 			peersKnown = peerServer.GetPeersKnown()
+			peersSeeds = peerServer.GetPeersSeeds()
+			peersCandidates = peerServer.GetPeersCandidates()
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -253,6 +319,8 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			"status":             "online",
 			"height":             height,
 			"peers_known":        peersKnown,
+			"peers_seeds":        peersSeeds,
+			"peers_candidates":   peersCandidates,
 			"active_connections": peersActive,
 			"peers_active":       peersActive, // legacy compatibility
 		})
@@ -523,9 +591,13 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 
 		peersActive := 0
 		peersKnown := 0
+		peersSeeds := 0
+		peersCandidates := 0
 		if peerServer != nil {
 			peersActive = peerServer.GetPeersActive()
 			peersKnown = peerServer.GetPeersKnown()
+			peersSeeds = peerServer.GetPeersSeeds()
+			peersCandidates = peerServer.GetPeersCandidates()
 		}
 
 		netID := NetworkID()
@@ -552,6 +624,8 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			"latest_hash":                   latest.Hash,
 			"peers_active":                  peersActive,
 			"peers_known":                   peersKnown,
+			"peers_seeds":                   peersSeeds,
+			"peers_candidates":              peersCandidates,
 			"peers_count":                   peersActive,
 			"mining_hashrate":               bc.GetMiningHashrate(),
 		})
@@ -694,19 +768,56 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.Peer != "" {
 				if peerServer != nil {
-					for _, resolvedPeer := range ResolveDNSSeed(body.Peer) {
-						peerServer.AddPeer(resolvedPeer)
+					if peerServer.IsLocalMainnet() {
+						_ = peerServer.AddPeer(body.Peer)
+					} else {
+						for _, resolvedPeer := range ResolveDNSSeed(body.Peer) {
+							_ = peerServer.AddPeer(resolvedPeer)
+						}
 					}
 				}
 			}
 		}
+		filter := r.URL.Query().Get("filter")
+		if filter == "" && (r.URL.Query().Get("active") == "1" || r.URL.Query().Get("active") == "true") {
+			filter = "active"
+		}
+
+		detailsQuery := r.URL.Query().Get("details")
+		if detailsQuery == "1" || detailsQuery == "true" || r.URL.Query().Get("format") == "detailed" {
+			var details []PeerEntry
+			if peerServer != nil {
+				if filter == "active" {
+					details = peerServer.GetActivePeerDetails()
+				} else {
+					details = peerServer.GetPeerDetails()
+				}
+				if len(details) > 100 {
+					details = details[:100] // Max 100 entries [N-19]
+				}
+			}
+			if details == nil {
+				details = []PeerEntry{}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(details)
+			return
+		}
+
 		var peers []string
 		if peerServer != nil {
-			peers = peerServer.GetPeers()
+			if filter == "active" {
+				peers = peerServer.GetActivePeerEndpoints()
+			} else {
+				peers = peerServer.GetPeers()
+			}
 			if len(peers) > 100 {
 				peers = peers[:100] // Max 100 entries [N-19]
 			}
 		} else {
+			peers = []string{}
+		}
+		if peers == nil {
 			peers = []string{}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1277,6 +1388,7 @@ func InitServerFromConfig(bc *core.Blockchain, cfg *Config) (*PeerServer, *Serve
 	}
 
 	peerServer.DataDir = effectiveDataDir
+	peerServer.Bind = cfg.P2PBind
 
 	if cfg.MaxPeers > 0 {
 		peerServer.MaxPeers = cfg.MaxPeers
@@ -1388,6 +1500,96 @@ func StartServerWithConfig(bc *core.Blockchain, cfg *Config) {
 	fmt.Printf("[-] Server terminated with error: %v\n", err)
 }
 
+// ShutdownServerSafely safely shuts down the HTTP server, P2P network, rate limiter,
+// and blockchain store.
+//
+// Safety Contract [FIX-01, v1.0.6]:
+//  1. Shuts down HTTP server listeners and active connections. If handlers do not drain
+//     within timeout, HTTP shutdown is incomplete.
+//  2. Stops P2P network cycle using StopWithTimeout. If P2P workers do not drain within
+//     timeout, P2P shutdown is incomplete.
+//  3. Stops IP rate limiter.
+//  4. Fail-Closed Protection: If HTTP handlers OR P2P workers fail to drain cleanly,
+//     database flush (SaveToFile) and database close (bc.Close) are EXPLICITLY ABORTED.
+//     This guarantees that no in-flight HTTP handler or background worker can access
+//     or mutate BoltDB after it is closed, preventing panics and data corruption.
+//  5. If SaveToFile() fails, reports failure and does NOT claim a successful flush.
+//  6. If bc.Close() fails, reports failure and does NOT claim clean termination.
+//  7. The logger is NOT closed on failure paths so that active handlers/workers can still log.
+//
+// Returns drained=true if and only if all components shut down cleanly, the database was
+// successfully flushed and closed, and the logger closed.
+func ShutdownServerSafely(server *http.Server, peerServer *PeerServer, limiter *IPRateLimiter, bc *core.Blockchain, timeout time.Duration) (drained bool, err error) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	var httpErr error
+	if server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			httpErr = err
+			// Force close HTTP server listeners and active TCP connections
+			_ = server.Close()
+		}
+	}
+
+	// 2. Stop P2P networking cleanly and verify worker drainage
+	var p2pStopped bool = true
+	if peerServer != nil {
+		p2pStopped = peerServer.StopWithTimeout(timeout)
+	}
+
+	// 3. Stop IP rate limiter cleanup goroutine
+	if limiter != nil {
+		limiter.Close()
+	}
+
+	// 4. Fail closed if HTTP handlers or P2P workers did not drain within timeout:
+	// NEVER close BoltDB or claim successful flush while active workers or handlers could still access it!
+	// Do NOT close logger on failure path so potentially active routines can still log.
+	if httpErr != nil {
+		fmt.Printf("[-] HTTP server shutdown incomplete (handlers did not drain cleanly: %v). Aborting database persistence to prevent corruption.\n", httpErr)
+		return false, fmt.Errorf("HTTP handlers failed to drain: %w", httpErr)
+	}
+	if !p2pStopped {
+		p2pErr := fmt.Errorf("P2P workers failed to drain within %v", timeout)
+		fmt.Printf("[-] P2P server shutdown incomplete: %v. Aborting database persistence to prevent corruption.\n", p2pErr)
+		return false, p2pErr
+	}
+
+	// 5. Safely persist peer network cache
+	if peerServer != nil {
+		if err := peerServer.savePeers(); err != nil {
+			fmt.Printf("[-] Error saving peers during shutdown: %v\n", err)
+		} else {
+			fmt.Println("[OK] Peer network cache safely saved.")
+		}
+	}
+
+	// 6. Safely flush blockchain database to disk and close store handle ONLY after all handlers and P2P workers are fully drained
+	if bc != nil {
+		bc.Lock.RLock()
+		saveErr := bc.SaveToFile()
+		bc.Lock.RUnlock()
+		if saveErr != nil {
+			fmt.Printf("[-] Error saving blockchain during shutdown: %v\n", saveErr)
+			return false, fmt.Errorf("SaveToFile failed: %w", saveErr)
+		}
+		fmt.Println("[OK] Blockchain database safely flushed to disk.")
+
+		if closeErr := bc.Close(); closeErr != nil {
+			fmt.Printf("[-] Error closing blockchain database during shutdown: %v\n", closeErr)
+			return false, fmt.Errorf("Close failed: %w", closeErr)
+		}
+	}
+
+	// 7. Close logging subsystem only upon complete clean shutdown
+	core.CloseLogger()
+	return true, nil
+}
+
 // RunServerWithConfig initializes and runs the P2P engine and HTTP RPC daemon using Config [N-18].
 // It blocks until the server stops and returns an error on startup or serve failure.
 func RunServerWithConfig(bc *core.Blockchain, cfg *Config) error {
@@ -1439,26 +1641,10 @@ func RunServerWithConfig(bc *core.Blockchain, cfg *Config) error {
 	go func() {
 		<-stopChan
 		fmt.Println("\n[!] Shutdown signal received. Initiating graceful shutdown...")
-
-		// Safely flush blockchain database to disk
-		bc.Lock.RLock()
-		if err := bc.SaveToFile(); err != nil {
-			fmt.Printf("[-] Error saving blockchain during shutdown: %v\n", err)
-		} else {
-			fmt.Println("[OK] Blockchain database safely flushed to disk.")
-		}
-		bc.Lock.RUnlock()
-
-		if err := peerServer.savePeers(); err != nil {
-			fmt.Printf("[-] Error saving peers during shutdown: %v\n", err)
-		} else {
-			fmt.Println("[OK] Peer network cache safely saved.")
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
-			fmt.Printf("[-] HTTP server shutdown error: %v\n", err)
+		drained, err := ShutdownServerSafely(server, peerServer, limiter, bc, 5*time.Second)
+		if !drained {
+			fmt.Printf("[-] Server shutdown aborted cleanly with active handlers: %v\n", err)
+			os.Exit(1)
 		}
 		fmt.Println("[OK] ArmaxCoin node stopped cleanly.")
 		os.Exit(0)
@@ -1476,6 +1662,12 @@ func RunServerWithConfig(bc *core.Blockchain, cfg *Config) error {
 		serveErr = server.ListenAndServe()
 	}
 	if serveErr != nil && serveErr != http.ErrServerClosed {
+		if peerServer != nil {
+			peerServer.Stop()
+		}
+		if limiter != nil {
+			limiter.Close()
+		}
 		return serveErr
 	}
 	return nil

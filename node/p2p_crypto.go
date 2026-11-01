@@ -207,6 +207,7 @@ func InitNodeIdentity(dataDir ...string) (*tls.Config, [32]byte, error) {
 	nodeTLSConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
+		ClientAuth:   tls.RequestClientCert,
 	}
 
 	var fp [32]byte
@@ -297,12 +298,12 @@ func UpgradeToEncryptedTransportWithConfig(rawConn net.Conn, conf *tls.Config) (
 
 // ResolveAndValidateLoopback verifies that addr resolves exclusively to valid loopback destinations.
 // In local mainnet mode:
-// 1. Literal loopback IPs (IPv4 127.0.0.0/8, IPv6 ::1, IPv4-mapped IPv6) are accepted directly.
-// 2. Only "localhost" is permitted as a hostname; arbitrary external hostnames are strictly rejected without external DNS lookups.
-// 3. For "localhost", resolution is performed exactly once and every returned IP must be loopback.
-// 4. Returns targetAddrs as concrete "verified_ip:port" candidates (e.g. ::1 and 127.0.0.1) so dialers
-//    connect directly to verified IPs without triggering secondary DNS lookups (eliminating DNS rebinding and TOCTOU vulnerabilities).
-// 5. Returns serverName to preserve TLS SNI and certificate validation.
+//  1. Literal loopback IPs (IPv4 127.0.0.0/8, IPv6 ::1, IPv4-mapped IPv6) are accepted directly.
+//  2. Only "localhost" is permitted as a hostname; arbitrary external hostnames are strictly rejected without external DNS lookups.
+//  3. For "localhost", resolution is performed exactly once and every returned IP must be loopback.
+//  4. Returns targetAddrs as concrete "verified_ip:port" candidates (e.g. ::1 and 127.0.0.1) so dialers
+//     connect directly to verified IPs without triggering secondary DNS lookups (eliminating DNS rebinding and TOCTOU vulnerabilities).
+//  5. Returns serverName to preserve TLS SNI and certificate validation.
 func ResolveAndValidateLoopback(addr string) (targetAddrs []string, serverName string, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -378,6 +379,10 @@ func DialEncrypted(addr string, timeout time.Duration) (net.Conn, bool, error) {
 // The dial target is resolved to concrete loopback IP:port candidates to eliminate DNS rebinding and TOCTOU vulnerabilities.
 // For Testnet or other networks, local mainnet loopback restrictions are bypassed.
 func DialEncryptedWithFallbackForNetwork(netID string, addr string, timeout time.Duration, allowPlaintext bool) (net.Conn, bool, error) {
+	return dialEncryptedWithFallbackForNetwork(netID, addr, timeout, allowPlaintext, nil)
+}
+
+func dialEncryptedWithFallbackForNetwork(netID string, addr string, timeout time.Duration, allowPlaintext bool, clientIdentity *tls.Certificate) (net.Conn, bool, error) {
 	isMainnet := false
 	if netID != "" {
 		canon, _, err := parseNetworkID(netID)
@@ -392,6 +397,9 @@ func DialEncryptedWithFallbackForNetwork(netID string, addr string, timeout time
 	var tlsConf *tls.Config
 	if clientTLSConf != nil {
 		tlsConf = clientTLSConf.Clone()
+		if clientIdentity != nil {
+			tlsConf.Certificates = []tls.Certificate{*clientIdentity}
+		}
 	}
 
 	if isMainnet && core.IsLocalMainnet() {

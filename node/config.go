@@ -13,6 +13,7 @@ type Config struct {
 	DataDir             string   `json:"data_dir,omitempty"` // [P1-A] Instance base data directory
 	RPCBind             string   `json:"rpc_bind"`
 	RPCPort             string   `json:"rpc_port"`
+	P2PBind             string   `json:"p2p_bind,omitempty"`
 	P2PPort             string   `json:"p2p_port"`
 	ZMQPort             string   `json:"zmq_port,omitempty"`     // [TASK P1] Reserved ZMQ port
 	StratumPort         string   `json:"stratum_port,omitempty"` // [TASK P1] Reserved Stratum port

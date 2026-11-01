@@ -387,7 +387,7 @@ func TestCalculateHashNoFallbackOnArmaxHashFailure(t *testing.T) {
 			Signature: "REWARD_SIG",
 		},
 	}
-	bCrafted.MerkleRoot = CalculateMerkleRoot(bCrafted.Transactions)
+	bCrafted.MerkleRoot = CalculateMerkleRootForNetwork(bCrafted.Transactions, TestnetProfile.NetworkID)
 
 	prev := &Block{
 		Index: 9,

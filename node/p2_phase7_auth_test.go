@@ -20,13 +20,9 @@ func TestRPCAuth_AtomicWriteAndPermissions(t *testing.T) {
 		t.Fatalf("InitRPCAuth failed: %v", err)
 	}
 
-	cookiePath := filepath.Join(tmpDir, "testnet", "armax.cookie")
+	cookiePath := GetRPCAuthCookiePath()
 	if _, err := os.Stat(cookiePath); err != nil {
-		// If not in testnet subfolder, check root of tmpDir
-		cookiePath = filepath.Join(tmpDir, "armax.cookie")
-		if _, err := os.Stat(cookiePath); err != nil {
-			t.Fatalf("Expected armax.cookie to exist: %v", err)
-		}
+		t.Fatalf("Expected armax.cookie to exist: %v", err)
 	}
 
 	// Verify file content

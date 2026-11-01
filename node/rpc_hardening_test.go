@@ -5,6 +5,7 @@ package node
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/acxxcxx/armax-coin/core"
+	"github.com/acxxcxx/armax-coin/core/pqsig"
 )
 
 func setupTestServer(t *testing.T) (*core.Blockchain, http.Handler) {
@@ -357,16 +359,34 @@ func TestBalanceNextNonceField(t *testing.T) {
 func TestGetBlockTemplateBounded(t *testing.T) {
 	bc, handler := setupTestServer(t)
 
+	acc := newTestAccount(t, "template_sender")
+	recip := newTestAccount(t, "template_recip")
+	bc.CoinbaseMaturity = 0
+	bc.State.CoinbaseMaturity = 0
+	bc.State.Lock.Lock()
+	bc.State.Accounts[acc.AddressHex] = core.AccountState{
+		Balance: 10_000_000 * core.CoinUnit,
+		Nonce:   0,
+	}
+	bc.State.Lock.Unlock()
+
+	dummySig := hex.EncodeToString(make([]byte, pqsig.SignatureSize))
+
 	// Populate mempool with 1050 transactions (exceeding MaxBlockTransactions = 1000)
 	bc.Lock.Lock()
 	for i := 1; i <= 1050; i++ {
 		dummyTx := core.Transaction{
-			Sender:    core.GenesisMiner,
-			Recipient: "armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqz8c4y7",
+			Sender:    acc.Address,
+			SenderPub: acc.PubHex,
+			Recipient: recip.Address,
 			Amount:    100,
 			Fee:       core.MinRelayFee,
 			Nonce:     int64(i),
+			SigAlg:    pqsig.SigAlgMLDSA65,
+			Signature: dummySig,
 		}
+		dummyTx.MarkSignatureVerified()
+		core.SetTxCachedSizeForTesting(&dummyTx, 100)
 		bc.Mempool = append(bc.Mempool, dummyTx)
 	}
 	bc.Lock.Unlock()

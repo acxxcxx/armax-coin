@@ -86,6 +86,9 @@ func TestMineEndpoint_TimeoutAndCancellation(t *testing.T) {
 	if err := core.SetNetwork("regtest"); err != nil {
 		t.Fatalf("Failed to set regtest: %v", err)
 	}
+	defer func() {
+		_ = core.SetNetwork("testnet")
+	}()
 
 	// Set easy target so mining succeeds quickly when requested
 	easyTarget, _ := new(big.Int).SetString("0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)

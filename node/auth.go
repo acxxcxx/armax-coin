@@ -30,14 +30,19 @@ var (
 	AllowInsecureLocalhost = false // [N-19] Opt-in flag for unauthenticated localhost requests
 )
 
+type authFailureRecord struct {
+	count    int
+	lastFail time.Time
+}
+
 type authLockoutTracker struct {
 	sync.Mutex
-	fails    map[string]int
+	fails    map[string]authFailureRecord
 	lockouts map[string]time.Time
 }
 
 var globalAuthLockout = &authLockoutTracker{
-	fails:    make(map[string]int),
+	fails:    make(map[string]authFailureRecord),
 	lockouts: make(map[string]time.Time),
 }
 
@@ -57,12 +62,80 @@ func (alt *authLockoutTracker) isLocked(ip string) bool {
 func (alt *authLockoutTracker) recordFailure(ip string) {
 	alt.Lock()
 	defer alt.Unlock()
-	alt.fails[ip]++
-	count := alt.fails[ip]
 	now := time.Now()
-	if count >= 10 {
+
+	// Prune stale failure entries (> 15 minutes) periodically if tracking more than 1,000 IPs [v1.0.6]
+	if len(alt.fails)%500 == 0 && len(alt.fails) > 1000 {
+		cutoff := now.Add(-15 * time.Minute)
+		for k, rec := range alt.fails {
+			if rec.lastFail.Before(cutoff) {
+				delete(alt.fails, k)
+				delete(alt.lockouts, k)
+			}
+		}
+	}
+	// Bound total memory: enforce hard cap at 5,000 entries [v1.0.6, FIX-06]
+	// Eviction Strategy:
+	// 1. Pass 1: Evict expired lockouts and stale failures older than 5 minutes.
+	// 2. Pass 2: If still at or above cap (5,000), evict non-locked failure records
+	//    (IPs with 1-4 failures) first, strictly protecting active, unexpired lockouts
+	//    from being evicted by high-volume IP flood attacks.
+	// 3. Pass 3: Emergency fallback: If all entries in tracker are locked, evict excess
+	//    down to 4,000 entries to prevent node memory exhaustion / OOM.
+	if len(alt.fails) >= 5000 {
+		cutoff := now.Add(-5 * time.Minute)
+		for k, rec := range alt.fails {
+			exp, isLocked := alt.lockouts[k]
+			if isLocked {
+				if now.After(exp) {
+					delete(alt.lockouts, k)
+					delete(alt.fails, k)
+				}
+			} else if rec.lastFail.Before(cutoff) {
+				delete(alt.fails, k)
+			}
+		}
+
+		// Pass 2: Prioritize evicting non-locked failures to protect active lockouts
+		if len(alt.fails) >= 5000 {
+			for k := range alt.fails {
+				if k == ip {
+					continue
+				}
+				if _, isLocked := alt.lockouts[k]; !isLocked {
+					delete(alt.fails, k)
+					if len(alt.fails) < 4000 {
+						break
+					}
+				}
+			}
+		}
+
+		// Pass 3: Emergency fallback under flood of uniquely locked IPs
+		if len(alt.fails) >= 5000 {
+			toEvict := len(alt.fails) - 4000
+			for k := range alt.fails {
+				if k == ip {
+					continue
+				}
+				if toEvict <= 0 {
+					break
+				}
+				delete(alt.fails, k)
+				delete(alt.lockouts, k)
+				toEvict--
+			}
+		}
+	}
+
+	rec := alt.fails[ip]
+	rec.count++
+	rec.lastFail = now
+	alt.fails[ip] = rec
+
+	if rec.count >= 10 {
 		alt.lockouts[ip] = now.Add(10 * time.Minute)
-	} else if count >= 5 {
+	} else if rec.count >= 5 {
 		alt.lockouts[ip] = now.Add(1 * time.Minute)
 	}
 }
@@ -202,16 +275,19 @@ func Authenticate(r *http.Request) bool {
 
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Basic") {
+		globalAuthLockout.recordFailure(clientIP)
 		return false
 	}
 
 	payload, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
+		globalAuthLockout.recordFailure(clientIP)
 		return false
 	}
 
 	cred := strings.SplitN(string(payload), ":", 2)
 	if len(cred) != 2 {
+		globalAuthLockout.recordFailure(clientIP)
 		return false
 	}
 	user, pass := cred[0], cred[1]
@@ -224,10 +300,12 @@ func Authenticate(r *http.Request) bool {
 		}
 	}
 
-	// 2. Check against .cookie token with constant-time comparison
-	if constantTimeCompare(user, "__cookie__") && constantTimeCompare(pass, GlobalAuth.Cookie) {
-		globalAuthLockout.recordSuccess(clientIP)
-		return true
+	// 2. Check against .cookie token with constant-time comparison (only when non-empty)
+	if GlobalAuth.Cookie != "" {
+		if constantTimeCompare(user, "__cookie__") && constantTimeCompare(pass, GlobalAuth.Cookie) {
+			globalAuthLockout.recordSuccess(clientIP)
+			return true
+		}
 	}
 
 	globalAuthLockout.recordFailure(clientIP)
@@ -255,7 +333,7 @@ func ResetRPCAuthForTesting() {
 	GlobalAuth.Cookie = ""
 
 	globalAuthLockout.Lock()
-	globalAuthLockout.fails = make(map[string]int)
+	globalAuthLockout.fails = make(map[string]authFailureRecord)
 	globalAuthLockout.lockouts = make(map[string]time.Time)
 	globalAuthLockout.Unlock()
 }

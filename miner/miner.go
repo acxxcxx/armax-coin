@@ -257,11 +257,13 @@ func main() {
 	// Auto-detect RPC cookie if no explicit user/pass/key provided
 	if *keyPtr == "" && (*userPtr == "" || *passPtr == "") {
 		cookieCandidates := []string{
+			node.GetRPCAuthCookiePath(),
 			"armax.cookie",
 			filepath.Join(netChoice, "armax.cookie"),
 		}
 		if envDir := os.Getenv("ARMX_DATA_DIR"); envDir != "" {
-			cookieCandidates = append([]string{filepath.Join(envDir, "armax.cookie")}, cookieCandidates...)
+			// The daemon writes <ARMX_DATA_DIR>/<network>/armax.cookie unless the directory already ends in the network name.
+			cookieCandidates = append([]string{filepath.Join(envDir, "armax.cookie"), filepath.Join(envDir, netChoice, "armax.cookie")}, cookieCandidates...)
 		}
 		if execPath, err := os.Executable(); err == nil {
 			execDir := filepath.Dir(execPath)

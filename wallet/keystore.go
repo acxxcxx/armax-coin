@@ -11,8 +11,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/acxxcxx/armax-coin/core"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/term"
 )
@@ -103,7 +105,10 @@ func EncryptAndSaveKeystore(w *Wallet, passphrase, filePath string) error {
 		return fmt.Errorf("failed to generate random salt: %w", err)
 	}
 
-	key := argon2.IDKey([]byte(passphrase), salt, GenArgonIterations, GenArgonMemory, GenArgonParallelism, GenArgonKeyLen)
+	passBytes := []byte(passphrase)
+	key := argon2.IDKey(passBytes, salt, GenArgonIterations, GenArgonMemory, GenArgonParallelism, GenArgonKeyLen)
+	clear(passBytes)
+	defer clear(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -206,8 +211,20 @@ func CreateNewWalletKeystore(w *Wallet, passphrase, filePath string, force bool)
 			if err != nil {
 				return "", fmt.Errorf("failed to read existing wallet for backup: %w", err)
 			}
-			if err := os.WriteFile(backupPath, data, 0600); err != nil {
+			bf, err := os.OpenFile(backupPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+			if err != nil {
 				return "", fmt.Errorf("failed to create wallet backup at %s: %w", backupPath, err)
+			}
+			if _, err := bf.Write(data); err != nil {
+				_ = bf.Close()
+				return "", fmt.Errorf("failed to write wallet backup at %s: %w", backupPath, err)
+			}
+			if err := bf.Sync(); err != nil {
+				_ = bf.Close()
+				return "", fmt.Errorf("failed to sync wallet backup at %s: %w", backupPath, err)
+			}
+			if err := bf.Close(); err != nil {
+				return "", fmt.Errorf("failed to close wallet backup at %s: %w", backupPath, err)
 			}
 		}
 	}
@@ -294,7 +311,10 @@ func DecryptAndLoadKeystore(passphrase, filePath string) (*Wallet, error) {
 	}
 
 	// 4. Parameter validation passed: perform Argon2 key derivation
-	key := argon2.IDKey([]byte(passphrase), salt, kdf.Iterations, kdf.Memory, kdf.Parallelism, GenArgonKeyLen)
+	passBytes := []byte(passphrase)
+	key := argon2.IDKey(passBytes, salt, kdf.Iterations, kdf.Memory, kdf.Parallelism, GenArgonKeyLen)
+	clear(passBytes)
+	defer clear(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -310,6 +330,7 @@ func DecryptAndLoadKeystore(passphrase, filePath string) (*Wallet, error) {
 	if err != nil {
 		return nil, errors.New("decryption failed: invalid passphrase or corrupted keystore")
 	}
+	defer clear(plaintext)
 
 	if len(plaintext) != 32 {
 		return nil, fmt.Errorf("invalid decrypted seed length %d (expected 32)", len(plaintext))
@@ -317,8 +338,24 @@ func DecryptAndLoadKeystore(passphrase, filePath string) (*Wallet, error) {
 
 	var seed32 [32]byte
 	copy(seed32[:], plaintext)
+	defer clear(seed32[:])
 
-	return WalletFromSeed(seed32)
+	w, err := WalletFromSeed(seed32)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify cryptographic binding between decrypted seed and unencrypted keystore metadata
+	if ks.Address != "" && !core.MatchAddress(ks.Address, w.Address) {
+		w.Zeroize()
+		return nil, errors.New("keystore integrity failure: stored address does not match decrypted private key")
+	}
+	if ks.PublicKey != "" && !strings.EqualFold(strings.TrimSpace(ks.PublicKey), w.PublicKey) {
+		w.Zeroize()
+		return nil, errors.New("keystore integrity failure: stored public key does not match decrypted private key")
+	}
+
+	return w, nil
 }
 
 // ValidateKDFParameters verifies that Argon2id parameters fall strictly within platform resource limits [Follow-up Point 1].
@@ -353,6 +390,7 @@ func PromptPassphrase(envVar, promptMsg string) (string, error) {
 	}
 
 	pass := string(bytePass)
+	clear(bytePass)
 	if pass == "" {
 		return "", errors.New("passphrase cannot be empty")
 	}

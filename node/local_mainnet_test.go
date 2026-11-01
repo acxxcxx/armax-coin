@@ -24,6 +24,7 @@ func TestLocalMainnet_ExplicitActivationOnly(t *testing.T) {
 	core.LockNetworkForTesting(t)
 	core.DisableLocalMainnet()
 	core.SetAllowMainnetForTesting(false)
+	defer core.SetAllowMainnetForTesting(true)
 
 	// 1. Invariant: MainnetLaunched must be false
 	if core.MainnetLaunched {
@@ -194,8 +195,8 @@ func TestLocalMainnet_ExternalP2PDialRejected(t *testing.T) {
 	}
 
 	// 3. AddPeer accepts loopback
-	_ = ps.AddPeer("127.0.0.1:19334")
-	if !ps.HasPeer("127.0.0.1:19334") {
+	_ = ps.AddPeer("127.0.0.1:19335")
+	if !ps.HasPeer("127.0.0.1:19335") {
 		t.Fatalf("AddPeer rejected loopback IP in local mainnet mode")
 	}
 
@@ -607,10 +608,10 @@ func TestLocalMainnet_PeerCacheFiltering(t *testing.T) {
 		Version:   1,
 		NetworkID: "ARMX-MAINNET-1",
 		Peers: []*PeerInfo{
-			{Address: "127.0.0.1:19334", CertFingerprint: "fp1"},
+			{Address: "127.0.0.1:19335", CertFingerprint: "fp1"},
 			{Address: "202.10.34.180:19334", CertFingerprint: "fp2"},
 			{Address: "id.armax-coin.cloud:19334"},
-			{Address: "[::1]:19334", CertFingerprint: "fp3"},
+			{Address: "[::1]:19335", CertFingerprint: "fp3"},
 		},
 	}
 	dataBefore, err := json.MarshalIndent(mixedStore, "", "  ")
