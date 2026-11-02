@@ -1,6 +1,6 @@
 # Armaxcoin (ARMX) Technical Whitepaper
 
-**Version:** 1.0.6 (Stabilization in Progress; Latest Tagged Release: v1.0.5)
+**Version:** 1.0.6 (Active Testnet Release)
 **Ticker:** `ARMX` (mainnet; testnet GUI and explorer display `tARMX`)
 **Network Profiles:** `ARMX-TESTNET-1` (active default) and `ARMX-MAINNET-1` (locked; not launched)
 **Consensus:** Proof-of-Work (PoW) with LWMA-1 ($N=60$)

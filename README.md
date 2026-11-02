@@ -1,7 +1,7 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.6 — Stabilization in Progress` (Latest Tagged Release: `v1.0.5`)<br>
+**Current Release:** `v1.0.6` (Testnet Maintenance Release)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
@@ -116,14 +116,14 @@ Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](ht
 #### On Linux / ARM64:
 ```bash
 # Download package and checksum
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.5/armax-v1.0.5-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.5/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.6/armax-v1.0.6-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.6/SHA256SUMS
 
 # Verify checksum integrity
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
-tar -xzf armax-v1.0.5-linux-amd64.tar.gz
+tar -xzf armax-v1.0.6-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet armgui
 ```
 
@@ -132,10 +132,10 @@ Each archive contains: `armcoind` (node daemon), `armminer` (CPU miner), `armwal
 #### On Windows (PowerShell):
 ```powershell
 # Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.5-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.6-windows-amd64.zip
 
 # Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.5-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.6-windows-amd64.zip"
 ```
 
 #### Verifying releases
@@ -292,7 +292,7 @@ Transfer testnet coins to another address (requires sufficient spendable balance
 
 ---
 
-## Command Reference (v1.0.5)
+## Command Reference (v1.0.6)
 
 Run any binary with `-h` for the full, current flag list. Defaults target testnet.
 
@@ -631,7 +631,7 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 Maintenance and stability release resolving verified node lifecycle issues, resource leaks, data races, and storage isolation. Requires no database migration, resync, or consensus hard fork (upgrading requires individual node process restart).
 
-> **Release Status:** `v1.0.6 — Stabilization in Progress` (Highest local Git tag remains `v1.0.5`). Core binaries compile cleanly. Core targeted tests (GUI pre-sign bounds validation, error formatting, consensus freeze, LWMA-1 difficulty retargeting, and multi-network P2P isolation) and static analysis on Core packages have been verified. Broader unit tests, race detector tests, and historical package suites are recorded as passing in prior baseline records but have not been independently reproduced with attached logs in this review cycle. Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed, and the Project Owner has accepted the previous results as safe; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in the review evidence.
+> **Release Status:** `v1.0.6` (Active Testnet Maintenance Release; Tagged: `v1.0.6`). Core binaries compile cleanly. Core targeted tests (GUI pre-sign bounds validation, error formatting, consensus freeze, LWMA-1 difficulty retargeting, and multi-network P2P isolation) and static analysis on Core packages have been verified. Broader unit tests, race detector tests, and historical package suites are recorded as passing in prior baseline records but have not been independently reproduced with attached logs in this review cycle. Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed, and the Project Owner has accepted the previous results as safe; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in the review evidence.
 
 - **Daemon Graceful Shutdown & Database Integrity:** Implemented `ShutdownServerSafely` to reorder shutdown sequence, initiate HTTP listener termination, cleanly stop P2P network cycles, flush database, and close BoltDB file handle without deadlock. If HTTP handler draining fails or times out, database persistence is aborted (fails closed) to protect against corruption.
 - **Background Resource Leaks Eliminated:** Added `Close()` method and completion signaling to `IPRateLimiter` background cleanup; pruned dead sockets on P2P heartbeat ping failure.

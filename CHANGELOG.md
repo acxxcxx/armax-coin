@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v1.0.6] - Stabilization in Progress
 
-> **Release Status:** `v1.0.6 — Stabilization in Progress` (Target release; highest local Git tag remains `v1.0.5`).
+> **Release Status:** `v1.0.6` (Active Testnet Maintenance Release; Tagged: `v1.0.6`).
 > Core node test suites, race detection, and binary compilations are recorded as passing in prior maintenance records, but have not been independently re-verified with attached execution logs in this publication review cycle. The initial baseline records legacy bridge fixture subprocess failures (`TestLocalGoRelayerE2E` and `TestSignedEVMWriter*`) due to a legacy 4-argument deployment fixture against the 6-argument `WrappedArmaxcoin` Revision 6.1.1 constructor and obsolete role checks. Release-wide test status remains not independently verified. Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed and accepted as safe by the Project Owner; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in the review evidence. This release is undergoing final validation and stabilization.
 > Maintenance release for active Testnet; no hard fork, no soft fork, no consensus alterations. Existing genesis, PoW, chainwork, and block timestamps remain unchanged.
 
