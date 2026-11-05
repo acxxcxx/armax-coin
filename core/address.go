@@ -229,24 +229,55 @@ func AddressToHex(addr string) (string, error) {
 	return hex.EncodeToString(payload), nil
 }
 
+type addressHexCache struct {
+	sync.RWMutex
+	entries map[string]string
+	maxSize int
+}
+
 var (
-	// addrHexCache caches validated address string to lowercase hex conversions [C-15]
-	addrHexCache sync.Map
+	// addrHexCache caches validated address string to lowercase hex conversions with bounded memory [C-15]
+	addrHexCache = addressHexCache{
+		entries: make(map[string]string),
+		maxSize: 10000,
+	}
 )
 
-// AddressToHexCached provides thread-safe O(1) cached lookup of canonical 40-character hex addresses [C-15]
+// AddressToHexCached provides thread-safe O(1) cached lookup of canonical 64-character hex addresses [C-15]
 func AddressToHexCached(addr string) (string, error) {
 	if addr == "" || addr != strings.ToLower(addr) {
 		return "", errors.New("address must be strictly lowercase bech32")
 	}
-	if val, ok := addrHexCache.Load(addr); ok {
-		return val.(string), nil
+
+	addrHexCache.RLock()
+	if val, ok := addrHexCache.entries[addr]; ok {
+		addrHexCache.RUnlock()
+		return val, nil
 	}
+	addrHexCache.RUnlock()
+
 	hexStr, err := AddressToHex(addr)
-	if err == nil {
-		addrHexCache.Store(addr, hexStr)
+	if err != nil {
+		return "", err
 	}
-	return hexStr, err
+
+	addrHexCache.Lock()
+	if len(addrHexCache.entries) >= addrHexCache.maxSize {
+		// Evict 20% of entries to prevent unbounded memory growth under spam
+		count := 0
+		target := addrHexCache.maxSize / 5
+		for k := range addrHexCache.entries {
+			delete(addrHexCache.entries, k)
+			count++
+			if count >= target {
+				break
+			}
+		}
+	}
+	addrHexCache.entries[addr] = hexStr
+	addrHexCache.Unlock()
+
+	return hexStr, nil
 }
 
 // MatchAddress compares two address strings for equality strictly under canonical Bech32 rules [C-20]

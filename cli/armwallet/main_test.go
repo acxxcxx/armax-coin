@@ -49,3 +49,52 @@ func TestArmwalletShowAddress(t *testing.T) {
 	// Verify showAddress execution does not panic
 	showAddress(ksPath)
 }
+
+// TestArmwalletRestoreWarning verifies that passing mnemonic via -restore emits a warning
+func TestArmwalletRestoreWarning(t *testing.T) {
+	tempDir := t.TempDir()
+	ksPath := filepath.Join(tempDir, "restore_test.json")
+
+	// 24 valid BIP-39 words for test
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+
+	cmd := exec.Command("go", "run", "main.go", "-restore", mnemonic, "-file", ksPath)
+	cmd.Env = append(os.Environ(), "ARMX_WALLET_PASSPHRASE=testpassword123")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("armwallet -restore failed: %v, output: %s", err, string(out))
+	}
+
+	outStr := string(out)
+	if !strings.Contains(outStr, "WARNING: Passing mnemonic phrase via -restore flag leaks secret keys") {
+		t.Errorf("Expected warning about process table leakage, got:\n%s", outStr)
+	}
+	if !strings.Contains(outStr, "[OK] Wallet successfully restored") {
+		t.Errorf("Expected wallet successfully restored, got:\n%s", outStr)
+	}
+}
+
+// TestArmwalletRestoreInteractive verifies restoring wallet via interactive stdin
+func TestArmwalletRestoreInteractive(t *testing.T) {
+	tempDir := t.TempDir()
+	ksPath := filepath.Join(tempDir, "restore_interactive.json")
+
+	mnemonic := "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+
+	cmd := exec.Command("go", "run", "main.go", "-restore-interactive", "-file", ksPath)
+	cmd.Env = append(os.Environ(), "ARMX_WALLET_PASSPHRASE=testpassword123")
+	cmd.Stdin = strings.NewReader(mnemonic + "\n")
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("armwallet -restore-interactive failed: %v, output: %s", err, string(out))
+	}
+
+	outStr := string(out)
+	if strings.Contains(outStr, "WARNING: Passing mnemonic phrase via -restore flag") {
+		t.Errorf("Unexpected flag warning for interactive restore: %s", outStr)
+	}
+	if !strings.Contains(outStr, "[OK] Wallet successfully restored") {
+		t.Errorf("Expected wallet successfully restored, got:\n%s", outStr)
+	}
+}

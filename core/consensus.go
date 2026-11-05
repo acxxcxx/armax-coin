@@ -5,12 +5,11 @@ import (
 	"math/big"
 	"sort"
 	"strings"
-	"time"
 )
 
 const (
 	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.6]
-	Version = "1.0.6"
+	Version = "1.0.7"
 
 	// MaxReorganizationDepth defines the maximum depth of reorganization allowed (prevents deep 51% history overwrites, 720 blocks = ~1 day at 120s) [D-05]
 	MaxReorganizationDepth = 720
@@ -238,9 +237,8 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 	// Wall-clock check (no future blocks > 2h) strictly enforced for real-time tip blocks, bypassed during historical replay
 	skipWallClock := len(isHistorical) > 0 && isHistorical[0]
 	if !skipWallClock {
-		maxFutureTimestamp := time.Now().Add(2 * time.Hour).Unix()
-		if b.Timestamp > maxFutureTimestamp {
-			return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFutureTimestamp)
+		if err := validateFutureTimestamp(b); err != nil {
+			return err
 		}
 	}
 	// Median-Time-Past (MTP-11, or MTP-55 plus non-decreasing timestamps from the C1/C2 activation height)
@@ -398,9 +396,8 @@ func (bc *Blockchain) PreCheckBlock(b *Block) error {
 	}
 
 	// 7. Timestamp sanity checks [C-05, C-06, C-22]
-	maxFutureTimestamp := time.Now().Add(2 * time.Hour).Unix()
-	if b.Timestamp > maxFutureTimestamp {
-		return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFutureTimestamp)
+	if err := validateFutureTimestamp(b); err != nil {
+		return err
 	}
 	if err := validateBlockTimestampRules(b, &latest, bc.Chain); err != nil {
 		return err
@@ -493,7 +490,8 @@ func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
 	blockReward := bc.GetBlockReward(newBlock.Index)
 	bc.Chain = append(bc.Chain, newBlock)
 	bc.AdjustDifficulty()
-	bc.cachedSupply += blockReward
+	minted := BlockMintedSubsidy(&newBlock, blockReward)
+	bc.cachedSupply += minted
 	if bc.cachedSupply > MaxSupply {
 		bc.cachedSupply = MaxSupply
 	}
@@ -533,6 +531,7 @@ func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
 			return false
 		}
 	} else {
+		bc.undoLock.Lock()
 		if bc.undoHistory == nil {
 			bc.undoHistory = make(map[int]*BlockUndoRecord)
 		}
@@ -540,6 +539,7 @@ func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
 		if newBlock.Index > UndoRecordRetention {
 			delete(bc.undoHistory, newBlock.Index-UndoRecordRetention)
 		}
+		bc.undoLock.Unlock()
 	}
 
 	// Only clean the mempool after persistence succeeds.
@@ -663,7 +663,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 				if err := clonedState.VerifyAndApplyBlock(&prefixChain[i], r, bc.GetCoinbaseMaturity()); err != nil {
 					return fmt.Errorf("failed to reconstruct state at ancestor: %w", err)
 				}
-				fallbackSupply += r
+				fallbackSupply += BlockMintedSubsidy(&prefixChain[i], r)
 			}
 			break
 		}
@@ -673,7 +673,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 	var runningSupply int64 = 0
 	for i := 0; i <= ancestorIndex; i++ {
 		r := CalculateBlockRewardGivenSupply(i, runningSupply)
-		runningSupply += r
+		runningSupply += BlockMintedSubsidy(&prefixChain[i], r)
 	}
 
 	// Validate and execute candidate newBlocks sequentially against clonedState while recording undo entries
@@ -728,7 +728,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 			return fmt.Errorf("candidate block #%d state execution failed: %w", curr.Index, err)
 		}
 		newUndos[curr.Index] = undo
-		runningSupply += reward
+		runningSupply += BlockMintedSubsidy(curr, reward)
 	}
 
 	// Step 4: Acquire write lock for the atomic switch
@@ -777,10 +777,12 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 	prevDifficulty := bc.Difficulty
 	prevReward := bc.BlockReward
 	prevMempool := append([]Transaction(nil), bc.Mempool...)
+	bc.undoLock.Lock()
 	prevUndos := make(map[int]*BlockUndoRecord, len(bc.undoHistory))
 	for k, v := range bc.undoHistory {
 		prevUndos[k] = v
 	}
+	bc.undoLock.Unlock()
 
 	for _, oTx := range orphanedTxs {
 		if _, confirmed := candidateTxMap[oTx.HashHex()]; !confirmed {
@@ -799,6 +801,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 	bc.State = clonedState
 	bc.cachedSupply = runningSupply
 	bc.cachedWork = candidateWork
+	bc.undoLock.Lock()
 	if bc.undoHistory == nil {
 		bc.undoHistory = make(map[int]*BlockUndoRecord)
 	}
@@ -811,6 +814,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 			delete(bc.undoHistory, h-UndoRecordRetention)
 		}
 	}
+	bc.undoLock.Unlock()
 	var reorgTotalTx int64 = 0
 	for _, b := range bc.Chain {
 		reorgTotalTx += int64(len(b.Transactions))
@@ -821,7 +825,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 
 	bc.CleanMempoolLocked()
 	if !bc.storeFailed && bc.StoragePath != "IN_MEMORY" && (bc.db != nil || bc.StoragePath != "") {
-		if err := bc.SaveToFile(); err != nil {
+		if err := bc.saveToFileFrom(ancestorIndex + 1); err != nil {
 			bc.Chain = prevChain
 			bc.State = prevState
 			bc.cachedSupply = prevSupply
@@ -830,7 +834,9 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 			bc.Difficulty = prevDifficulty
 			bc.BlockReward = prevReward
 			bc.Mempool = prevMempool
+			bc.undoLock.Lock()
 			bc.undoHistory = prevUndos
+			bc.undoLock.Unlock()
 			return fmt.Errorf("failed to persist blockchain state to disk after reorg: %w", err)
 		}
 	}

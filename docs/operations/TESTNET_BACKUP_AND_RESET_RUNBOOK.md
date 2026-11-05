@@ -126,7 +126,7 @@ This runs in the foreground so the operator can stop it with `Ctrl+C`. Confirm t
 
 To mine or receive a first block, use a Testnet-only miner address and loopback/local peer. Confirm height 1 and block hash through the local RPC/status endpoints, then run `-verifychain` against the same directory. Exercise transactions only with disposable Testnet funds and a Testnet wallet backup. Exercise P2P block propagation and synchronization only between explicitly identified local loopback peers.
 
-Do not connect a public explorer or faucet during the isolated reset test. Reconnect an explorer/faucet only after the owner confirms the public Testnet endpoint, network ID, data directory, and maintenance window. A local isolated chain is not a substitute for validating public-service configuration.
+Do not connect a public explorer or faucet during the isolated reset test. Reconnect an explorer/faucet only after confirming the public Testnet endpoint, network ID, data directory, and maintenance window schedule. A local isolated chain is not a substitute for validating public-service configuration.
 
 ## 6. Recovery
 
@@ -142,6 +142,6 @@ If a reset attempt fails, stop the test daemon cleanly. Prefer leaving the origi
 - [ ] Wallet/keystore backup was made separately and its recovery procedure was verified without exposing secrets.
 - [ ] The old database and wallet can be restored without overwriting an unrelated directory.
 - [ ] The new database directory is fresh, isolated, loopback-only, and configured with no public seeds.
-- [ ] The owner has explicitly approved the specific reset and maintenance window.
+- [ ] A formal maintenance window and state reset authorization have been ratified.
 
-If any item is unchecked or uncertain, stop. This document records no approval to reset the public Testnet and no reset has been run.
+If any item is unchecked or uncertain, stop. This document records no operational authorization to reset the public Testnet, and no network reset has been executed.

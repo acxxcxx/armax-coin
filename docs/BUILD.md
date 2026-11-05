@@ -132,3 +132,26 @@ Checksum generation for release packages:
 ```bash
 sha256sum armcoind armminer armsend armwallet armgui > SHA256SUMS
 ```
+
+---
+
+## 5. Running Verification Test Suites
+
+Armaxcoin maintains comprehensive regression and concurrency test suites. Test hooks enable isolated profile overrides during testing:
+
+```bash
+# Static analysis and vet check
+go vet -tags testhooks ./...
+
+# Run complete repository unit tests
+go test -tags testhooks ./...
+
+# Run core consensus tests with race detector
+go test -v -race -tags testhooks ./core
+
+# Run node P2P network tests
+go test -v -tags testhooks ./node
+
+# Run local smart contract EVM test suite
+cd contracts && npm test && cd ..
+```

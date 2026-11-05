@@ -64,6 +64,9 @@ func (m *Message) PayloadBytes() ([]byte, error) {
 type BlockRangeRequest struct {
 	FromIndex int `json:"from_index"`
 	ToIndex   int `json:"to_index"`
+	// Accept lists payload encodings the requester can decode. Older nodes ignore the field and
+	// reply with plain blocks, so no handshake or version check is needed.
+	Accept []string `json:"accept,omitempty"`
 }
 
 // BlockRangeResponse carries a chunk of requested blocks
@@ -71,6 +74,10 @@ type BlockRangeResponse struct {
 	FromIndex int          `json:"from_index"`
 	ToIndex   int          `json:"to_index"`
 	Blocks    []core.Block `json:"blocks"`
+	// Enc and Z are set only when the requester advertised "deflate": Z is base64 of the
+	// DEFLATE-compressed JSON array that would otherwise be in Blocks.
+	Enc string `json:"enc,omitempty"`
+	Z   string `json:"z,omitempty"`
 }
 
 // HeightResponse carries the peer's current height, tip hash, and cumulative chainwork

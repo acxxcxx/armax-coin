@@ -212,7 +212,12 @@ func InitNodeIdentity(dataDir ...string) (*tls.Config, [32]byte, error) {
 
 	var fp [32]byte
 	if len(cert.Certificate) > 0 {
-		fp = sha256.Sum256(cert.Certificate[0])
+		parsedCert, err := x509.ParseCertificate(cert.Certificate[0])
+		if err == nil && len(parsedCert.RawSubjectPublicKeyInfo) > 0 {
+			fp = sha256.Sum256(parsedCert.RawSubjectPublicKeyInfo)
+		} else {
+			fp = sha256.Sum256(cert.Certificate[0])
+		}
 	}
 	return nodeTLSConfig.Clone(), fp, nil
 }
@@ -274,11 +279,9 @@ func UpgradeToEncryptedTransportWithConfig(rawConn net.Conn, conf *tls.Config) (
 	br := bufio.NewReader(rawConn)
 	firstByte, err := br.Peek(1)
 	if err != nil {
-		if IsStrictTLS() {
-			_ = rawConn.Close()
-			return nil, false
-		}
-		return rawConn, false
+		// No first byte (timeout or peer closed): nothing to serve in either mode.
+		_ = rawConn.Close()
+		return nil, false
 	}
 
 	// 0x16 is the standard TLS Handshake record type

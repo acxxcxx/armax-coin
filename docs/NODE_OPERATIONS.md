@@ -103,7 +103,14 @@ Armaxcoin implements transport encryption for node-to-node communication:
   - **Non-Destructive Migration:** If upgrading from v1.0.5 where `peers.json` existed directly under `<dataDir>`, the daemon automatically copies it into the network subdirectory with `0600` permissions. The original legacy file is left intact and never deleted, preserving safe downgrade compatibility.
   - **Fail-Closed Corruption Handling:** If a peer store file is corrupt or has an unsupported schema version, it is backed up to `<path>.corrupt` (with timestamped forensic fallback). The daemon marks the store corrupted, disables TOFU auto-pinning to prevent Person-In-The-Middle key adoption, and aborts any `savePeers()` writes to protect disk state.
 - **NAT & Outbound-Only Nodes:** Nodes operating behind NAT or configured without an active incoming listening cycle (`activeCycle == nil`) safely register outbound work without WaitGroup panics, allowing them to reliably broadcast locally mined blocks and relay transactions to seed peers.
-- **Mixed-Version Compatibility Boundary:** While wire payloads and TLS framing are backward-compatible, live mixed-version interoperability (v1.0.5 ↔ v1.0.6) on public VPS nodes is pending live staging verification. Coordinated node upgrades are recommended.
+- **`PUSH_BLOCKS` NAT Branch Delivery (v1.0.7):** Nodes behind NAT or non-dialable firewalls can proactively deliver competitor block branches directly to public peers over existing outbound connections. In v1.0.7, `handlePushedBlocks` includes a multi-chunk staging buffer (`pushBufferSession`, 30s TTL) that accumulates candidate chunks up to `MaxPushBlocks = 1000` before triggering reorganization when cumulative chainwork exceeds the local tip.
+- **Negotiated DEFLATE Wire Compression (v1.0.7):** P2P block range queries (`GET_BLOCK_RANGE`) support optional DEFLATE compression (`accept: ["deflate"]` / `enc: "deflate"`). Protected by a 32 MB decompression limit and 10% minimum compression efficiency threshold. Operators can disable compression requests by setting `ARMX_P2P_COMPRESSION=0`.
+- **IBD Continuity Verification & Ban Scoring (v1.0.7):** Chunk-based initial block download enforces cryptographic continuity (`PrevHash == Blocks[i-1].Hash`). Receiving non-contiguous segments immediately penalizes the peer with 50 ban points and records a peer failure.
+- **Mixed-Version Compatibility & Hard-Fork Boundary:** While P2P wire framing remains backward-compatible with v1.0.6 nodes, **v1.0.6 and v1.0.7 nodes will permanently split at testnet block 20,000** if a miner produces a block stamped more than 10 minutes ahead. All node operators and miners must upgrade to v1.0.7 before height 20,000.
+- **Persistent ban store (v1.0.7):** bans are saved to `<dataDir>/<network>/bans.json` and survive restarts until they expire.
+- **Pinned seed fingerprints (v1.0.7, optional):** add `"seed_fingerprints": {"host:port": "<64-hex SHA-256 SPKI fingerprint>"}` to the config file to reject a seed whose certificate does not match. A malformed entry aborts startup.
+- **Inbound handshake timeout (v1.0.7):** an unauthenticated inbound connection must send its first valid message within 5 seconds.
+- **Clock (NTP) requirement (v1.0.7):** from testnet block 20,000 a block more than 10 minutes ahead of the validator's clock is rejected, so enable NTP on nodes and miners (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). A mining machine that is ahead of its node is corrected automatically; a node whose clock is behind logs `check NTP`.
 
 ---
 
@@ -162,6 +169,28 @@ rm -rf /var/armax/testnet/blockchain.db /var/armax/testnet/peers.json
 sudo systemctl start armcoind-testnet
 ```
 The node will automatically connect to seed nodes and rebuild the chain through initial block download (IBD).
+
+### Optional Store Compression and Downgrade (v1.0.7)
+
+> [!CAUTION]
+> **STORAGE COMPATIBILITY & DOWNGRADE WARNING:**
+> BoltDB record compression is **disabled by default**. Compressed records created by v1.0.7 are **completely unreadable by v1.0.6**.
+> - Operators enabling record compression must understand that rolling back to v1.0.6 without converting records will cause database load failures.
+> - **Always create a full database backup before running store conversion.**
+> - To safely downgrade a compressed database, stop the daemon completely and run:
+>   `./armcoind -network testnet -datadir <datadir> -store-rewrite plain`
+
+BoltDB block, undo and snapshot records can be stored compressed. It is **off by default**; enable it with `"store_compression": true` in the config file, `-store-compression`, or `ARMX_STORE_COMPRESSION=1`. Readers always accept both plain and compressed records, so toggling the setting is safe within v1.0.7. To convert a data directory, stop the node and run:
+
+```bash
+# Convert to uncompressed format (v1.0.6-compatible)
+armcoind -network testnet -datadir /var/armax -store-rewrite plain
+
+# Convert to compressed format
+armcoind -network testnet -datadir /var/armax -store-rewrite compressed
+```
+
+Back up the database first (Section 7). Measured on synthetic blocks, a block with one ML-DSA-65 transaction shrinks to about half; coinbase-only blocks are too small to compress.
 
 ## 8. Isolated Local Testnet Runs
 

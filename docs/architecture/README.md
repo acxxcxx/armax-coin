@@ -10,8 +10,8 @@ To prevent conflation between speculative design iterations and production-ready
 
 ### Tier 1: Active Software Implementation
 - **Scope:** The Go codebase actively running on full nodes, miners, wallets, and tools in this repository.
-- **Source Version Metadata:** `v1.0.6` (Testnet release candidate).
-- **Core Principle:** Safety, reliability, memory bounds, clean shutdown, post-quantum cryptography, and strict backward-compatibility with the running Testnet.
+- **Source Version Metadata:** `v1.0.7` (Testnet release candidate, `core.Version = "1.0.7"`).
+- **Core Principle:** Safety, reliability, memory bounds, clean shutdown, post-quantum cryptography, consensus fork coordination, and storage efficiency.
 
 ### Tier 2: Existing Testnet Compatibility Baseline
 - **Network ID:** `ARMX-TESTNET-1` (Display ticker: `tARMX`).
@@ -19,8 +19,8 @@ To prevent conflation between speculative design iterations and production-ready
 - **Target Block Time:** 120 seconds.
 - **Difficulty Adjustment:** LWMA-1 ($N=60$).
 - **Block Reward Schedule:** Initial subsidy of 60 tARMX, halving every 1,050,000 blocks, total supply cap 126,000,000 ARMX, atomic base unit $10^8$ Armoids.
-- **Timestamp Rules:** MTP-11 below block 8,000; MTP-55 with non-decreasing parent timestamps from block 8,000 onward.
-- **Persistent Storage:** Key-value storage in BoltDB (`bbolt`) with standard bucket hierarchy (`blocks`, `hashindex`, `txindex`, `chainwork`, `snapshots`, `undo`, `meta`).
+- **Timestamp Rules:** MTP-11 below block 8,000; MTP-55 with non-decreasing parent timestamps from block 8,000 onward. From block 20,000 (v1.0.7), the maximum allowed future-timestamp limit narrows from 7,200 seconds (2 hours) to 600 seconds (10 minutes).
+- **Persistent Storage:** Key-value storage in BoltDB (`bbolt`) with standard bucket hierarchy (`blocks`, `hashindex`, `txindex`, `chainwork`, `snapshots`, `undo`, `meta`). Optional record compression supported in v1.0.7 (default off).
 - **Signatures:** NIST FIPS 204 post-quantum ML-DSA-65.
 - **Status:** **Immutable.** Any change to these rules forks or partitions running Testnet nodes and is strictly prohibited without explicit network coordination.
 
@@ -43,14 +43,19 @@ To prevent conflation between speculative design iterations and production-ready
 +-------------------------------------------------------------------------+
 |                  ARMAXCOIN ARCHITECTURAL BOUNDARY                       |
 +-------------------------------------------------------------------------+
-| [v1.0.6 MAINTENANCE WORK IN THIS RELEASE]                               |
-| - Backward-compatible security and stability fixes                      |
-| - P2P peer deduplication (DNS/IP resolution, TLS cert fingerprint)      |
-| - Socket, goroutine, and memory leak mitigation                         |
-| - Concurrency data race protection (atomic size caching)                |
-| - Order-of-operations graceful shutdown (HTTP & P2P drain before BoltDB)|
-| - Software version telemetry bump to v1.0.6                             |
-| - STRICT: Zero consensus, storage schema, or wire format changes        |
+| [v1.0.7 CONSENSUS FORK & OPTIMIZATION WORK IN THIS RELEASE]            |
+| - Consensus fork C6 at block 20,000 (10-min future timestamp ceiling)   |
+| - Miner clock skew defense & safety waiting                            |
+| - Incremental block persistence during sync (O(1) vs O(N^2) rewrite)   |
+| - Optional BoltDB record compression with offline plain rewrite utility|
+| - PUSH_BLOCKS support for NAT-to-public block branch delivery          |
+| - Multi-chunk push staging buffer and DEFLATE payload expansion         |
+| - Negotiated per-request P2P wire compression (32 MB safety cap)       |
+| - Inbound handshake 5s timeout & persistent bans in bans.json          |
+| - Optional seed certificate SPKI fingerprint pinning                   |
+| - Exact circulating supply accounting across replay and reorgs          |
+| - undoHistory concurrency data race elimination                        |
+| - Unix GUI CSRF token, Host header, and passphrase transfer security   |
 +-------------------------------------------------------------------------+
                                     |
                                     | STRICT SEPARATION
@@ -59,7 +64,8 @@ To prevent conflation between speculative design iterations and production-ready
 | [DEFERRED ARCHITECTURE / EXPERIMENTAL WORK]                             |
 | - Mainnet launch (remains locked: core.MainnetLaunched = false)         |
 | - Bridge activation (remains IN DEVELOPMENT - NOT PRODUCTION READY)     |
-| - Consensus parameter modifications                                     |
+| - Draft proposals C4 (Tx TTL) and C5 (Reorg depth limit)                |
+|   (Note: C3 was audited without fork; C6 is scheduled for Block 20,000) |
 +-------------------------------------------------------------------------+
 ```
 
@@ -71,4 +77,5 @@ To prevent conflation between speculative design iterations and production-ready
 - **[`tokenomics/mainnet-liquidity-allocation-options.md`](tokenomics/mainnet-liquidity-allocation-options.md):** Tokenomics policy and mining-funded treasury boundary analysis.
 - **[`../CONSENSUS_AND_NETWORK.md`](../CONSENSUS_AND_NETWORK.md):** Canonical Layer-1 mathematical consensus specification.
 - **[`../NODE_OPERATIONS.md`](../NODE_OPERATIONS.md):** Operational guidance for running Testnet nodes.
+- **[`../releases/v1.0.7.md`](../releases/v1.0.7.md):** Release notes for Core v1.0.7.
 - **[`../releases/v1.0.6.md`](../releases/v1.0.6.md):** Release notes for Core v1.0.6.

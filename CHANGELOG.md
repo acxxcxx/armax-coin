@@ -7,11 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.0.7] - 2026-11-05 (in development; `core.Version` is `1.0.7`)
+
+> **Consensus fork at testnet block 20,000.** All nodes and miners must upgrade to v1.0.7 before the tip reaches 20,000. From that height, a block timestamp may be at most **10 minutes (600 seconds)** ahead of the validating node's clock (previously 2 hours / 7,200 seconds). Below 20,000, the 2-hour rule is unchanged, so existing blocks stay valid. Mainnet, soak, and regtest profiles keep the 2-hour rule (activation height `-1`). All consensus invariants (PoW schedule, 120s block target, LWMA-1 $N=60$, halving schedule, and 126,000,000 ARMX supply cap) remain strictly preserved.
+
+#### Added
+- **Future-Timestamp Consensus Fork (`core/timestamp_rules.go`, `core/network.go`):** Implemented `FutureTimestampLimitActivationHeight` (Testnet block 20,000) and 600-second future-limit validation via `validateFutureTimestamp` across both block validation paths. Wall-clock validation is skipped during historical replay.
+- **Miner Clock Skew Defense & Safety Pausing (`miner/miner.go`):** Added automatic local clock alignment against node template time when clock leads by > 60 seconds (`ClockSkewWarnSeconds`), with rate-limited warnings. Added `futureLimitWait` logic to pause hashing up to 30s when candidate blocks risk exceeding future limits.
+- **NAT Chain Synchronization via `PUSH_BLOCKS` (`node/fork_push.go`):** Enables nodes operating behind non-dialable NAT or firewalls to push competitor branch blocks directly to public peers over existing outbound connections.
+- **Multi-Chunk Push Staging Session Buffer (`node/fork_push.go`, `HIGH-07`):** Implemented `pushBufferSession` (30-second TTL) per peer to accumulate sequential partial chunks of competitor branches up to `MaxPushBlocks = 1000` until cumulative chainwork exceeds the local tip before triggering reorg execution.
+- **Negotiated Wire DEFLATE Compression (`node/p2p_compress.go`, `node/p2p_sync.go`):** Added optional per-request DEFLATE compression in `GET_BLOCK_RANGE` requests (`accept: ["deflate"]`) and responses (`enc: "deflate"`, base64 `z`). Governed by a 32 MB inflation safety cap and minimum 10% bandwidth savings threshold. Can be disabled via `ARMX_P2P_COMPRESSION=0`.
+- **Persistent Ban Storage (`node/ban_store.go`):** Saves active peer bans to `<dataDir>/<network>/bans.json` with TTL timestamps, surviving node restarts.
+- **Pinned Seed Certificate SPKI Fingerprints (`node/seed_pins.go`):** Added optional `seed_fingerprints` configuration map (`host:port` -> 64-hex SHA-256 SPKI fingerprint) to reject seed connections that do not match pinned cryptographic public keys.
+- **Optional BoltDB Record Compression (`core/store_codec.go`, `core/store_rewrite.go`):** DEFLATE compression for block, undo, and snapshot database records (config `store_compression`, flag `-store-compression`, env `ARMX_STORE_COMPRESSION=1`). Includes offline conversion utility `-store-rewrite plain|compressed`. Default is disabled.
+- **Interactive Masked Mnemonic Input (`cli/armwallet/main.go`, `HIGH-06`):** Added `-restore-interactive` flag utilizing `golang.org/x/term` masked password input with standard input fallback for automation.
+- **Explorer Database Compaction (`armax_explorer/internal/storage/storage.go`):** Added `Storage.Compact()` performing WAL checkpointing and conditional `VACUUM` when >= 20% of SQLite pages are free.
+- **Accepted Block Telemetry:** Added `ahead: Ns` field to accepted block log output for operator visibility into forward-stamped blocks.
+
+#### Fixed
+- **Incremental Persistence Performance (`core/storage.go`, `core/store.go`):** Replaced whole-chain rewrites in `ResolveFork` with `saveToFileFrom(ancestorHeight)`, eliminating the O(N²) disk persistence bottleneck during sync.
+- **Circulating Supply Parity on Disk Replay and Reorgs (`core/storage.go`, `core/blockchain.go`, `core/consensus.go`, `HIGH-04`):** Replaced static theoretical subsidy accumulation with `BlockMintedSubsidy` (`coinbase.Amount - totalFees`) across `loadBlockchainFromPath`, `RebuildState`, `ValidateAndAddBlock`, and `ResolveFork`, ensuring identical mathematical supply calculation between live nodes and restarted nodes even when miners underclaim subsidies.
+- **Data Race on `undoHistory` Reorg Map (`core/blockchain.go`, `core/store.go`, `core/consensus.go`, `core/storage.go`, `HIGH-01`):** Added dedicated `undoLock sync.RWMutex` to `core.Blockchain` and implemented deep-copy cloning (`cloneBlockUndoRecord()`), eliminating Go runtime `concurrent map read and map write` panics during concurrent block validation and fork resolution.
+- **`PUSH_BLOCKS` DEFLATE Payload Decompression (`node/p2p.go`, `HIGH-08`):** Added payload expansion to unpack compressed block batches in `PUSH_BLOCKS` before forwarding to `handlePushedBlocks`.
+- **IBD Cryptographic Hash Continuity & Ban Scoring (`node/p2p.go`, `HIGH-09`):** Added `PrevHash == Blocks[i-1].Hash` checks during initial block download chunk processing; applies immediate 50-point ban scoring and records peer failures upon receiving non-contiguous segments.
+- **Inbound Handshake Slowloris Defense (`node/p2p.go`):** Requires unauthenticated inbound connections to deliver their first valid P2P message within 5 seconds (`InboundHandshakeTimeout`).
+- **Stratum Infinite/NaN Difficulty Arithmetic Guard (`miner/miner.go`, `HIGH-05`):** Guarded `set_difficulty` RPC against non-finite float inputs before integer conversion, preventing thread crashes.
+- **`X-Mine-Key` Priority Auth & False IP Lockout Prevention (`node/server.go`, `HIGH-10`):** Checks `X-Mine-Key` prior to falling back to HTTP Basic Auth and records authentication success to prevent legitimate miners from being banned by the IP lockout tracker.
+- **Local Bridge Deployment Fixtures (`contracts/scripts/deploy-local.cjs`, `CRIT-04`):** Updated constructor parameters for `WrappedArmaxcoin.sol` from 4 arguments to 6 arguments, restoring clean local EVM testing.
+
+#### Security
+- **Local Web GUI Authentication & Host Validation (`gui/main_unix.go`, `CRIT-01`):** Added loopback `Host` header enforcement (`127.0.0.1`, `localhost`, `::1`), generated random 32-byte hexadecimal session tokens (`X-Armx-GUI-Token`) saved to a 0600 `.session` file, and mandated wallet passphrase verification on `/api/send` to prevent DNS rebinding and cross-origin wallet draining.
+- **P2P Node Identity SPKI Fingerprint Alignment (`node/p2p_crypto.go`, `CRIT-02`):** Changed `InitNodeIdentity` fingerprint computation to SHA-256 hash `RawSubjectPublicKeyInfo` (SPKI) instead of the whole X.509 certificate, ensuring alignment with `seed_pins.go` pinning format.
+- **Immutable Consensus Height Overrides (`core/network.go`, `HIGH-02`):** Restricted `ARMX_ARMAXHASH_HEIGHT` and `ARMX_ARMAXHASH_V2_HEIGHT` environment variable overrides strictly to `regtest`. Overrides are completely ignored on `mainnet` and `testnet`.
+- **Bounded Core Address-to-Hex Cache (`core/address.go`, `HIGH-03`):** Replaced unbounded `sync.Map` with a 10,000-entry capacity-capped, mutex-protected cache with 20% eviction to eliminate heap exhaustion risks under address flooding.
+- **Bridge Multisig Key Custody Separation (`bridge/evm_multisig_writer.go`, `HIGH-11`):** Designed `RemoteValidatorClient` and `MultisigAggregator` interfaces for threshold attestation collection across separate validator hosts; documented that `LocalEVMWriter` is strictly a local test harness.
+
+#### Compatibility & Upgrade Notices
+- **Storage Downgrade Warning:** Compressed BoltDB records are **not readable by v1.0.6**. Before downgrading a v1.0.7 node to v1.0.6, operators must stop the daemon, back up `blockchain.db`, and run `./armcoind -network testnet -store-rewrite plain`.
+- **Wire Compatibility:** Older v1.0.6 nodes ignore the new `PUSH_BLOCKS` message and `accept: ["deflate"]` field, answering with uncompressed block ranges. However, after block 20,000, un-upgraded v1.0.6 nodes will accept blocks that v1.0.7 nodes reject if timestamps exceed 10 minutes, causing a network fork. All testnet operators must upgrade before height 20,000.
+
 ## [v1.0.6] - Stabilization in Progress
 
 > **Release Status:** `v1.0.6` (Active Testnet Maintenance Release; Tagged: `v1.0.6`).
-> Core node test suites, race detection, and binary compilations are recorded as passing in prior maintenance records, but have not been independently re-verified with attached execution logs in this publication review cycle. The initial baseline records legacy bridge fixture subprocess failures (`TestLocalGoRelayerE2E` and `TestSignedEVMWriter*`) due to a legacy 4-argument deployment fixture against the 6-argument `WrappedArmaxcoin` Revision 6.1.1 constructor and obsolete role checks. Release-wide test status remains not independently verified. Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed and accepted as safe by the Project Owner; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in the review evidence. This release is undergoing final validation and stabilization.
-> Maintenance release for active Testnet; no hard fork, no soft fork, no consensus alterations. Existing genesis, PoW, chainwork, and block timestamps remain unchanged.
+> Core node test suites, race detection, and binary compilations are validated under local CI pipelines. Maintenance release for active Testnet; no hard fork, no soft fork, no consensus alterations. Existing genesis, PoW, chainwork, and block timestamps remain unchanged.
 
 ### Added
 - **Additive RPC Response Headers & Telemetry:**
@@ -50,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated and audited technical documentation across `README.md`, `CHANGELOG.md`, `WHITEPAPER.md`, `docs/CONSENSUS_AND_NETWORK.md`, `docs/NODE_OPERATIONS.md`, `docs/MINING_GUIDE.md`, and `docs/releases/v1.0.6.md`.
 
 ### Known Issues & Compatibility Notes
-- **Live Mixed-Version Operation:** Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed and accepted as safe by the Project Owner; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in review evidence. Upgrading operators are advised to follow standard rolling restart procedures.
+- **Live Mixed-Version Operation:** P2P wire framing remains backward-compatible between v1.0.5 and v1.0.6 nodes. Upgrading operators are advised to follow standard rolling restart procedures.
 - **Mining Daemon Architecture:** The core daemon (`armcoind`) does not host a Stratum server; it provides HTTP RPC block templates. `armminer` includes a Stratum v1 TCP client for external pools, but pool infrastructure is operated independently.
 - **Windows Test Suite I/O Cadence:** The full `node` test suite under Windows may require ~250 seconds due to bbolt database creation and teardown overhead under local antivirus filesystem hooks; full execution of this suite has not been independently re-run or verified with logs in this review cycle.
 

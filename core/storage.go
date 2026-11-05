@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -124,8 +125,16 @@ func BackupAndResetDatabase() (string, error) {
 	return backupPath, nil
 }
 
-// SaveToFile safely persists the blockchain to bbolt store [C-25]
+// SaveToFile safely persists the blockchain to bbolt store [C-25]. It re-verifies every height
+// and is used where a full consistency pass is wanted (startup, shutdown).
 func (bc *Blockchain) SaveToFile() error {
+	return bc.saveToFileFrom(0)
+}
+
+// saveToFileFrom persists heights >= startHeight. Heights below it must be unchanged since the last
+// save (ResolveFork guarantees this for everything at or below the fork ancestor). If the store does
+// not already hold a matching block and chainwork at startHeight-1, it falls back to a full pass.
+func (bc *Blockchain) saveToFileFrom(startHeight int) error {
 	db, err := bc.getStoreDB()
 	if err != nil {
 		return fmt.Errorf("failed to get bbolt store: %w", err)
@@ -144,7 +153,22 @@ func (bc *Blockchain) SaveToFile() error {
 		two256 := new(big.Int).Lsh(big.NewInt(1), 256)
 		reorgStartHeight := -1
 
-		for i := 0; i < len(bc.Chain); i++ {
+		if startHeight > len(bc.Chain) {
+			startHeight = 0
+		}
+		if startHeight > 0 {
+			prev := &bc.Chain[startHeight-1]
+			pBytes := uint64ToBytes(uint64(prev.Index))
+			storedWork := bktW.Get(pBytes)
+			storedIdx := bktH.Get([]byte(prev.Hash))
+			if len(storedWork) == 0 || !bytes.Equal(storedIdx, pBytes) {
+				startHeight = 0
+			} else {
+				runningWork.SetBytes(storedWork)
+			}
+		}
+
+		for i := startHeight; i < len(bc.Chain); i++ {
 			b := &bc.Chain[i]
 			hBytes := uint64ToBytes(uint64(b.Index))
 
@@ -162,7 +186,7 @@ func (bc *Blockchain) SaveToFile() error {
 				needWrite = true
 			} else {
 				var oldB Block
-				if err := json.Unmarshal(existing, &oldB); err != nil || oldB.Hash != b.Hash {
+				if err := unmarshalRecord(existing, &oldB); err != nil || oldB.Hash != b.Hash {
 					needWrite = true
 					if reorgStartHeight == -1 {
 						reorgStartHeight = b.Index
@@ -187,7 +211,7 @@ func (bc *Blockchain) SaveToFile() error {
 				if err != nil {
 					return err
 				}
-				if err := bktB.Put(hBytes, bData); err != nil {
+				if err := bktB.Put(hBytes, encodeRecord(bData)); err != nil {
 					return err
 				}
 				if err := bktH.Put([]byte(b.Hash), hBytes); err != nil {
@@ -202,12 +226,16 @@ func (bc *Blockchain) SaveToFile() error {
 				if err := bktW.Put(hBytes, append([]byte(nil), runningWork.Bytes()...)); err != nil {
 					return err
 				}
-				if bktU != nil && bc.undoHistory != nil {
-					if u, ok := bc.undoHistory[b.Index]; ok && u != nil {
-						if uData, err := json.Marshal(u); err == nil {
-							_ = bktU.Put(hBytes, uData)
+				if bktU != nil {
+					bc.undoLock.RLock()
+					if bc.undoHistory != nil {
+						if u, ok := bc.undoHistory[b.Index]; ok && u != nil {
+							if uData, err := json.Marshal(u); err == nil {
+								_ = bktU.Put(hBytes, encodeRecord(uData))
+							}
 						}
 					}
+					bc.undoLock.RUnlock()
 				}
 			}
 
@@ -217,7 +245,7 @@ func (bc *Blockchain) SaveToFile() error {
 				if err != nil {
 					return fmt.Errorf("failed to marshal state snapshot: %w", err)
 				}
-				if err := bktS.Put(hBytes, sData); err != nil {
+				if err := bktS.Put(hBytes, encodeRecord(sData)); err != nil {
 					return err
 				}
 			} else if reorgStartHeight != -1 && b.Index >= reorgStartHeight && i != len(bc.Chain)-1 && bktS != nil {
@@ -235,7 +263,7 @@ func (bc *Blockchain) SaveToFile() error {
 						hBytes := uint64ToBytes(h)
 						if oldData := bktB.Get(hBytes); oldData != nil {
 							var oldB Block
-							if json.Unmarshal(oldData, &oldB) == nil {
+							if unmarshalRecord(oldData, &oldB) == nil {
 								if oldB.Hash != "" {
 									_ = bktH.Delete([]byte(oldB.Hash))
 								}
@@ -337,7 +365,7 @@ func loadBlockchainFromPath(dbPath string) (*Blockchain, bool, error) {
 				return fmt.Errorf("block at height %d missing", h)
 			}
 			var b Block
-			if err := json.Unmarshal(bData, &b); err != nil {
+			if err := unmarshalRecord(bData, &b); err != nil {
 				return fmt.Errorf("failed to unmarshal block %d: %w", h, err)
 			}
 			blocks = append(blocks, b)
@@ -397,7 +425,7 @@ func loadBlockchainFromPath(dbPath string) (*Blockchain, bool, error) {
 			sData := bktS.Get(sBytes)
 			if sData != nil {
 				var sm StateManager
-				if err := json.Unmarshal(sData, &sm); err == nil {
+				if err := unmarshalRecord(sData, &sm); err == nil {
 					snapshotHeight = s
 					stateMgr = &sm
 					break
@@ -432,11 +460,16 @@ func loadBlockchainFromPath(dbPath string) (*Blockchain, bool, error) {
 		stateMgr.CoinbaseMaturity = mat
 	}
 
-	// Calculate running supply up to snapshotHeight
+	// Calculate running supply up to snapshotHeight using actual minted subsidy [HIGH-04]
 	var runningSupply int64 = 0
 	for h := uint64(0); h <= snapshotHeight; h++ {
-		r := CalculateBlockRewardGivenSupply(int(h), runningSupply)
-		runningSupply += r
+		b := &blocks[h]
+		maxReward := CalculateBlockRewardGivenSupply(int(h), runningSupply)
+		minted := BlockMintedSubsidy(b, maxReward)
+		runningSupply += minted
+		if runningSupply > MaxSupply {
+			runningSupply = MaxSupply
+		}
 	}
 
 	// Replay and verify blocks from snapshotHeight + 1 up to tipHeight [C-25]
@@ -454,7 +487,11 @@ func loadBlockchainFromPath(dbPath string) (*Blockchain, bool, error) {
 			MarkDBInvalid(dbPath)
 			return nil, false, fmt.Errorf("block #%d state execution failed: %w", h, err)
 		}
-		runningSupply += reward
+		minted := BlockMintedSubsidy(curr, reward)
+		runningSupply += minted
+		if runningSupply > MaxSupply {
+			runningSupply = MaxSupply
+		}
 	}
 
 	var totalLoadedTx int64 = 0

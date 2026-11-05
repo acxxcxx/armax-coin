@@ -1,17 +1,23 @@
 [center]
 [size=24pt][b]ARMAXCOIN TESTNET (tARMX)[/b][/size]
 [size=14pt][b]Proof-of-Work Layer-1 Blockchain with Post-Quantum Signatures (NIST FIPS 204, ML-DSA-65)[/b][/size]
-[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.5)[/b][/size]
+[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.7)[/b][/size]
 [/center]
 
 [hr]
 
-[b]Upgrade Notice (v1.0.5 hard fork):[/b] timestamp rules C1/C2 (MTP-55, non-decreasing timestamps) activate at testnet block 8,000. All nodes and miners must upgrade to v1.0.5 before the tip reaches that height.
+[b]Scheduled Consensus Hard Fork Notice (v1.0.7):[/b]
+[list]
+[*] [b]Activation Height:[/b] [b]Testnet Block 20,000[/b]
+[*] [b]Consensus Rule Change:[/b] Maximum allowed future block timestamp is tightened from [b]7,200 seconds (2 hours)[/b] down to [b]600 seconds (10 minutes)[/b] ahead of the validating node's local clock. Historical blocks below height 20,000 preserve the legacy 2-hour window.
+[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools [b]MUST upgrade to v1.0.7 before block 20,000[/b] and maintain accurate NTP clock synchronization ([font=monospace]timedatectl set-ntp true[/font] / [font=monospace]w32tm /resync[/font]). Un-upgraded v1.0.6 nodes will accept blocks rejected by v1.0.7 after height 20,000, creating an unrecoverable chain split.
+[/list]
 
 [b]Official Links:[/b]
 [*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
 [*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]
-[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.5]refs/tags/v1.0.5[/url]
+[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.7]refs/tags/v1.0.7[/url]
+[*] [b]v1.0.7 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.7.md]docs/releases/v1.0.7.md[/url]
 [*] [b]Documentation Suite:[/b] [url=https://github.com/acxxcxx/armax-coin#authoritative-documentation-index]Documentation Index[/url]
 [*] [b]License:[/b] MIT Open Source License
 
@@ -22,7 +28,8 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [*] Quantum-resistant digital signatures ([b]NIST FIPS 204 ML-DSA-65[/b]) in Layer-1 consensus transactions.
 [*] High-efficiency CPU Proof-of-Work mining ([b]ArmaxHash v2 Stream-Fast[/b]) activated at block #2500 (historical v1 Argon2id active blocks 520..2499).
 [*] Responsive difficulty retargeting via [b]LWMA-1[/b] ($N=60$ sliding evaluation window).
-[*] P2P mesh transport encrypted with mandatory [b]TLS 1.3[/b] and [b]TOFU certificate pinning[/b].
+[*] P2P mesh transport encrypted with mandatory [b]TLS 1.3[/b], [b]TOFU certificate pinning[/b], optional SPKI seed fingerprint pinning, and [b]PUSH_BLOCKS[/b] NAT propagation.
+[*] Scalable initial sync with [b]incremental persistence[/b] ($O(1)$ batch write instead of $O(N^2)$ rewrite).
 
 [color=red][b]CRITICAL EXPERIMENTAL TESTNET DISCLAIMER:[/b][/color]
 [list]
@@ -63,7 +70,7 @@ The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open,
 [code]
 testnet-seed1.armax-coin.cloud:19335  (IP: 202.10.34.180)
 testnet-seed2.armax-coin.cloud:19335  (IP: 139.162.46.17)
-testnet-seed1.armax-coin.cloud:19335
+testnet-seed3.armax-coin.cloud:19335
 
 [hr]
 

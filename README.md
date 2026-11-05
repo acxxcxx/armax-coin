@@ -1,10 +1,20 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.6` (Testnet Maintenance Release)<br>
+**Current Release:** `v1.0.7` (Testnet Consensus Fork & Optimization Release)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
+
+> [!IMPORTANT]
+> **SCHEDULED TESTNET CONSENSUS FORK AT BLOCK 20,000:**
+> Armaxcoin v1.0.7 introduces a scheduled consensus hard fork on `ARMX-TESTNET-1` activating at **Block 20,000**:
+> - **Before Block 20,000:** Block timestamps may be up to 7,200 seconds (2 hours) ahead of the validating node's clock.
+> - **From Block 20,000:** Block timestamps must not exceed **600 seconds (10 minutes)** ahead of the validating node's local clock.
+> 
+> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade to v1.0.7 before height 20,000 and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Un-upgraded v1.0.6 nodes may accept forward-stamped blocks that v1.0.7 nodes reject, creating an unrecoverable chain split.
+> 
+> Detailed release notes and upgrade instructions: **[v1.0.7 Release Notes](docs/releases/v1.0.7.md)** | **[RELEASE_NOTES.md](RELEASE_NOTES.md)**.
 
 > [!NOTE]
 > **PUBLIC TESTNET ENVIRONMENT:**
@@ -17,6 +27,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 | Guide | Description |
 |---|---|
+| **[Release Notes (v1.0.7)](RELEASE_NOTES.md)** | Authoritative v1.0.7 release notes, Block 20,000 consensus fork, and upgrade instructions |
 | **[Open Testnet Guide](docs/TESTNET_GUIDE.md)** | Step-by-step instructions for installing, syncing, and testing transactions |
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
 | **[Mining Accumulation Plan](docs/architecture/tokenomics/mining-accumulation-plan.md)** | Non-consensus model for the long-term 1,000,000 ARMX ordinary-mining objective |
@@ -292,19 +303,20 @@ Transfer testnet coins to another address (requires sufficient spendable balance
 
 ---
 
-## Command Reference (v1.0.6)
+## Command Reference (v1.0.7)
 
 Run any binary with `-h` for the full, current flag list. Defaults target testnet.
 
 **`armcoind`**: node daemon, RPC, and P2P
 - Run: `./armcoind` (or `.\armcoind.exe`). Config file: `-config <FILE>` (default `armax.conf`). Data: `-datadir <DIR>`.
 - Network and ports: `-network testnet|mainnet`, `-rpcport` (19333), `-p2pport` (19335), `-rpcbind`, `-peers <host:port,...>`, `-rpc-allow-non-loopback` (requires auth).
-- RPC auth: `-rpcuser`, `-rpcpassword`, `-rpcinsecure-localhost` (unauthenticated localhost mutations; not recommended).
+- RPC auth: `-rpcuser`, `-rpcpassword`, `-rpcinsecure-localhost` (unauthenticated localhost mutations; not recommended), `-minekey` (pre-shared key for remote miners).
 - Mining: `-mine`, `-miner <ADDRESS>`, `-miningthreads <N>`.
 - Status: `-getblockchaininfo`, `-getnetworkinfo`, `-getpeerinfo`, `-getmempoolinfo`, `-checkhealth`, `-verifychain`.
 - Maintenance: `-shutdown` (asks a running daemon to stop via RPC), `-resync` (backs up the database and resyncs from genesis), `-reindex`.
+- Storage: `-store-compression` (enables BoltDB record compression; default off), `-store-rewrite plain|compressed` (offline converter; node must be stopped).
 - Logging: `-loglevel error|warn|info|debug|trace`, `-debug <net,sync,mempool,validation,rpc,discovery,miner|all>`.
-- Transport: `-require-tls` (no unencrypted fallback), `-p2p-tofu` (TOFU certificate pinning).
+- Transport & P2P: `-require-tls` (no unencrypted fallback), `-p2p-tofu` (TOFU certificate pinning). Configuration options include `seed_fingerprints` map and automatic persistent bans in `bans.json`. Environment `ARMX_P2P_COMPRESSION=0` disables requesting DEFLATE compression.
 
 **`armminer`**: CPU miner client (see step 4)
 - Mining: `-miner <ADDRESS>` (required), `-threads <N>` (0 = all cores), `-delay <MS>`, `-benchmark`, `-dry-run`, `-remote` (use the daemon's `/mine`).
@@ -312,7 +324,7 @@ Run any binary with `-h` for the full, current flag list. Defaults target testne
 - Info: `-getmininginfo`, `-getworkinfo`, `-mempool`, `-info`, `-statsinterval <SEC>`, `-stop`, `-version`.
 
 **`armwallet`**: keystore, addresses, and balance
-- Keystore: `-create`, `-restore "<24 WORDS>"`, `-address`, `-listaddresses`, `-walletcheck`, `-backup <DEST>`, `-rescan`. Use `-wallet <FILE>` (alias for `-file`, default `wallet.json`). `-force` overwrites an existing file without a backup.
+- Keystore: `-create`, `-restore-interactive` (secure masked terminal input with stdin fallback; recommended), `-restore "<24 WORDS>"` (legacy; warning logged), `-address`, `-listaddresses`, `-walletcheck`, `-backup <DEST>`, `-rescan`. Use `-wallet <FILE>` (alias for `-file`, default `wallet.json`). `-force` overwrites an existing file without a backup.
 - Queries: `-balance <ADDRESS>`, `-gettransaction <TXID>`, `-mempool`, `-daemon <URL>`.
 - Environment: `ARMX_WALLET_PASSPHRASE` skips the passphrase prompt. Keep it out of shell history and scripts; prefer the prompt.
 
@@ -323,8 +335,8 @@ Run any binary with `-h` for the full, current flag list. Defaults target testne
 
 **`armgui`**: local GUI wallet, bound to localhost
 - Windows (`armgui.exe`): desktop window. Flags: `-network`, `-rpcport`, `-p2pport`, `-datadir`.
-- Linux / macOS / ARM64 (`./armgui`): serves a web UI on localhost. Flags: `-port <PORT>` (default 18088), `-rpc <URL>` (default `http://127.0.0.1:19333`), `-no-browser` (do not open a browser automatically).
-- On Linux / macOS, open `http://127.0.0.1:18088` in a browser after it starts.
+- Linux / macOS / ARM64 (`./armgui`): serves a web UI strictly on loopback with session token authentication (`X-Armx-GUI-Token`) and Host header enforcement. Flags: `-port <PORT>` (default 18088), `-rpc <URL>` (default `http://127.0.0.1:19333`), `-no-browser` (do not open a browser automatically).
+- On Linux / macOS, open `http://127.0.0.1:18088` in a browser after it starts. All transfers on `/api/send` require passphrase verification.
 
 **Common flags:** `-version` (print version and exit) works on `armcoind`, `armminer`, `armwallet`, and `armsend`. `-info` (print the active network profile and exit) works on the same four.
 
@@ -542,8 +554,9 @@ Armaxcoin nodes communicate over raw TCP sockets using newline-delimited JSON me
 | `NEW_BLOCK` | Broadcast | Propagates a newly mined `core.Block`. Peers validate and append or trigger catch-up sync. |
 | `GET_HEIGHT` | Direct | Queries peer height, latest block hash, and cumulative chainwork. |
 | `HEIGHT_RESPONSE` | Direct | Returns `HeightResponse{Height, LatestHash, Chainwork}`. |
-| `GET_BLOCK_RANGE` | Direct | Requests a chunk of blocks bounded to ~1.5 MB (`BlockRangeRequest`). |
-| `BLOCK_RANGE_RESPONSE` | Direct | Returns chunked `[]core.Block` in response to `GET_BLOCK_RANGE`. |
+| `GET_BLOCK_RANGE` | Direct | Requests a chunk of blocks bounded to ~1.5 MB (`BlockRangeRequest`). v1.0.7 requesters may add `accept: ["deflate"]`. |
+| `BLOCK_RANGE_RESPONSE` | Direct | Returns chunked `[]core.Block`, or (v1.0.7, only if requested) `enc: "deflate"` with `z` = base64 DEFLATE of the block array. |
+| `PUSH_BLOCKS` | Direct | (v1.0.7) A node that cannot be dialed pushes blocks the peer lacks. Older nodes ignore it. |
 | `REQUEST_CHAIN` | Direct | Requests candidate chain for fork resolution / reorganization. |
 | `CHAIN_RESPONSE` | Direct | Returns candidate chain in response to local request (unsolicited responses rejected). |
 | `NEW_TX` | Broadcast | Gossips an incoming `core.Transaction` to peer mempools. |
@@ -627,11 +640,55 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 ## Release History & Changelog
 
+### v1.0.7 (Current -- Testnet Consensus Fork & Optimization Release) -- 2026-11-05
+
+Target release: `v1.0.7` (`core.Version = "1.0.7"`). Testnet only (`ARMX-TESTNET-1`). Mainnet remains locked (`core.MainnetLaunched = false`).
+
+> [!WARNING]
+> **STORAGE COMPATIBILITY & DOWNGRADE WARNING:**
+> BoltDB record compression is **disabled by default**. Compressed records created by v1.0.7 cannot be parsed or read by v1.0.6. Operators enabling compression must back up `blockchain.db` before conversion. Downgrading to v1.0.6 requires stopping the daemon and converting database records back to plain format using:
+> ```bash
+> ./armcoind -network testnet -datadir <DIR> -store-rewrite plain
+> ```
+
+#### 1. Scheduled Consensus Fork (Block 20,000)
+- **Tighter Future Timestamp Limit:** Activates at testnet block **20,000** (`FutureTimestampLimitActivationHeight`). Block timestamps may be at most **600 seconds (10 minutes)** ahead of the validating node's local clock (reduced from the legacy 7,200-second / 2-hour window). Below height 20,000, the 2-hour rule applies, preserving all historical blocks. Mainnet, soak, and regtest profiles remain disabled (`-1`).
+- **Miner Clock Skew Defense & Template Waiting:** `armminer` detects when the local machine clock leads the node daemon clock by more than 60 seconds (`ClockSkewWarnSeconds`), aligns candidate header timestamps to the node's reference time, and automatically pauses (up to 30s) instead of hashing an invalid block.
+- **Node Log Visibility:** Core block validation emits `[Mining] ... timestamp forced to minimum valid ... check NTP` and logs forward timestamps in `ahead: Ns` format.
+
+#### 2. P2P Networking & Transport Hardening
+- **`PUSH_BLOCKS` for NAT Nodes:** Allows nodes behind NAT or firewalls that cannot receive inbound connections to push valid competing blocks directly to public peers over their outbound connection.
+- **Multi-Chunk Staging Buffer (`HIGH-07`):** Implemented in-memory `pushBufferSession` (30s TTL) to stage sequential competitor chunks up to `MaxPushBlocks = 1000` until cumulative chainwork exceeds the local tip before triggering reorganization.
+- **Negotiated DEFLATE Compression:** `GET_BLOCK_RANGE` requests may advertise `accept: ["deflate"]` with server responding with `enc: "deflate"`. Bounded by 32 MB decompression limit and 10% compression efficiency threshold. Disable with `ARMX_P2P_COMPRESSION=0`.
+- **`PUSH_BLOCKS` Decompression Handling (`HIGH-08`):** Expands compressed block ranges in pushed batches before applying them to local chain resolution.
+- **Inbound Handshake Timeout:** Unauthenticated inbound connections must transmit their initial valid P2P message within 5 seconds (`InboundHandshakeTimeout`), eliminating slowloris connection-slot exhaustion.
+- **Persistent Ban Store:** Peer bans persist to `<dataDir>/<network>/bans.json` across daemon restarts.
+- **SPKI Fingerprint Pinning & Identity Alignment (`CRIT-02`):** Optional `seed_fingerprints` config map validates SHA-256 SPKI digests of seed certificates. Node identity generation computes SPKI hash rather than whole X.509 certificate.
+- **IBD Linkage Verification & Ban Scoring (`HIGH-09`):** Validates cryptographic hash continuity (`PrevHash == Blocks[i-1].Hash`) during initial block download chunks; immediately applies 50 ban points and records peer failures for non-contiguous segments.
+- **Bounded Address Cache Memory Cap (`HIGH-03`):** Replaced unbounded address map with a 10,000-entry capacity-capped, mutex-protected cache with 20% eviction.
+
+#### 3. Blockchain Sync & Storage Optimization
+- **Incremental Persistence (`saveToFileFrom`):** `ResolveFork` persists only blocks at or above the common fork point, eliminating the O(N²) disk rewrite overhead during initial block download.
+- **Optional BoltDB Record Compression:** Block, undo, and snapshot records can be DEFLATE-compressed (`-store-compression` or `ARMX_STORE_COMPRESSION=1`). Offline conversion available via `-store-rewrite plain|compressed`.
+- **Accurate Circulating Supply Parity (`HIGH-04`):** Fixed supply calculation during disk database replay (`loadBlockchainFromPath`), full revalidation (`RebuildState`), live additions, and reorgs to accumulate `BlockMintedSubsidy` (`coinbase.Amount - totalFees`), maintaining mathematical parity even with underclaimed coinbase subsidies.
+- **Explorer Compaction:** Added `Storage.Compact()` executing WAL checkpointing and conditional `VACUUM` when >= 20% of SQLite pages are free.
+
+#### 4. Subsystem Security & Reliability
+- **Local Web GUI Hardening (`CRIT-01`):** Enforces loopback `Host` header validation (`127.0.0.1`, `localhost`, `::1`), requires cryptographically random session token (`X-Armx-GUI-Token`), and mandates wallet passphrase validation on `/api/send`.
+- **Masked Interactive Mnemonic Input (`HIGH-06`):** Added `-restore-interactive` flag using terminal password masking (`golang.org/x/term`) to prevent seed phrase exposure in process listings (`ps aux`).
+- **Stratum Inf/NaN Float Guard (`HIGH-05`):** Guarded `set_difficulty` RPC against non-finite float inputs before integer conversion.
+- **`X-Mine-Key` Priority Authentication (`HIGH-10`):** Evaluates `X-Mine-Key` prior to falling back to HTTP Basic Auth and records authentication success to prevent false IP lockouts.
+- **Bridge Multisig Key Custody Separation (`HIGH-11`):** Introduced `RemoteValidatorClient` and `MultisigAggregator` interfaces for threshold attestation collection across separate validator hosts.
+- **Undo Record Concurrency Mutex (`HIGH-01`):** Added dedicated `undoLock sync.RWMutex` to `core.Blockchain` and implemented deep copy cloning (`cloneBlockUndoRecord()`), eliminating map data races under concurrent block processing.
+- **Locked Consensus Height Overrides (`HIGH-02`):** PoW activation heights (`ARMX_ARMAXHASH_HEIGHT`, `ARMX_ARMAXHASH_V2_HEIGHT`) are strictly immutable on Mainnet and Testnet, honored only on Regtest.
+
+For full technical specifications, test evidence, and operational runbooks, see **[v1.0.7 Release Notes](docs/releases/v1.0.7.md)**.
+
 ### v1.0.6 (Stabilization in Progress -- Testnet Maintenance & Reliability) -- 2026-10-31
 
 Maintenance and stability release resolving verified node lifecycle issues, resource leaks, data races, and storage isolation. Requires no database migration, resync, or consensus hard fork (upgrading requires individual node process restart).
 
-> **Release Status:** `v1.0.6` (Active Testnet Maintenance Release; Tagged: `v1.0.6`). Core binaries compile cleanly. Core targeted tests (GUI pre-sign bounds validation, error formatting, consensus freeze, LWMA-1 difficulty retargeting, and multi-network P2P isolation) and static analysis on Core packages have been verified. Broader unit tests, race detector tests, and historical package suites are recorded as passing in prior baseline records but have not been independently reproduced with attached logs in this review cycle. Previous VPS compatibility testing for Core Node v1.0.5 and v1.0.6 was performed, and the Project Owner has accepted the previous results as safe; read-only AI-assisted reviewer GitHub Copilot did not repeat the VPS tests and could not independently reproduce historical results because raw logs were not available in the review evidence.
+> **Release Status:** `v1.0.6` is an active testnet maintenance release. Core binaries compile and pass unit, diagnostic, and P2P verification suites under CI.
 
 - **Daemon Graceful Shutdown & Database Integrity:** Implemented `ShutdownServerSafely` to reorder shutdown sequence, initiate HTTP listener termination, cleanly stop P2P network cycles, flush database, and close BoltDB file handle without deadlock. If HTTP handler draining fails or times out, database persistence is aborted (fails closed) to protect against corruption.
 - **Background Resource Leaks Eliminated:** Added `Close()` method and completion signaling to `IPRateLimiter` background cleanup; pruned dead sockets on P2P heartbeat ping failure.

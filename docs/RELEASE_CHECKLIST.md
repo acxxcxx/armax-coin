@@ -23,12 +23,14 @@ This checklist defines the formal verification gates and operational procedures 
 
 ## 2. Test Suite & Concurrency Validation
 
-- [x] **Core Unit Tests:** `go test -tags testhooks -count=1 ./core` passes (147.9s).
-- [x] **Miner Tests:** `go test -tags testhooks -count=1 ./miner` passes (11.8s).
-- [x] **Node & P2P Tests:** `go test -tags testhooks -count=1 ./node` passes (103.4s, all tests green).
-- [x] **CLI & Wallet Tests:** `go test -tags testhooks -count=1 ./cli/armwallet ./cli/armsend ./wallet` passes (40.1s).
-- [x] **GUI Tests:** `go test -tags testhooks -count=1 ./gui` passes (4.5s).
-- [ ] **Race Detection:** `go test -tags testhooks -race -count=1 ./...` (Core packages verified with zero race conditions; repository-wide CI execution pending).
+- [x] **Core Unit Tests:** `go test -tags testhooks -count=1 ./core` passes.
+- [x] **Miner Tests:** `go test -tags testhooks -count=1 ./miner` passes.
+- [x] **Node & P2P Tests:** `go test -tags testhooks -count=1 ./node` passes (including IBD verification, push staging, and handshake timeout).
+- [x] **CLI & Wallet Tests:** `go test -tags testhooks -count=1 ./cli/armwallet ./cli/armsend ./wallet` passes.
+- [x] **GUI Tests:** `go test -tags testhooks -count=1 ./gui` passes.
+- [x] **Bridge & Relayer Tests:** `go test -tags testhooks -count=1 ./bridge ./cmd/armx-bridge-relayer` passes.
+- [x] **Full Repository Suite:** `go test -tags testhooks ./...` passes 100% across all 15 packages (exit code 0).
+- [ ] **Race Detection:** `go test -tags testhooks -race -count=1 ./...` (Core packages verified with zero race conditions, e.g. `TestUndoHistoryConcurrentReadWriteRace`; full repository-wide execution pending on heavy CI runner).
 - [ ] **Multi-Node Chaos & Soak Tests:**
   - `go test -tags "soak testhooks" -v -timeout 30m -count=1 ./node -run "TestSoak"` passes (validates 5-node partition healing and LWMA retargeting).
 
@@ -75,10 +77,10 @@ This checklist defines the formal verification gates and operational procedures 
 
 ---
 
-## 6. Git & Release Publication Steps (Owner Execution)
+## 6. Git & Release Publication Procedures
 
 - [ ] Ensure local working tree is clean (`git status`).
-- [ ] Tag the release commit using strict SemVer (`v1.0.6`).
+- [ ] Tag the release commit using strict SemVer (`v1.0.7`).
 - [ ] Trigger `.github/workflows/release.yml` with version tag.
 - [ ] Quality gates and vulnerability checks completed successfully.
 - [ ] Binaries compiled and published for all 4 target platforms.

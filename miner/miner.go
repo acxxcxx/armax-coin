@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -64,6 +65,48 @@ type SubmitBlockResponse struct {
 	Height  int    `json:"height"`
 	Hash    string `json:"hash"`
 	Message string `json:"message"`
+}
+
+// ClockSkewWarnSeconds is the local-versus-node clock difference above which the miner warns and,
+// if the local clock is ahead, stamps blocks with node-aligned time instead.
+const ClockSkewWarnSeconds = 60
+
+// clockOffsetFromTemplate returns the number of seconds to add to the local clock so that block
+// timestamps match the node clock reported in the template (curtime). A local clock that is ahead
+// of the node by more than ClockSkewWarnSeconds would produce forward-stamped headers, so it is
+// corrected. A clock that is behind is left alone: the template curtime can be raised by the
+// node's minimum-valid-timestamp rule, and the timestamp is already clamped to mintime.
+func clockOffsetFromTemplate(localNow, nodeCurTime int64) (offset int64, warning string) {
+	skew := localNow - nodeCurTime
+	switch {
+	case skew > ClockSkewWarnSeconds:
+		return -skew, fmt.Sprintf("local clock is %ds ahead of the node; block timestamps are aligned to node time. Enable NTP (Windows: w32tm /resync, Linux: timedatectl set-ntp true)", skew)
+	case skew < -ClockSkewWarnSeconds:
+		return 0, fmt.Sprintf("local clock is %ds behind the node (or the chain tip is forward-stamped); check NTP", -skew)
+	}
+	return 0, ""
+}
+
+// futureLimitSafetyMargin keeps a miner-side buffer under the consensus future-timestamp limit so
+// clock drift between template and submission does not get a solved block rejected.
+const futureLimitSafetyMargin = 30
+
+// futureLimitWait returns how many seconds to pause (at most 30) before mining a block whose
+// timestamp is too far ahead of nodeNow for the limit that applies at the given height. Waiting is
+// correct because the timestamp becomes valid once real time catches up; 0 means mine now.
+func futureLimitWait(height int, blockTs, nodeNow int64) int64 {
+	allowed := core.MaxFutureTimestampSeconds(height) - futureLimitSafetyMargin
+	if allowed < 0 {
+		allowed = 0
+	}
+	over := blockTs - nodeNow - allowed
+	if over <= 0 {
+		return 0
+	}
+	if over > 30 {
+		over = 30
+	}
+	return over
 }
 
 func main() {
@@ -476,6 +519,7 @@ func main() {
 	fmt.Println("[+] Starting mining loop...")
 
 	currentDaemonIdx := 0
+	var lastClockWarn time.Time
 
 	// Branch: Delegated remote mining mode (POST /mine)
 	if *remotePtr {
@@ -527,6 +571,12 @@ func main() {
 		txs := append([]core.Transaction{cbTx}, tmpl.Transactions...)
 		candidateBlock := *core.NewBlock(txs, tmpl.PreviousBlockHash, tmpl.Height, minerAddress, targetInt)
 		now := time.Now().Unix()
+		clockOffset, clockWarn := clockOffsetFromTemplate(now, tmpl.CurTime)
+		if clockWarn != "" && time.Since(lastClockWarn) > 5*time.Minute {
+			fmt.Printf("[%s] [!] Clock warning: %s\n", time.Now().Format("15:04:05"), clockWarn)
+			lastClockWarn = time.Now()
+		}
+		now += clockOffset
 		minTs := tmpl.CurTime
 		if tmpl.MinTime > minTs {
 			minTs = tmpl.MinTime
@@ -536,7 +586,16 @@ func main() {
 		} else {
 			candidateBlock.Timestamp = now
 		}
-
+		if wait := futureLimitWait(tmpl.Height, candidateBlock.Timestamp, time.Now().Unix()+clockOffset); wait > 0 {
+			fmt.Printf("[%s] [!] Block #%d would be stamped %ds ahead of the node clock (limit %ds); pausing %ds instead of mining a block the network would reject. Check NTP on this machine and on the node.\n",
+				time.Now().Format("15:04:05"), tmpl.Height, candidateBlock.Timestamp-(time.Now().Unix()+clockOffset), core.MaxFutureTimestampSeconds(tmpl.Height), wait)
+			select {
+			case <-stopChan:
+				return
+			case <-time.After(time.Duration(wait) * time.Second):
+			}
+			continue
+		}
 		// 4. Randomize starting nonce partition
 		var startNonce int64
 		var nonceBytes [4]byte
@@ -579,7 +638,7 @@ func main() {
 							return
 						default:
 						}
-						if curTime := time.Now().Unix(); curTime > b.Timestamp {
+						if curTime := time.Now().Unix() + clockOffset; curTime > b.Timestamp {
 							b.Timestamp = curTime
 						}
 					}
@@ -1501,7 +1560,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 					case string:
 						newDiff, _ = strconv.ParseFloat(v, 64)
 					}
-					if newDiff > 0 {
+					if newDiff > 0 && !math.IsInf(newDiff, 0) && !math.IsNaN(newDiff) {
 						stateMu.Lock()
 						shareDiff = newDiff
 						shareTarget = floatDifficultyToTarget(newDiff)

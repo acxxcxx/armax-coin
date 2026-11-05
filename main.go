@@ -62,7 +62,13 @@ func main() {
 	printToConsoleFlag := flag.Bool("printtoconsole", true, "Send log output to console/terminal (standard daemon behavior)")
 	shutdownFlag := flag.Bool("shutdown", false, "Safely request shutdown of a running daemon via authenticated RPC")
 	armaxHashHeightFlag := flag.Int64("armaxhash-height", -2, "Block height where PoW transitions to ArmaxHash (-1 = disabled)")
+	storeRewriteFlag := flag.String("store-rewrite", "", "Offline: rewrite stored block records as 'plain' (v1.0.6-compatible downgrade) or 'compressed'; stop the node first")
+	storeCompressionFlag := flag.Bool("store-compression", false, "Compress newly written block/undo/snapshot records (v1.0.6 cannot read them; use -store-rewrite plain to downgrade)")
 	flag.Parse()
+
+	if *storeCompressionFlag {
+		core.SetStoreCompression(true)
+	}
 
 	if *armaxHashHeightFlag >= -1 {
 		core.SetArmaxHashActivationHeight(*armaxHashHeightFlag)
@@ -251,6 +257,27 @@ func main() {
 			bc.MiningThreads = *miningThreadsFlag
 		}
 		return bc
+	}
+
+	if *storeRewriteFlag != "" {
+		var compress bool
+		switch strings.ToLower(*storeRewriteFlag) {
+		case "plain":
+		case "compressed":
+			compress = true
+		default:
+			fmt.Println("[-] -store-rewrite must be 'plain' or 'compressed'")
+			os.Exit(1)
+		}
+		dbPath := core.GetDBPath()
+		fmt.Printf("[*] Rewriting block store records (%s) at %s (node must be stopped)...\n", *storeRewriteFlag, dbPath)
+		n, err := core.RewriteStoreRecords(dbPath, compress)
+		if err != nil {
+			fmt.Printf("[-] Store rewrite failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("[OK] Rewrote %d records as %s\n", n, *storeRewriteFlag)
+		return
 	}
 
 	if *verifyChainFlag {
@@ -512,6 +539,9 @@ func main() {
 		}
 		if cfg.NetworkID == "" {
 			cfg.NetworkID = activeNet.NetworkID
+		}
+		if cfg.StoreCompression {
+			core.SetStoreCompression(true)
 		}
 		if *dataDirFlag != "" {
 			cfg.DataDir = *dataDirFlag

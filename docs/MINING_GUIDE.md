@@ -87,7 +87,7 @@ On Windows (PowerShell):
 #### Miner Authentication Options
 When connecting to `armcoind`, `armminer` supports three authentication mechanisms:
 1. **RPC Cookie (Default):** Auto-detected from `<dataDir>/<network>/armax.cookie` (v1.0.6 isolated location), root `armax.cookie`, or `$ARMX_DATA_DIR`.
-2. **Pre-Shared Mine Key (`X-Mine-Key`):** If the node was launched with `-minekey <secret>`, pass `-key <secret>` to `armminer`.
+2. **Pre-Shared Mine Key (`X-Mine-Key`):** If the node was launched with `-minekey <secret>`, pass `-key <secret>` to `armminer`. In v1.0.7, `X-Mine-Key` authentication is evaluated first before falling back to HTTP Basic Auth and records authentication success, preventing legitimate miners from being locked out by IP rate limiters.
 3. **HTTP Basic Auth:** If the node was configured with `-rpcuser <user> -rpcpassword <pass>`, pass `-user <user> -pass <pass>` to `armminer`.
 
 ---
@@ -100,6 +100,11 @@ When connecting to `armcoind`, `armminer` supports three authentication mechanis
   ArmaxHash v2 does not use the Argon2 memory-hard stage. Memory use of the complete miner and node depends on header construction, networking, and other runtime activity; the hash benchmark alone does not measure it.
 - **Thermal Management:**
   Sustained CPU mining can increase power use and temperatures. Monitor the device and use an appropriate thread count and cooling setup.
+- **Clock Synchronization & Block 20,000 Hard Fork (v1.0.7):**
+  From testnet block **20,000**, candidate block timestamps may be at most **600 seconds (10 minutes)** ahead of the validating node's clock (down from the legacy 7,200s window).
+  - In v1.0.7, `armminer` actively aligns candidate block timestamps to the node's reference template time when the local machine clock leads by > 60 seconds (`ClockSkewWarnSeconds`).
+  - If a candidate block timestamp risks exceeding the 10-minute future ceiling, the miner automatically pauses (`futureLimitWait`, up to 30s) and refetches a fresh template rather than submitting an un-minable candidate.
+  - **Operator Requirement:** All miners must maintain active NTP clock synchronization (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Stratum and remote miners stamp with host time and are not compensated by local RPC hooks.
 
 ---
 
@@ -127,4 +132,5 @@ Verify that `"miner"` matches your address and `"merkle_root"` reflects the coin
   ```bash
   ./armminer -pool stratum+tcp://pool.example.com:3333 -user worker1 -pass x -threads 4
   ```
+  In v1.0.7 (`HIGH-05`), `set_difficulty` RPC parsing guards against `Inf` and `NaN` float values before integer conversion, preventing thread crashes during remote difficulty updates.
 - **Operational Boundary:** External Stratum mining pool software is operated independently outside this repository and has not been evaluated in live public staging. Node operators and miners should verify compatibility on isolated test setups before production deployment.

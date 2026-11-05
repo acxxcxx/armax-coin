@@ -1,30 +1,36 @@
-# Armaxcoin Consensus Improvement Proposals (AIP / C1–C5)
+# Armaxcoin Consensus Improvement Proposals (AIP / C1–C6)
 
-**Status:** C1/C2 IMPLEMENTED IN v1.0.5; C3–C5 PROPOSED -- DESIGN ONLY (DO NOT MERGE INTO ACTIVE CODE WITHOUT MAINTAINER APPROVAL)  
-**Implementation status (v1.0.5):** C1 and C2 are **implemented in v1.0.5** (`core/timestamp_rules.go`), activating at testnet block 8,000 (mainnet: from genesis, activation height 0). C3–C5 are not implemented. Below the activation height the legacy MTP-11 rule and 2-hour future-time limit apply.  
+**Status:**
+- **C1 & C2:** IMPLEMENTED in v1.0.5, active on Testnet since Block #8,000.
+- **C6:** IMPLEMENTED in v1.0.7 code, scheduled to activate on Testnet at **Block #20,000**.
+- **C3:** AUDITED & VERIFIED via `core/c3_audit_test.go` (audit test suite completed; confirms existing preimage bindings and replay defenses without requiring consensus changes).
+- **C4 & C5:** DRAFT SPECIFICATIONS ONLY — Not implemented in active code (C4 proposed for Block 25,000; C5 evaluated as local node policy). Unratified for active consensus deployment.
+
+**v1.0.7 note:** C6 (future-timestamp limit 2 hours -> 10 minutes) activates at testnet block 20,000 and is disabled on mainnet, soak and regtest. C3 was audited without consensus alterations. C4 and C5 remain design drafts.
 **Target Network:** `ARMX-TESTNET-1` and Future `ARMX-MAINNET-1`  
 **Author:** Armaxcoin Core Security & Consensus Engineering  
-**Date:** October 2026  
+**Date:** Updated November 2026 (v1.0.7 Release Cycle)
 
 ---
 
 ## Executive Summary
 
-This document formalizes design proposals for five critical consensus upgrades identified during the static security audit of Armaxcoin Layer-1 PoW blockchain. 
+This document formalizes design proposals for consensus upgrades (C1–C6) identified during protocol stabilization and security auditing of Armaxcoin Layer-1 PoW blockchain.
 
-In accordance with strict consensus safety protocols, **these proposals MUST NOT be implemented in active code until formal community review, testnet simulation, and scheduled activation heights are approved**. Modifying these rules without coordinated activation heights would result in unintended hard forks and permanent network partition.
+In accordance with strict consensus safety protocols, **proposals altering block acceptance rules MUST NOT be activated in code without formal community review, testnet simulation, and scheduled activation heights**.
 
 ---
 
 ## Table of Proposals
 
-| Proposal ID | Title | Consensus Subsystem | Fork Type | Target Activation |
+| Proposal ID | Title | Consensus Subsystem | Fork Type | Status & Activation |
 |---|---|---|---|---|
-| **C1** | Extended MTP Window & Parent-Relative Timestamp Bound | Header Timestamp Validation | Hard Fork | Implemented in v1.0.5, Block #8,000 |
-| **C2** | Nondecreasing Timestamps for LWMA-1 | LWMA Difficulty Calculation | Hard Fork | Implemented in v1.0.5, Block #8,000 |
-| **C3** | ML-DSA-65 Canonicality & Cross-Network Replay Audit | Cryptographic Verification | Audit / possible rule change | No activation proposed |
-| **C4** | Transaction Time-To-Live (TTL / Expiry Height) | Mempool & Transaction Structure | Hard Fork | Proposed Block #25,000 |
-| **C5** | Reorg Depth Limit & Coinbase Maturity Invariant | Fork Resolution & State Replay | Local policy | No activation proposed |
+| **C1** | Extended MTP Window (MTP-55) | Header Timestamp Validation | Hard Fork | **Active since Block #8,000** (v1.0.5) |
+| **C2** | Nondecreasing Timestamps for LWMA-1 | LWMA Difficulty Calculation | Hard Fork | **Active since Block #8,000** (v1.0.5) |
+| **C3** | ML-DSA-65 Canonicality & Replay Audit | Cryptographic Verification | Audit Only (No Rule Change) | **Completed in v1.0.7** (`core/c3_audit_test.go`) |
+| **C4** | Transaction Time-To-Live (TTL / Expiry) | Mempool & Transaction Structure | Hard Fork | **Draft Only** (Proposed Block #25,000) |
+| **C5** | Reorg Depth Limit & Maturity Invariant | Fork Resolution & State Replay | Local Policy | **Draft Only** (No fork activation) |
+| **C6** | Tighter Future-Timestamp Limit (10 min) | Header Timestamp Validation | Hard Fork | **Scheduled for Block #20,000** (v1.0.7) |
 
 ---
 
@@ -135,6 +141,13 @@ Two questions warrant verification; this proposal does not establish either as a
 - Test attempting to replay a testnet-signed transaction on a regtest/mainnet node (must fail verification).
 - Fuzzing of signature byte encodings to ensure alternate polynomial packings are rejected.
 
+### 6. Audit Execution & Verification (Completed in v1.0.7)
+The audit test suite was implemented in `core/c3_audit_test.go` and verified in v1.0.7:
+- **Preimage Integrity:** `TestC3_PreimageCommitsEveryStandardField` proves that mutating any standard transaction field (`SigAlg`, `Sender`, `SenderPub`, `Recipient`, `Amount`, `Fee`, `Nonce`) alters the digest and invalidates the ML-DSA-65 signature.
+- **Cross-Network Replay Protection:** `TestC3_CrossNetworkReplayRejected` confirms that transactions signed for `testnet` fail verification when evaluated against `mainnet` or `regtest`.
+- **Malformed Encodings:** `TestC3_MalformedSignatureRejected` confirms that corrupted or malformed signature bytes fail cleanly.
+- **Outcome:** The audit demonstrated that existing transaction signing and verification rules are cryptographically sound. **No consensus rule modification or fork activation is required.**
+
 ---
 
 ## Proposal C4: Transaction Expiry (Time-To-Live / Block Height Expiration)
@@ -210,6 +223,19 @@ const (
 
 ---
 
+## Proposal C6: Tighter Future-Timestamp Limit
+
+**Status:** Implemented in code (v1.0.7, unreleased). Testnet only.
+
+- **Rule:** from `FutureTimestampLimitActivationHeight` (testnet 20,000; -1 = disabled on mainnet, soak, regtest) a block timestamp must be at most `FutureTimestampLimitSeconds = 600` ahead of the validating node's clock. Below the height the legacy 7,200 s limit applies (`core/timestamp_rules.go`, `MaxFutureTimestampSeconds`, `validateFutureTimestamp`).
+- **Non-determinism:** the check uses the local wall clock, so it is not a pure function of chain data. Historical replay skips it, so stored blocks never become invalid. Nodes and miners need NTP.
+- **Effect:** the rule only narrows the set of accepted blocks. Un-upgraded nodes still accept every block v1.0.7 accepts, but may accept forward-stamped blocks that upgraded nodes reject, which can split the chain; upgrading before block 20,000 is required.
+- **Miner mitigation (`miner/miner.go`):** corrects a local clock that is ahead of the node and waits (up to 30 s, 30 s safety margin) rather than mining a block that would be rejected.
+- **Tests:** `core/future_timestamp_fork_test.go`, `miner/clock_skew_test.go` (`TestFutureLimitWait`), `node/fork_rehearsal_test.go` (in-process, activation lowered). A multi-process or VPS rehearsal across height 20,000 is still open.
+- **Not part of this fork:** C4, C5 and LWMA changes have no specification and are excluded.
+
+---
+
 ## Summary & Roadmap
 
 | Milestone | Target Testnet Height | Target Date | Scope |
@@ -217,5 +243,6 @@ const (
 | **Phase 1** | Block #8,000 | v1.0.5 | C1 (MTP-55), C2 (Monotonic Time) |
 | **Phase 2** | No activation proposed | Q2 2027 | C3 (ML-DSA-65 Encoding and Cross-Network Replay Audit), C5 (Reorg Depth Policy, local node policy, not height-gated) |
 | **Phase 3** | Block #25,000 | Q3 2027 | C4 (Transaction Expiry Height / TTL) |
+| **v1.0.7** | Block #20,000 (testnet) | Not scheduled | C6 (10-minute future-timestamp limit) |
 
 *Document compiled in strict accordance with Armaxcoin Security Audit Guidelines.*

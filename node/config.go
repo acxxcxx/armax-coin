@@ -32,6 +32,10 @@ type Config struct {
 	DisableSubnetLimit  bool     `json:"disable_subnet_limit"`   // [N-12] Allow multiple connections from same subnet (LAN/testnet)
 	P2PTOFU             bool     `json:"p2p_tofu"`               // [F1] Enable Trust-On-First-Use (TOFU) TLS certificate fingerprint pinning
 	AllowNonLoopbackRPC bool     `json:"allow_non_loopback_rpc"` // [F8] Explicit opt-in required to bind RPC to non-loopback addresses
+	// SeedFingerprints optionally pins seed certificates: "host:port" -> SHA-256 SPKI fingerprint (64 hex).
+	SeedFingerprints map[string]string `json:"seed_fingerprints,omitempty"`
+	// StoreCompression compresses newly written block records. Default off: v1.0.6 cannot read them.
+	StoreCompression bool `json:"store_compression,omitempty"`
 }
 
 // DefaultConfig returns production default settings for active network profile [N-20, TASK P1]

@@ -236,24 +236,28 @@ func isMutatingEndpoint(path string, method string) bool {
 	return path == "/mine"
 }
 
-// isAuthorizedMiner checks if caller has valid RPC credentials or valid X-Mine-Key
+// isAuthorizedMiner checks if caller has valid X-Mine-Key or valid RPC credentials
 func isAuthorizedMiner(r *http.Request, cfg *ServerConfig) bool {
-	if Authenticate(r) {
-		return true
-	}
 	configuredKey := ""
 	if cfg != nil && cfg.MineKey != "" {
 		configuredKey = cfg.MineKey
 	} else {
 		configuredKey = os.Getenv("ARMX_MINE_KEY")
 	}
+
 	if configuredKey != "" {
 		clientKey := r.Header.Get("X-Mine-Key")
-		if constantTimeCompare(clientKey, configuredKey) {
+		if clientKey != "" && constantTimeCompare(clientKey, configuredKey) {
+			clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil || clientIP == "" {
+				clientIP = r.RemoteAddr
+			}
+			globalAuthLockout.recordSuccess(clientIP)
 			return true
 		}
 	}
-	return false
+
+	return Authenticate(r)
 }
 
 // NewRPCHandler creates and returns the central HTTP handler for Armaxcoin RPC
@@ -1245,8 +1249,12 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			clientIP = r.RemoteAddr
 		}
 
-		// Max 120 HTTP requests per minute per IP for RPC endpoints
-		if !limiter.allow(clientIP, 120) {
+		// Max 120 HTTP requests per minute per IP for RPC endpoints (loopback allowed higher throughput for local explorer/indexer)
+		maxPerMin := 120
+		if clientIP == "127.0.0.1" || clientIP == "::1" || strings.EqualFold(clientIP, "localhost") {
+			maxPerMin = 2400
+		}
+		if !limiter.allow(clientIP, maxPerMin) {
 			http.Error(w, `{"error":"Too many requests, rate limit exceeded"}`, http.StatusTooManyRequests)
 			return
 		}
@@ -1396,6 +1404,11 @@ func InitServerFromConfig(bc *core.Blockchain, cfg *Config) (*PeerServer, *Serve
 	peerServer.RequireTLS = cfg.RequireTLS
 	peerServer.DisableSubnetLimit = cfg.DisableSubnetLimit
 	peerServer.P2PTOFU = cfg.P2PTOFU // [F1]
+	if len(cfg.SeedFingerprints) > 0 {
+		if err := peerServer.SetSeedFingerprints(cfg.SeedFingerprints); err != nil {
+			return nil, nil, fmt.Errorf("invalid seed_fingerprints: %w", err)
+		}
+	}
 	peerServer.AllowPrivatePeers = isPrivatePeersAllowedForNetwork(targetNetID)
 
 	// SetSeedPeers resolves (and logs) the seeds once and adds them to the address book.

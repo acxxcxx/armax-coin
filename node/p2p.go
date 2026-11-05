@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
+
 	"fmt"
 	"io"
 	"math/big"
@@ -347,11 +347,17 @@ type PeerServer struct {
 	banLock              sync.RWMutex                 // [N-15] Ban and rate limit mutex
 	banScores            map[string]int               // [N-15] Misbehavior ban scores per IP
 	bannedIPs            map[string]time.Time         // [N-15] Active IP bans and expiry
-	rateTrackers         map[string]*peerRateTracker  // [N-15] Token bucket and endpoint trackers
-	BlockRangeBurst      float64                      // Configurable burst for GET_BLOCK_RANGE (token-bucket limiter; default 120.0)
-	BlockRangeRefillRate float64                      // Configurable refill rate/sec for GET_BLOCK_RANGE (default 20.0)
-	listener             net.Listener                 // [T-06] Active TCP listener
-	quitChan             chan struct{}                // [T-06] Shutdown signal channel
+	banFileMu            sync.Mutex                   // serializes writes of bans.json
+	pushMu               sync.Mutex                   // serializes PUSH_BLOCKS application
+	pushCooldownMu       sync.Mutex
+	pushCooldowns        map[string]time.Time        // peer address -> last chain push
+	seedPinMu            sync.RWMutex                // guards seedPins
+	seedPins             map[string]string           // normalized ip:port -> operator-pinned cert fingerprint (hex)
+	rateTrackers         map[string]*peerRateTracker // [N-15] Token bucket and endpoint trackers
+	BlockRangeBurst      float64                     // Configurable burst for GET_BLOCK_RANGE (token-bucket limiter; default 120.0)
+	BlockRangeRefillRate float64                     // Configurable refill rate/sec for GET_BLOCK_RANGE (default 20.0)
+	listener             net.Listener                // [T-06] Active TCP listener
+	quitChan             chan struct{}               // [T-06] Shutdown signal channel
 	stopLock             sync.Mutex
 	outboundMu           sync.Mutex
 	outboundSessions     map[string]*outboundPeerSession
@@ -409,10 +415,13 @@ type peerRateTracker struct {
 const (
 	MaxSessionRespBytes      = 16 * 1024 * 1024
 	AuthenticatedIdleTimeout = 90 * time.Second
-	UnreachablePeerCooldown  = 30 * time.Minute
-	EvictedPeerCooldown      = 15 * time.Minute
-	SelfAnnounceInterval     = 10 * time.Minute
-	InboundProbeTimeout      = 3 * time.Second
+	// InboundHandshakeTimeout bounds how long a new inbound connection may take (including the TLS
+	// handshake) to deliver its first message before it is dropped, freeing the slot for honest peers.
+	InboundHandshakeTimeout = 5 * time.Second
+	UnreachablePeerCooldown = 30 * time.Minute
+	EvictedPeerCooldown     = 15 * time.Minute
+	SelfAnnounceInterval    = 10 * time.Minute
+	InboundProbeTimeout     = 3 * time.Second
 )
 
 var errSessionClosed = errors.New("P2P outbound session was closed before write")
@@ -1568,25 +1577,8 @@ func (p *PeerServer) canTriggerSync(peerHost string) bool {
 // AddOrphanBlock validates header PoW, target bounds, and Merkle root before caching orphan block keyed by Block.Hash [N-17, T3]
 func (p *PeerServer) AddOrphanBlock(b core.Block, peerIP string) bool {
 	// 1. Header PoW and Merkle validation before storing [N-17]
-	calcHash, err := b.CalculateHashWithError()
-	if err != nil || b.Hash == "" || b.Hash != calcHash {
-		p.AddBanScore(peerIP, 20)
-		return false
-	}
-
-	// Maximum allowable target ceiling (minimum network difficulty) [T3]
-	maxAllowedTarget := core.GetPowLimit()
-	if core.IsArmaxHashActive(b.Index) {
-		maxAllowedTarget = core.GetArmaxHashPowLimit()
-	}
-	if flag.Lookup("test.v") != nil && !core.GetActiveNetwork().IsMainnet {
-		if maxAllowedTarget.Cmp(core.DifficultyToTarget(1)) < 0 {
-			maxAllowedTarget = core.DifficultyToTarget(1)
-		}
-	}
-
-	target := b.GetTarget()
-	if target == nil || target.Sign() <= 0 || target.Cmp(maxAllowedTarget) > 0 || !core.HashMeetsTarget(calcHash, target) {
+	calcHash, ok := headerPoWHash(b)
+	if !ok {
 		p.AddBanScore(peerIP, 20)
 		return false
 	}
@@ -1738,8 +1730,10 @@ func (p *PeerServer) ProcessIncomingBlock(block core.Block, remoteIP string, rem
 				hashPrefix = hashPrefix[:16] + "..."
 			}
 			dt := block.Timestamp - latest.Timestamp
-			core.LogInfo(core.LogCategoryValidation, "Block #%d accepted from %s | hash: %s | txs: %d | diff: %d | dt: %ds",
-				block.Index, remoteAddr, hashPrefix, len(block.Transactions), block.Difficulty, dt)
+			// ahead > 0 means the header timestamp is later than this node's clock at receipt.
+			ahead := block.Timestamp - time.Now().Unix()
+			core.LogInfo(core.LogCategoryValidation, "Block #%d accepted from %s | hash: %s | txs: %d | diff: %d | dt: %ds | ahead: %ds",
+				block.Index, remoteAddr, hashPrefix, len(block.Transactions), block.Difficulty, dt, ahead)
 			go p.RelayBlock(block, remoteAddr)
 			p.processOrphans(calcHash)
 			p.processOrphanTxs()
@@ -2058,6 +2052,7 @@ func NewPeerServer(port string, bc *core.Blockchain, opts ...string) *PeerServer
 	}
 	ps.netIDVal.Store(&canonicalNetID)
 	ps.loadPeers()
+	ps.loadBans()
 
 	// Seed DHT routing table with known peers
 	for _, p := range ps.Peers {
@@ -2199,7 +2194,7 @@ func (p *PeerServer) AddBanScore(ip string, score int) {
 	}
 	p.banScores[ip] += score
 	if p.banScores[ip] >= 100 {
-		p.bannedIPs[ip] = time.Now().Add(24 * time.Hour)
+		p.banIPLocked(ip, time.Now().Add(24*time.Hour))
 		fmt.Printf("[P2P] [!] Banned peer IP %s for 24h (ban score: %d)\n", ip, p.banScores[ip])
 	}
 }
@@ -2281,7 +2276,7 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 				if p.bannedIPs == nil {
 					p.bannedIPs = make(map[string]time.Time)
 				}
-				p.bannedIPs[ip] = now.Add(24 * time.Hour)
+				p.banIPLocked(ip, now.Add(24*time.Hour))
 			}
 			return false
 		}
@@ -2348,7 +2343,7 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 			if p.bannedIPs == nil {
 				p.bannedIPs = make(map[string]time.Time)
 			}
-			p.bannedIPs[ip] = now.Add(24 * time.Hour)
+			p.banIPLocked(ip, now.Add(24*time.Hour))
 		}
 		return false
 	}
@@ -2687,6 +2682,7 @@ func (p *PeerServer) SetDataDir(dir string) error {
 
 	p.closeOutboundSessions(nil)
 	p.loadPeers()
+	p.loadBans()
 	return nil
 }
 
@@ -3445,82 +3441,94 @@ func (p *PeerServer) runCycle(cycle *serverCycle, listener net.Listener) {
 
 		atomic.AddInt32(&p.ActiveConns, 1)
 
-		// Opportunistic or strict TLS 1.3 Transport Upgrade [N-08, F1]
-		secureConn, isTLS := UpgradeToEncryptedTransportWithConfig(conn, p.tlsConfig)
-		if secureConn != nil && (!(requireTLS || p2pTOFU) || isTLS) {
-			debugLogf(
-				"[P2P][CONN] inbound established remote=%s tls=%t active=%d",
-				conn.RemoteAddr().String(),
-				isTLS,
-				atomic.LoadInt32(&p.ActiveConns),
-			)
-		}
-		if secureConn == nil || ((requireTLS || p2pTOFU) && !isTLS) {
-			if secureConn != nil {
-				_ = secureConn.Close()
-			} else {
-				_ = conn.Close()
-			}
-			cycle.connsMu.Lock()
-			delete(cycle.activeConns, conn)
-			cycle.connsMu.Unlock()
+		// Run the transport upgrade and session in their own goroutine so a silent client cannot
+		// stall the accept loop.
+		go p.serveInboundConn(cycle, conn, remoteSubnet, requireTLS, p2pTOFU)
+	}
+}
 
-			atomic.AddInt32(&p.ActiveConns, -1)
-			p.connLock.Lock()
-			p.subnetConns[remoteSubnet]--
-			if p.subnetConns[remoteSubnet] <= 0 {
-				delete(p.subnetConns, remoteSubnet)
-			}
-			p.connLock.Unlock()
-			continue
+// serveInboundConn upgrades an accepted connection to TLS (when offered) and runs the P2P session.
+func (p *PeerServer) serveInboundConn(cycle *serverCycle, conn net.Conn, remoteSubnet string, requireTLS, p2pTOFU bool) {
+	// Opportunistic or strict TLS 1.3 Transport Upgrade [N-08, F1]
+	// The first-byte peek has no timeout of its own, so bound it.
+	_ = conn.SetDeadline(time.Now().Add(InboundHandshakeTimeout))
+	secureConn, isTLS := UpgradeToEncryptedTransportWithConfig(conn, p.tlsConfig)
+	if secureConn != nil {
+		_ = conn.SetDeadline(time.Time{})
+	}
+	if secureConn != nil && (!(requireTLS || p2pTOFU) || isTLS) {
+		debugLogf(
+			"[P2P][CONN] inbound established remote=%s tls=%t active=%d",
+			conn.RemoteAddr().String(),
+			isTLS,
+			atomic.LoadInt32(&p.ActiveConns),
+		)
+	}
+	if secureConn == nil || ((requireTLS || p2pTOFU) && !isTLS) {
+		if secureConn != nil {
+			_ = secureConn.Close()
+		} else {
+			_ = conn.Close()
 		}
-
-		// Update activeConns from raw conn to secureConn
 		cycle.connsMu.Lock()
 		delete(cycle.activeConns, conn)
-		select {
-		case <-cycle.quitChan:
-			cycle.connsMu.Unlock()
-			_ = secureConn.Close()
-			atomic.AddInt32(&p.ActiveConns, -1)
-			p.connLock.Lock()
-			p.subnetConns[remoteSubnet]--
-			if p.subnetConns[remoteSubnet] <= 0 {
-				delete(p.subnetConns, remoteSubnet)
-			}
-			p.connLock.Unlock()
-			return
-		default:
-			cycle.activeConns[secureConn] = struct{}{}
-			cycle.connsMu.Unlock()
-		}
+		cycle.connsMu.Unlock()
 
-		done, admitted := p.registerOutboundWork()
-		if !admitted {
-			cycle.connsMu.Lock()
-			delete(cycle.activeConns, secureConn)
-			cycle.connsMu.Unlock()
-			_ = secureConn.Close()
-			atomic.AddInt32(&p.ActiveConns, -1)
-			p.connLock.Lock()
-			p.subnetConns[remoteSubnet]--
-			if p.subnetConns[remoteSubnet] <= 0 {
-				delete(p.subnetConns, remoteSubnet)
-			}
-			p.connLock.Unlock()
-			return
+		atomic.AddInt32(&p.ActiveConns, -1)
+		p.connLock.Lock()
+		p.subnetConns[remoteSubnet]--
+		if p.subnetConns[remoteSubnet] <= 0 {
+			delete(p.subnetConns, remoteSubnet)
 		}
-
-		go func(sc net.Conn, sn string, doneFunc func()) {
-			defer func() {
-				cycle.connsMu.Lock()
-				delete(cycle.activeConns, sc)
-				cycle.connsMu.Unlock()
-				doneFunc()
-			}()
-			p.HandleConnection(sc, sn)
-		}(secureConn, remoteSubnet, done)
+		p.connLock.Unlock()
+		return
 	}
+
+	// Update activeConns from raw conn to secureConn
+	cycle.connsMu.Lock()
+	delete(cycle.activeConns, conn)
+	select {
+	case <-cycle.quitChan:
+		cycle.connsMu.Unlock()
+		_ = secureConn.Close()
+		atomic.AddInt32(&p.ActiveConns, -1)
+		p.connLock.Lock()
+		p.subnetConns[remoteSubnet]--
+		if p.subnetConns[remoteSubnet] <= 0 {
+			delete(p.subnetConns, remoteSubnet)
+		}
+		p.connLock.Unlock()
+		return
+	default:
+		cycle.activeConns[secureConn] = struct{}{}
+		cycle.connsMu.Unlock()
+	}
+
+	done, admitted := p.registerOutboundWork()
+	if !admitted {
+		cycle.connsMu.Lock()
+		delete(cycle.activeConns, secureConn)
+		cycle.connsMu.Unlock()
+		_ = secureConn.Close()
+		atomic.AddInt32(&p.ActiveConns, -1)
+		p.connLock.Lock()
+		p.subnetConns[remoteSubnet]--
+		if p.subnetConns[remoteSubnet] <= 0 {
+			delete(p.subnetConns, remoteSubnet)
+		}
+		p.connLock.Unlock()
+		return
+	}
+
+	go func(sc net.Conn, sn string, doneFunc func()) {
+		defer func() {
+			cycle.connsMu.Lock()
+			delete(cycle.activeConns, sc)
+			cycle.connsMu.Unlock()
+			doneFunc()
+		}()
+		p.HandleConnection(sc, sn)
+	}(secureConn, remoteSubnet, done)
 }
 
 func (p *PeerServer) teardownCycle(cycle *serverCycle, listener net.Listener) {
@@ -3638,7 +3646,7 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 		return
 	}
 
-	readTimeout := SocketTimeoutDuration
+	readTimeout := InboundHandshakeTimeout
 
 	// Keep reading messages until client disconnects or times out [N-02]
 	for {
@@ -3700,6 +3708,9 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 					p.verifyAndAddInboundPeer(net.JoinHostPort(remoteIP, p.Port))
 				}
 			}
+		} else if readTimeout == InboundHandshakeTimeout {
+			// First valid message arrived in time but the peer is not (yet) authenticated: use the previous idle limit.
+			readTimeout = SocketTimeoutDuration
 		}
 
 		switch msg.Type {
@@ -3709,6 +3720,18 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 				continue
 			}
 			p.ProcessIncomingBlock(block, remoteIP, remoteAddr)
+
+		case "PUSH_BLOCKS":
+			var pr BlockRangeResponse
+			if len(msg.Payload) == 0 || json.Unmarshal(msg.Payload, &pr) != nil {
+				continue
+			}
+			if err := pr.expandBlocks(); err != nil {
+				core.LogWarn(core.LogCategoryNet, "Bad compressed PUSH_BLOCKS from peer %s: %v", remoteIP, err)
+				p.AddBanScore(remoteIP, 10)
+				continue
+			}
+			p.handlePushedBlocks(pr.Blocks, remoteIP, remoteAddr)
 
 		case "GET_HEIGHT":
 			p.Blockchain.Lock.RLock()
@@ -3771,10 +3794,16 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 				p.Blockchain.Lock.RUnlock()
 
 				// Send response containing the real upper bound (end) processed
+				resp := BlockRangeResponse{FromIndex: req.FromIndex, ToIndex: end, Blocks: blocks}
+				if acceptsDeflate(req.Accept) {
+					if z := compressBlocks(blocks); z != "" {
+						resp.Blocks, resp.Enc, resp.Z = nil, encDeflate, z
+					}
+				}
 				respData, err := json.Marshal(Message{
 					NetworkID: p.GetNetworkID(),
 					Type:      "BLOCK_RANGE_RESPONSE",
-					Payload:   BlockRangeResponse{FromIndex: req.FromIndex, ToIndex: end, Blocks: blocks},
+					Payload:   resp,
 				})
 				if err == nil {
 					_ = conn.SetWriteDeadline(time.Now().Add(SocketTimeoutDuration))
@@ -4485,6 +4514,9 @@ func (p *PeerServer) verifyOrRecordTOFULocked(peerAddr string, conn net.Conn) er
 	fp := extractCertPubkeyFingerprint(conn)
 	if fp == "" {
 		return fmt.Errorf("P2P TOFU fail-closed: peer %s connection lacks valid TLS certificate fingerprint", peerAddr)
+	}
+	if err := p.checkSeedPin(peerAddr, fp); err != nil {
+		return err
 	}
 
 	p.tofuLock.Lock()
@@ -5280,6 +5312,7 @@ func (p *PeerServer) SyncBestPeer() {
 		mu.Unlock()
 	}
 	var bestPeer string
+	pushTargets := make(map[string]int) // peers with less chainwork than us -> their height
 	bestChainwork := new(big.Int).Set(localChainwork)
 	bestHeight := localLatest.Index
 
@@ -5340,6 +5373,9 @@ func (p *PeerServer) SyncBestPeer() {
 				bestHeight = hr.Height
 				bestPeer = peerAddr
 			}
+			if peerCW.Sign() > 0 && localChainwork.Cmp(peerCW) > 0 && shouldPushTo(localLatest.Index, hr.Height, true) {
+				pushTargets[peerAddr] = hr.Height
+			}
 			mu.Unlock()
 		}(peer)
 	}
@@ -5358,6 +5394,12 @@ func (p *PeerServer) SyncBestPeer() {
 
 	if bestPeer != "" {
 		p.RequestChainSync(bestPeer)
+	} else {
+		// No peer is ahead of us. Offer our heavier chain to peers that lack it, since a peer behind
+		// NAT cannot be reached by their own catch-up dial.
+		for addr, h := range pushTargets {
+			go p.pushChainToPeer(addr, h)
+		}
 	}
 	go p.SyncMempool()
 }
@@ -5535,10 +5577,14 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 					to = hr.Height
 				}
 
+				rangeReq := BlockRangeRequest{FromIndex: from, ToIndex: to}
+				if p2pCompressionEnabled() {
+					rangeReq.Accept = []string{encDeflate}
+				}
 				rangeMsg := Message{
 					NetworkID: p.GetNetworkID(),
 					Type:      "GET_BLOCK_RANGE",
-					Payload:   BlockRangeRequest{FromIndex: from, ToIndex: to},
+					Payload:   rangeReq,
 				}
 
 				rangeResp, err := p.QueryPeer(syncPeer, rangeMsg, 15*time.Second)
@@ -5600,6 +5646,11 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 					fetchFailed = true
 					break
 				}
+				if err := br.expandBlocks(); err != nil {
+					core.LogWarn(core.LogCategorySync, "Bad compressed block range peer=%s from=%d to=%d err=%v", syncPeer, from, to, err)
+					fetchFailed = true
+					break
+				}
 				if len(br.Blocks) == 0 {
 					core.LogWarn(
 						core.LogCategorySync,
@@ -5610,21 +5661,35 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 					break
 				}
 
-				// Validate start index and contiguous linkage in received partial range
+				peerIP, _, errSplit := net.SplitHostPort(syncPeer)
+				if errSplit != nil || peerIP == "" {
+					peerIP = syncPeer
+				}
+
+				// Validate start index and contiguous linkage in received partial range [HIGH-09]
 				if br.Blocks[0].Index != from {
 					fmt.Printf("[P2P] [!] Received unexpected block range start index %d (expected %d) from %s\n", br.Blocks[0].Index, from, syncPeer)
+					p.AddBanScore(peerIP, 20)
+					_ = p.RecordPeerFailure(syncPeer)
 					fetchFailed = true
 					break
 				}
 				segmentContiguous := true
 				for i := 1; i < len(br.Blocks); i++ {
 					if br.Blocks[i].Index != br.Blocks[i-1].Index+1 {
-						fmt.Printf("[P2P] [!] Received non-contiguous block range segment from %s\n", syncPeer)
+						fmt.Printf("[P2P] [!] Received non-contiguous block range segment (height mismatch) from %s\n", syncPeer)
+						segmentContiguous = false
+						break
+					}
+					if br.Blocks[i].PrevHash != br.Blocks[i-1].Hash {
+						fmt.Printf("[P2P] [!] Received non-contiguous block range segment (hash mismatch) from %s\n", syncPeer)
 						segmentContiguous = false
 						break
 					}
 				}
 				if !segmentContiguous {
+					p.AddBanScore(peerIP, 50)
+					_ = p.RecordPeerFailure(syncPeer)
 					fetchFailed = true
 					break
 				}
@@ -5638,9 +5703,17 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 				break
 			}
 
-			// 4. Resolve fork or catch-up atomically using ResolveFork for this batch [N-14]
+			// 4. Resolve fork or catch-up atomically using ResolveFork for this batch [N-14, HIGH-09]
 			if err := p.Blockchain.ResolveFork(currentAncestor, batchBlocks); err != nil {
 				fmt.Printf("[P2P] ResolveFork with peer %s failed: %v\n", syncPeer, err)
+				_ = p.RecordPeerFailure(syncPeer)
+				if !strings.Contains(err.Error(), "chainwork") {
+					peerIP, _, errSplit := net.SplitHostPort(syncPeer)
+					if errSplit != nil || peerIP == "" {
+						peerIP = syncPeer
+					}
+					p.AddBanScore(peerIP, 20)
+				}
 				return
 			}
 

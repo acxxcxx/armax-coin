@@ -45,6 +45,21 @@ type BlockUndoRecord struct {
 	PrevAccs map[string]AccountState `json:"prev_accs"` // Accounts modified by this block, stored as they were before
 }
 
+// cloneBlockUndoRecord creates a deep copy of a BlockUndoRecord to ensure thread-safe usage [HIGH-01].
+func cloneBlockUndoRecord(u *BlockUndoRecord) *BlockUndoRecord {
+	if u == nil {
+		return nil
+	}
+	res := &BlockUndoRecord{
+		Height:   u.Height,
+		PrevAccs: make(map[string]AccountState, len(u.PrevAccs)),
+	}
+	for k, v := range u.PrevAccs {
+		res.PrevAccs[k] = cloneAccountState(v)
+	}
+	return res
+}
+
 func uint64ToBytes(v uint64) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, v)
@@ -215,7 +230,7 @@ func (bc *Blockchain) SaveBlockToStore(b *Block, undo *BlockUndoRecord) error {
 		if err != nil {
 			return err
 		}
-		if err := tx.Bucket(bktBlocks).Put(hBytes, bData); err != nil {
+		if err := tx.Bucket(bktBlocks).Put(hBytes, encodeRecord(bData)); err != nil {
 			return err
 		}
 
@@ -255,7 +270,7 @@ func (bc *Blockchain) SaveBlockToStore(b *Block, undo *BlockUndoRecord) error {
 			if err != nil {
 				return fmt.Errorf("marshal undo record for block #%d: %w", b.Index, err)
 			}
-			if err := tx.Bucket(bktUndo).Put(hBytes, undoData); err != nil {
+			if err := tx.Bucket(bktUndo).Put(hBytes, encodeRecord(undoData)); err != nil {
 				return fmt.Errorf("persist undo record for block #%d: %w", b.Index, err)
 			}
 		}
@@ -266,7 +281,7 @@ func (bc *Blockchain) SaveBlockToStore(b *Block, undo *BlockUndoRecord) error {
 			if err != nil {
 				return fmt.Errorf("marshal state snapshot for block #%d: %w", b.Index, err)
 			}
-			if err := tx.Bucket(bktSnapshots).Put(hBytes, sData); err != nil {
+			if err := tx.Bucket(bktSnapshots).Put(hBytes, encodeRecord(sData)); err != nil {
 				return fmt.Errorf("persist state snapshot for block #%d: %w", b.Index, err)
 			}
 		}
@@ -290,6 +305,7 @@ func (bc *Blockchain) SaveBlockToStore(b *Block, undo *BlockUndoRecord) error {
 	}
 
 	if undo != nil {
+		bc.undoLock.Lock()
 		if bc.undoHistory == nil {
 			bc.undoHistory = make(map[int]*BlockUndoRecord)
 		}
@@ -297,18 +313,23 @@ func (bc *Blockchain) SaveBlockToStore(b *Block, undo *BlockUndoRecord) error {
 		if b.Index > UndoRecordRetention {
 			delete(bc.undoHistory, b.Index-UndoRecordRetention)
 		}
+		bc.undoLock.Unlock()
 	}
 
 	return nil
 }
 
-// GetBlockUndoRecord retrieves an undo record from in-memory cache or persistent bbolt store [C-24]
+// GetBlockUndoRecord retrieves an undo record from in-memory cache or persistent bbolt store [C-24, HIGH-01]
 func (bc *Blockchain) GetBlockUndoRecord(height int) (*BlockUndoRecord, error) {
+	bc.undoLock.RLock()
 	if bc.undoHistory != nil {
 		if u, ok := bc.undoHistory[height]; ok && u != nil {
-			return u, nil
+			rec := cloneBlockUndoRecord(u)
+			bc.undoLock.RUnlock()
+			return rec, nil
 		}
 	}
+	bc.undoLock.RUnlock()
 	if bc.db != nil {
 		var undo *BlockUndoRecord
 		err := bc.db.View(func(tx *bolt.Tx) error {
@@ -321,7 +342,7 @@ func (bc *Blockchain) GetBlockUndoRecord(height int) (*BlockUndoRecord, error) {
 				return fmt.Errorf("undo record for block %d not found", height)
 			}
 			var u BlockUndoRecord
-			if err := json.Unmarshal(data, &u); err != nil {
+			if err := unmarshalRecord(data, &u); err != nil {
 				return err
 			}
 			undo = &u
@@ -372,7 +393,7 @@ func (bc *Blockchain) GetBlockByHash(hash string) (*Block, error) {
 				return nil
 			}
 			var b Block
-			if err := json.Unmarshal(bData, &b); err == nil {
+			if err := unmarshalRecord(bData, &b); err == nil {
 				found = &b
 			}
 			return nil
@@ -450,7 +471,7 @@ func (bc *Blockchain) GetTransactionByHash(txHash string) (*Transaction, int, in
 				return fmt.Errorf("block not found for height %d", h)
 			}
 			var b Block
-			if err := json.Unmarshal(bData, &b); err != nil {
+			if err := unmarshalRecord(bData, &b); err != nil {
 				return err
 			}
 			if int(txIdx) >= len(b.Transactions) {

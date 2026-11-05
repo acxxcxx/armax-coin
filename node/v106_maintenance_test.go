@@ -146,8 +146,8 @@ func TestHeartbeatDropsFailedSession(t *testing.T) {
 
 // TestVersionIdentifierV106 verifies canonical version constants [v1.0.6].
 func TestVersionIdentifierV106(t *testing.T) {
-	if core.Version != "1.0.6" {
-		t.Fatalf("expected core.Version to be 1.0.6, got %s", core.Version)
+	if core.Version != "1.0.7" {
+		t.Fatalf("expected core.Version to be 1.0.7, got %s", core.Version)
 	}
 }
 
@@ -766,5 +766,45 @@ func TestAuthLockoutPreservesActiveLockoutsUnderFlood(t *testing.T) {
 	// Target IP's active lockout MUST be preserved because non-locked failures were evicted first
 	if !globalAuthLockout.isLocked(targetIP) {
 		t.Fatal("active lockout on targetIP was prematurely evicted during flood!")
+	}
+}
+
+// TestAuthorizedMinerWithXMineKeyDoesNotTriggerLockout verifies that repeated mining requests
+// authenticated with X-Mine-Key do not trigger auth failures or IP lockout [HIGH-10].
+func TestAuthorizedMinerWithXMineKeyDoesNotTriggerLockout(t *testing.T) {
+	ResetRPCAuthForTesting()
+
+	cfg := &ServerConfig{
+		MineKey: "super-secret-mining-key-12345",
+	}
+
+	minerIP := "192.0.2.77"
+	remoteAddr := minerIP + ":54321"
+
+	// Simulate 10 consecutive mining requests using only X-Mine-Key (no basic auth header)
+	for i := 0; i < 10; i++ {
+		req, err := http.NewRequest(http.MethodGet, "/mine", nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.RemoteAddr = remoteAddr
+		req.Header.Set("X-Mine-Key", cfg.MineKey)
+
+		if !isAuthorizedMiner(req, cfg) {
+			t.Fatalf("request #%d should be authorized via X-Mine-Key", i+1)
+		}
+	}
+
+	// Verify that miner IP was never recorded as failed or locked out
+	if globalAuthLockout.isLocked(minerIP) {
+		t.Fatalf("miner IP %s was improperly locked out despite valid X-Mine-Key", minerIP)
+	}
+
+	globalAuthLockout.Lock()
+	rec, hasRecord := globalAuthLockout.fails[minerIP]
+	globalAuthLockout.Unlock()
+
+	if hasRecord && rec.count > 0 {
+		t.Fatalf("miner IP %s has %d failed attempts recorded, expected 0", minerIP, rec.count)
 	}
 }

@@ -1,6 +1,11 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"time"
+)
 
 const (
 	// LegacyMTPWindow is the median-time-past window used before the C1/C2 activation height.
@@ -8,6 +13,79 @@ const (
 	// ExtendedMTPWindow is the median-time-past window enforced from the C1/C2 activation height [C1].
 	ExtendedMTPWindow = 55
 )
+
+// FutureTimestampLimitSeconds is the maximum a block timestamp may lead the validator's clock
+// from FutureTimestampLimitActivationHeight (owner decision: 10 minutes).
+const FutureTimestampLimitSeconds = 10 * 60
+
+// LegacyFutureTimestampLimitSeconds is the original 2-hour allowance used below the activation height.
+const LegacyFutureTimestampLimitSeconds = 2 * 60 * 60
+
+// GetFutureTimestampLimitActivationHeight returns the first block height validated with the
+// tighter future-timestamp limit. A negative value means the limit is disabled.
+func GetFutureTimestampLimitActivationHeight() int64 {
+	netMu.RLock()
+	defer netMu.RUnlock()
+	if futureLimitHeightOverride != nil {
+		return *futureLimitHeightOverride
+	}
+	// Rehearsal hook: regtest only, so it can never alter testnet or mainnet consensus.
+	if ActiveNetwork.Name == "regtest" {
+		if v := os.Getenv("ARMX_FUTURE_LIMIT_HEIGHT"); v != "" {
+			if h, err := strconv.ParseInt(v, 10, 64); err == nil {
+				return h
+			}
+		}
+	}
+	return ActiveNetwork.FutureTimestampLimitActivationHeight
+}
+
+// SetFutureTimestampLimitActivationHeight overrides the activation height (intended for tests).
+func SetFutureTimestampLimitActivationHeight(height int64) {
+	netMu.Lock()
+	defer netMu.Unlock()
+	futureLimitHeightOverride = &height
+}
+
+// ResetFutureTimestampLimitActivationHeightOverride restores the network profile default.
+func ResetFutureTimestampLimitActivationHeightOverride() {
+	netMu.Lock()
+	defer netMu.Unlock()
+	futureLimitHeightOverride = nil
+}
+
+// minerNowUnix is the clock used to stamp mined blocks. The regtest-only env hook
+// ARMX_MINER_CLOCK_OFFSET_SECONDS skews it so rehearsals can produce forward-stamped blocks.
+func minerNowUnix() int64 {
+	now := time.Now().Unix()
+	if ActiveNetwork.Name == "regtest" {
+		if v := os.Getenv("ARMX_MINER_CLOCK_OFFSET_SECONDS"); v != "" {
+			if off, err := strconv.ParseInt(v, 10, 64); err == nil {
+				now += off
+			}
+		}
+	}
+	return now
+}
+
+// MaxFutureTimestampSeconds returns how far ahead of the local clock the block at blockIndex may be.
+func MaxFutureTimestampSeconds(blockIndex int) int64 {
+	act := GetFutureTimestampLimitActivationHeight()
+	if act >= 0 && blockIndex > 0 && int64(blockIndex) >= act {
+		return FutureTimestampLimitSeconds
+	}
+	return LegacyFutureTimestampLimitSeconds
+}
+
+// validateFutureTimestamp rejects blocks whose timestamp is too far ahead of the wall clock.
+// The check is node-local (not replayable), so callers skip it for historical replay.
+func validateFutureTimestamp(b *Block) error {
+	maxFuture := time.Now().Unix() + MaxFutureTimestampSeconds(b.Index)
+	if b.Timestamp > maxFuture {
+		return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFuture)
+	}
+	return nil
+}
 
 // GetTimestampRulesActivationHeight returns the first block height validated with the
 // C1/C2 timestamp rules. A negative value means the rules are disabled.

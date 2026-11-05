@@ -59,7 +59,7 @@ This checklist defines the formal progression gates for the **Sequential Launch 
 
 ---
 
-## Phase 4: Mainnet Unlock (Gated by Owner Consent)
+## Phase 4: Mainnet Unlock & Production Protocol Activation Gates
 
 - [ ] Fill all `<ISI>` placeholders in [`ANNOUNCEMENT_MAINNET.template.md`](../ANNOUNCEMENT_MAINNET.template.md).
 - [ ] Set `core.MainnetLaunched = true` in a dedicated single consensus unlock commit.

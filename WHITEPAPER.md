@@ -1,6 +1,6 @@
 # Armaxcoin (ARMX) Technical Whitepaper
 
-**Version:** 1.0.6 (Active Testnet Release)
+**Version:** 1.0.7 (Active Testnet Release)
 **Ticker:** `ARMX` (mainnet; testnet GUI and explorer display `tARMX`)
 **Network Profiles:** `ARMX-TESTNET-1` (active default) and `ARMX-MAINNET-1` (locked; not launched)
 **Consensus:** Proof-of-Work (PoW) with LWMA-1 ($N=60$)
@@ -159,6 +159,12 @@ To accommodate consumer hardware, commodity desktop CPUs, and cache-constrained 
 - **Validation Performance:** The hash-function benchmark does not measure full block validation, which also includes transaction and state checks.
 - **Hardware Profile:** v2 does not use an Argon2 memory-hard stage. Mining speed and thermal behavior depend on the hardware and workload; ASIC/FPGA/GPU resistance has not been evaluated.
 - **Zero Historical Disruption:** Node validation dynamically selects the active hashing algorithm based on block height, ensuring 100% historical chain integrity from genesis onward.
+
+### 4.7 Timestamp Consensus Rules & Future Limits (C1, C2, C6)
+To maintain accurate difficulty retargeting and prevent artificial difficulty manipulation via timewarp attacks, Armaxcoin enforces progressive timestamp validation rules across historical testnet milestones:
+1. **Median Time Past 11 (Blocks $0 \le H < 8000$):** Block timestamps must exceed the median of the previous 11 blocks ($\text{Timestamp} > \text{MTP-11}$).
+2. **Median Time Past 55 & Monotonicity (Blocks $H \ge 8000$):** Under hard fork proposals C1 and C2, block timestamps must strictly exceed the median of the previous 55 blocks ($\text{Timestamp} > \text{MTP-55}$) and must not be earlier than the immediate parent block ($\text{Timestamp}_H \ge \text{Timestamp}_{H-1}$).
+3. **Scheduled Future-Timestamp Tightening (Blocks $H \ge 20000$):** Under proposal C6 (v1.0.7), the maximum allowed forward drift against the validating node's local wall clock is narrowed from **7,200 seconds (2 hours)** to **600 seconds (10 minutes)**. Historical re-indexing skips the wall-clock check, ensuring stored blocks remain permanently valid.
 
 ---
 

@@ -49,8 +49,11 @@ type NetworkProfile struct {
 	ArmaxHashV2ActivationHeight int64    `json:"armaxhash_v2_activation_height"` // Block height where PoW switches to ArmaxHash v2 Stream-Fast (-1 = disabled)
 	// TimestampRulesActivationHeight is the first block height validated with the C1/C2 timestamp
 	// rules (MTP-55 and non-decreasing timestamps). A negative value disables the rules.
-	TimestampRulesActivationHeight int64          `json:"timestamp_rules_activation_height"`
-	Checkpoints                    map[int]string `json:"checkpoints,omitempty"`
+	TimestampRulesActivationHeight int64 `json:"timestamp_rules_activation_height"`
+	// FutureTimestampLimitActivationHeight is the first block height whose timestamp may be at most
+	// FutureTimestampLimitSeconds ahead of the validator's clock (instead of 2 hours). Negative disables it.
+	FutureTimestampLimitActivationHeight int64          `json:"future_timestamp_limit_activation_height"`
+	Checkpoints                          map[int]string `json:"checkpoints,omitempty"`
 }
 
 var (
@@ -71,6 +74,8 @@ var (
 		ArmaxHashV2ActivationHeight: -1,
 		// Mainnet has not launched, so the C1/C2 timestamp rules apply from the first block.
 		TimestampRulesActivationHeight: 0,
+		// Mainnet stays on the 2-hour rule until the limit is reviewed for launch.
+		FutureTimestampLimitActivationHeight: -1,
 		Checkpoints: map[int]string{
 			0: GenesisHash,
 		},
@@ -97,6 +102,8 @@ var (
 		ArmaxHashV2ActivationHeight: 2500, // Hard fork activation at block #2500 on testnet
 		// Hard fork: C1/C2 timestamp rules (MTP-55, non-decreasing timestamps) from block #8000 on testnet.
 		TimestampRulesActivationHeight: 8000,
+		// Hard fork: 10-minute future-timestamp limit from block #20000 on testnet.
+		FutureTimestampLimitActivationHeight: 20000,
 		Checkpoints: map[int]string{
 			0: TestnetGenesisHash,
 		},
@@ -121,7 +128,8 @@ var (
 		ArmaxHashV2ActivationHeight: -1,
 		DefaultSeeds:                []string{},
 
-		TimestampRulesActivationHeight: -1,
+		TimestampRulesActivationHeight:       -1,
+		FutureTimestampLimitActivationHeight: -1,
 	}
 
 	// RegtestProfile defines private local regression testing profile [L4-8]
@@ -140,7 +148,8 @@ var (
 		ArmaxHashV2ActivationHeight: -1,
 		DefaultSeeds:                []string{},
 
-		TimestampRulesActivationHeight: -1,
+		TimestampRulesActivationHeight:       -1,
+		FutureTimestampLimitActivationHeight: -1,
 	}
 )
 
@@ -158,6 +167,7 @@ var (
 	armaxHashActivationHeightOverride   *int64 // nil means use network profile or env
 	armaxHashV2ActivationHeightOverride *int64 // nil means use network profile or env
 	timestampRulesHeightOverride        *int64 // nil means use network profile
+	futureLimitHeightOverride           *int64 // nil means use network profile
 	testGlobalNetworkLock               sync.Mutex
 
 	localMainnetMu      sync.RWMutex
@@ -238,9 +248,12 @@ func GetArmaxHashActivationHeight() int64 {
 	if armaxHashActivationHeightOverride != nil {
 		return *armaxHashActivationHeightOverride
 	}
-	if val := os.Getenv("ARMX_ARMAXHASH_HEIGHT"); val != "" {
-		if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
-			return h
+	// Rehearsal hook: strictly regtest only to protect production consensus [HIGH-02]
+	if ActiveNetwork.Name == "regtest" {
+		if val := os.Getenv("ARMX_ARMAXHASH_HEIGHT"); val != "" {
+			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+				return h
+			}
 		}
 	}
 	return ActiveNetwork.ArmaxHashActivationHeight
@@ -283,9 +296,12 @@ func GetArmaxHashV2ActivationHeight() int64 {
 	if armaxHashV2ActivationHeightOverride != nil {
 		return *armaxHashV2ActivationHeightOverride
 	}
-	if val := os.Getenv("ARMX_ARMAXHASH_V2_HEIGHT"); val != "" {
-		if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
-			return h
+	// Rehearsal hook: strictly regtest only to protect production consensus [HIGH-02]
+	if ActiveNetwork.Name == "regtest" {
+		if val := os.Getenv("ARMX_ARMAXHASH_V2_HEIGHT"); val != "" {
+			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+				return h
+			}
 		}
 	}
 	return ActiveNetwork.ArmaxHashV2ActivationHeight

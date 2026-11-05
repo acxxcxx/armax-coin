@@ -49,6 +49,7 @@ type Blockchain struct {
 	cachedTotalTx    int64                    `json:"-"` // [N-21] O(1) cached cumulative transaction count
 	cachedWork       *big.Int                 `json:"-"`
 	db               *bolt.DB                 `json:"-"`
+	undoLock         sync.RWMutex             `json:"-"` // protects undoHistory [HIGH-01]
 	undoHistory      map[int]*BlockUndoRecord `json:"-"`
 	storeFailed      bool                     `json:"-"`
 	pendingLock      sync.RWMutex             `json:"-"`
@@ -274,7 +275,11 @@ func (bc *Blockchain) RebuildState() error {
 		if err := bc.State.VerifyAndApplyBlock(b, reward, mat); err != nil {
 			return fmt.Errorf("block #%d state failure: %w", b.Index, err)
 		}
-		runningSupply += reward
+		minted := BlockMintedSubsidy(b, reward)
+		runningSupply += minted
+		if runningSupply > MaxSupply {
+			runningSupply = MaxSupply
+		}
 		totalTxs += int64(len(b.Transactions))
 	}
 	bc.cachedSupply = runningSupply
@@ -331,6 +336,27 @@ func CalculateCirculatingSupply(chain []Block) int64 {
 		}
 	}
 	return total
+}
+
+// BlockMintedSubsidy returns the actual net new subsidy minted by the block's coinbase transaction,
+// deducting any transaction fees recycled from senders [HIGH-04].
+func BlockMintedSubsidy(b *Block, maxAllowedReward int64) int64 {
+	if b == nil || len(b.Transactions) == 0 {
+		return 0
+	}
+	var fees int64 = 0
+	for _, tx := range b.Transactions[1:] {
+		fees += tx.Fee
+	}
+	coinbaseAmount := b.Transactions[0].Amount
+	if coinbaseAmount <= fees {
+		return 0
+	}
+	minted := coinbaseAmount - fees
+	if maxAllowedReward >= 0 && minted > maxAllowedReward {
+		return maxAllowedReward
+	}
+	return minted
 }
 
 // GetLatestBlock returns the most recent block in the chain thread-safely
@@ -817,8 +843,12 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 
 	// [C-22, C1, C2] Miner sets timestamp = max(now, MinValidTimestamp) to ensure a valid block
 	minTs := MinValidTimestamp(bc.Chain, &prevBlock, prevBlock.Index+1)
-	now := time.Now().Unix()
+	now := minerNowUnix()
 	if now < minTs {
+		if minTs-now >= 10 {
+			fmt.Printf("[Mining] Block #%d timestamp forced to minimum valid %d (local clock %d is %ds behind); check NTP\n",
+				newBlock.Index, minTs, now, minTs-now)
+		}
 		now = minTs
 	}
 	newBlock.Timestamp = now
@@ -988,7 +1018,7 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 						recordError(fmt.Errorf("stale block: chain tip updated during mining"))
 						return
 					}
-					curTime := time.Now().Unix()
+					curTime := minerNowUnix()
 					if curTime > b.Timestamp {
 						b.Timestamp = curTime
 						prefix = fmt.Sprintf("%d:%d:%s:%s:%s:", b.Index, b.Timestamp, b.PrevHash, b.MerkleRoot, b.Miner)
@@ -1135,7 +1165,7 @@ func (bc *Blockchain) IsChainValid() bool {
 		if err := simState.VerifyAndApplyBlock(&currentBlock, reward, mat); err != nil {
 			return false
 		}
-		runningSupply += reward
+		runningSupply += BlockMintedSubsidy(&currentBlock, reward)
 	}
 	return true
 }

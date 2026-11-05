@@ -114,15 +114,8 @@ func TestSoak_FiveNodesChaos(t *testing.T) {
 	// Step 3: Phase 1 - Mine first 500 blocks with transactions on Node 1
 	t.Log("[Phase 1] Mining blocks 1..500 on Node 1 with ML-DSA-65 transactions...")
 	for h := 1; h <= 500; h++ {
-		var txs []core.Transaction
-		cb := core.Transaction{
-			Sender:    "SYSTEM",
-			Recipient: minerAddr,
-			Amount:    core.InitialReward,
-			Nonce:     int64(h),
-			Signature: "REWARD_SIG",
-		}
-		txs = append(txs, cb)
+		cbAmount := core.InitialReward
+		var userTx *core.Transaction
 
 		// Inject user transaction every 10 blocks
 		if h%10 == 0 {
@@ -138,7 +131,21 @@ func TestSoak_FiveNodesChaos(t *testing.T) {
 				t.Fatalf("Sign tx failed: %v", err)
 			}
 			userNonce++
-			txs = append(txs, tx)
+			userTx = &tx
+			cbAmount += tx.Fee
+		}
+
+		cb := core.Transaction{
+			Sender:    "SYSTEM",
+			Recipient: minerAddr,
+			Amount:    cbAmount,
+			Nonce:     int64(h),
+			Signature: "REWARD_SIG",
+		}
+		var txs []core.Transaction
+		txs = append(txs, cb)
+		if userTx != nil {
+			txs = append(txs, *userTx)
 		}
 
 		prev := nodes[0].bc.GetLatestBlock()

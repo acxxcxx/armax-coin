@@ -318,43 +318,78 @@ sudo systemctl start armcoind-testnet
 
 ---
 
-## 9. Node Upgrade and Rollback Runbook
+## 9. Node Upgrade and Rollback Runbook (v1.0.7)
 
-### Seamless Upgrade Procedure
+> [!IMPORTANT]
+> **SCHEDULED CONSENSUS FORK (TESTNET BLOCK 20,000):**
+> Armaxcoin v1.0.7 activates proposal C6 at **Block 20,000**:
+> - Block timestamps may be at most **600 seconds (10 minutes)** ahead of the validator's local clock (narrowed from 2 hours).
+> - All node operators and miners **MUST** upgrade to v1.0.7 before height 20,000 and ensure server clocks are synchronized with NTP.
+> - Un-upgraded v1.0.6 nodes may accept forward-stamped blocks rejected by v1.0.7, causing an unrecoverable chain split.
+
+> [!CAUTION]
+> **STORAGE COMPATIBILITY & ROLLBACK WARNING:**
+> BoltDB record compression is **disabled by default**. Compressed records created by v1.0.7 **cannot be read by v1.0.6**.
+> If record compression was enabled (`-store-compression`), you **MUST** convert the database back to plain format before starting a v1.0.6 binary:
+> ```bash
+> ./armcoind -network testnet -datadir /var/armax -store-rewrite plain
+> ```
+> Always back up `blockchain.db` before executing store conversion.
+
+### Seamless Upgrade Procedure to v1.0.7
 1. Verify the current tip height and peer connectivity:
    ```bash
-   curl -s http://127.0.0.1:19333/status
+   curl -s http://127.0.0.1:19333/status | jq .
    ```
-2. Stop the running service:
+2. Ensure system clock is NTP-synchronized:
+   ```bash
+   # Linux
+   sudo timedatectl set-ntp true
+   timedatectl status
+   # Windows
+   w32tm /resync
+   ```
+3. Gracefully stop the running service:
    ```bash
    sudo systemctl stop armcoind-testnet
    ```
-3. Backup the current working binary:
+4. Back up the database and working binary:
    ```bash
-   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.bak
+   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.v106.bak
+   sudo tar -czvf /var/backups/armax_db_pre_v107_$(date +%F).tar.gz -C /var/armax testnet/blockchain.db
    ```
-4. Install the new binary:
+5. Install the new v1.0.7 binary:
    ```bash
    sudo cp armcoind /usr/local/bin/armcoind
    sudo chmod 755 /usr/local/bin/armcoind
    ```
-5. Start service and verify log output:
+6. Start service and verify log output:
    ```bash
    sudo systemctl start armcoind-testnet
    sudo journalctl -u armcoind-testnet -n 50 --no-pager
    ```
-6. Run smoke test script:
+7. Verify running software version is `"1.0.7"`:
    ```bash
-   ./scripts/testnet-smoke.sh
+   curl -s http://127.0.0.1:19333/status | jq .version
+   # Expected output: "1.0.7"
    ```
 
-### Emergency Rollback Procedure
-If the newly deployed version encounters an unrecoverable consensus failure or DB schema incompatibility:
-```bash
-sudo systemctl stop armcoind-testnet
-sudo cp /usr/local/bin/armcoind.bak /usr/local/bin/armcoind
-sudo systemctl start armcoind-testnet
-```
+### Emergency Rollback Procedure (to v1.0.6)
+If unrecoverable issues occur prior to block 20,000:
+1. Stop the daemon:
+   ```bash
+   sudo systemctl stop armcoind-testnet
+   ```
+2. **If compression was enabled in v1.0.7**, convert the database to uncompressed plain format first:
+   ```bash
+   armcoind -network testnet -datadir /var/armax -store-rewrite plain
+   ```
+3. Restore the v1.0.6 binary:
+   ```bash
+   sudo cp /usr/local/bin/armcoind.v106.bak /usr/local/bin/armcoind
+   sudo systemctl start armcoind-testnet
+   ```
+4. Note: After block 20,000, rolling back to v1.0.6 carries a high risk of following a split branch if any miner produces a forward-stamped block. Upgrade to v1.0.7 is strongly recommended.
 
 ---
 

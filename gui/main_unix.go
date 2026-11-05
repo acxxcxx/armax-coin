@@ -5,7 +5,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -230,12 +233,16 @@ func main() {
 	addr := fmt.Sprintf("127.0.0.1:%d", listenPort)
 	guiURL := fmt.Sprintf("http://127.0.0.1:%d", listenPort)
 
+	sessionToken := initSessionToken()
+	handler := secureGUIHandler(serverMux, sessionToken)
+
 	fmt.Println("=================================================================")
 	fmt.Printf("   ARMAXCOIN CORE - DESKTOP GUI WALLET (v%s - %s)\n", core.Version, strings.ToUpper(runtime.GOOS))
 	fmt.Println("=================================================================")
 	fmt.Printf("[*] Active Address: %s\n", activeAddress)
 	fmt.Printf("[*] Connected Node RPC: %s\n", rpcURL)
 	fmt.Printf("[*] GUI Wallet Interface: %s\n", guiURL)
+	fmt.Printf("[*] Session Security Token: %s\n", sessionToken)
 	fmt.Println("=================================================================")
 
 	if err := verifyNodeNetwork(rpcURL, activeNet.NetworkID); err != nil {
@@ -259,10 +266,56 @@ func main() {
 		}()
 	}
 
-	server := &http.Server{Handler: serverMux}
+	server := &http.Server{Handler: handler}
 	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "GUI Server Error: %v\n", err)
 	}
+}
+
+var (
+	guiSessionToken string
+	guiTokenOnce    sync.Once
+)
+
+func initSessionToken() string {
+	guiTokenOnce.Do(func() {
+		tokenBytes := make([]byte, 32)
+		if _, err := rand.Read(tokenBytes); err != nil {
+			panic(fmt.Sprintf("crypto/rand initialization failure: %v", err))
+		}
+		guiSessionToken = hex.EncodeToString(tokenBytes)
+	})
+	return guiSessionToken
+}
+
+func secureGUIHandler(mux *http.ServeMux, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Mitigate DNS Rebinding: Restrict Host Header
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		if host != "127.0.0.1" && host != "localhost" && host != "::1" && host != "" {
+			http.Error(w, "Forbidden: Invalid Host header", http.StatusForbidden)
+			return
+		}
+
+		// 2. Allow root web UI page to load, but guard all API endpoints
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			reqToken := r.Header.Get("X-Armx-GUI-Token")
+			if reqToken == "" {
+				if cookie, err := r.Cookie("armax_gui_token"); err == nil {
+					reqToken = cookie.Value
+				}
+			}
+			if token != "" && (reqToken == "" || subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1) {
+				http.Error(w, `{"error":"Unauthorized: Invalid or missing GUI session token"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func findWalletPath() string {
@@ -715,9 +768,7 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 
 	// Load signing wallet
 	var signingWallet *wallet.Wallet
-	if activeWallet != nil && activeWallet.PrivateKey != nil {
-		signingWallet = activeWallet
-	} else {
+	if req.Passphrase != "" {
 		loadedW, err := wallet.DecryptAndLoadKeystore(req.Passphrase, findWalletPath())
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Keystore passphrase decryption error: %v", err), http.StatusUnauthorized)
@@ -725,6 +776,11 @@ func handleSend(w http.ResponseWriter, r *http.Request) {
 		}
 		defer loadedW.Zeroize()
 		signingWallet = loadedW
+	} else if activeWallet != nil && activeWallet.PrivateKey != nil {
+		signingWallet = activeWallet
+	} else {
+		http.Error(w, "Wallet passphrase is required to sign transactions", http.StatusUnauthorized)
+		return
 	}
 
 	autoFee := wallet.EstimateMinMempoolFee(signingWallet, to, amtArmoids, 0)
@@ -1502,7 +1558,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
 </main>
 
 <footer class="statusbar">
-  <div>Armaxcoin Core Desktop Web GUI v1.0.6 | Post-Quantum ML-DSA-65</div>
+  <div>Armaxcoin Core Desktop Web GUI v1.0.7 | Post-Quantum ML-DSA-65</div>
   <div id="lblStatusbarSummary">Node: Connected | Ready</div>
 </footer>
 

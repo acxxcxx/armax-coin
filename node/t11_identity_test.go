@@ -2,13 +2,14 @@ package node
 
 import (
 	"crypto/sha256"
+	"crypto/x509"
 	"os"
 	"testing"
 )
 
 // TestT11_InitNodeIdentityPersistentAcrossRestarts verifies that node TLS identity
 // is not generated in package init(), is persisted to disk with 0600 permissions,
-// and preserves the exact same fingerprint across node restarts [T11].
+// and preserves the exact same fingerprint across node restarts [T11, CRIT-02].
 func TestT11_InitNodeIdentityPersistentAcrossRestarts(t *testing.T) {
 	tempDir := t.TempDir()
 
@@ -32,7 +33,11 @@ func TestT11_InitNodeIdentityPersistentAcrossRestarts(t *testing.T) {
 	}
 
 	rawCert := tlsConf1.Certificates[0].Certificate[0]
-	expectedFp := sha256.Sum256(rawCert)
+	parsedCert, err := x509.ParseCertificate(rawCert)
+	if err != nil {
+		t.Fatalf("failed to parse certificate: %v", err)
+	}
+	expectedFp := sha256.Sum256(parsedCert.RawSubjectPublicKeyInfo)
 	if fp1 != expectedFp {
 		t.Fatalf("Fingerprint mismatch: got %x, expected %x", fp1, expectedFp)
 	}

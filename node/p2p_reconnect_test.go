@@ -58,7 +58,16 @@ func startTestPeerServer(bc *core.Blockchain, dir, port string) *PeerServer {
 	ps.RequireTLS = false
 	RegisterPeerServer(ps)
 	go ps.StartServer()
-	time.Sleep(300 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		ps.lifecycleLock.Lock()
+		started := ps.serverStarted
+		ps.lifecycleLock.Unlock()
+		if started {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	return ps
 }
 

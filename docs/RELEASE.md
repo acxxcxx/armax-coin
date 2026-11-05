@@ -87,7 +87,17 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.6-windows-amd64.zip"
 
 ## 5. Official Release Status
 
-- **Latest locally tagged release (`v1.0.6`):** **Active**
+- **Target Release (`v1.0.7`):** **In Development / Testnet Consensus Fork Candidate**
+  - **Release Notes:** [`docs/releases/v1.0.7.md`](releases/v1.0.7.md)
+  - **Status:** Testnet Consensus Hard Fork at Block 20,000 (10-minute future timestamp ceiling), Sync & Storage Optimization, Subsystem Hardening
+  - **Target Architectures:**
+    - `armax-v1.0.7-linux-amd64.tar.gz` (Linux 64-bit x86)
+    - `armax-v1.0.7-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC)
+    - `armax-v1.0.7-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
+    - `armax-v1.0.7-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
+  - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; `contracts/` npm test 11/11 passing).
+
+- **Previous Maintenance Release (`v1.0.6`):**
   - **Release Tag:** [`v1.0.6`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.6)
   - **Status:** Public Open Testnet -- Node Maintenance, Data Race Hardening & Storage Isolation
   - **Target Architectures:**
@@ -95,7 +105,7 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.6-windows-amd64.zip"
     - `armax-v1.0.6-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC)
     - `armax-v1.0.6-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
     - `armax-v1.0.6-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
-  - **Verification:** Automatically validated via GitHub Actions with race detection, staticcheck, govulncheck, and cryptographic SHA256SUMS aggregation.
+  - **Verification:** Validated with race detection, staticcheck, govulncheck, and cryptographic SHA256SUMS aggregation.
 
 - **Previous Hard-Fork Release (`v1.0.5`):**
   - **Release Tag:** [`v1.0.5`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.5)

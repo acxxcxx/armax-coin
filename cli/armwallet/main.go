@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/acxxcxx/armax-coin/core"
 	"github.com/acxxcxx/armax-coin/wallet"
+	"golang.org/x/term"
 )
 
 const (
@@ -26,7 +28,8 @@ func main() {
 	localMainnetPtr := flag.Bool("local-mainnet", false, "Enable strictly local, isolated Mainnet mode (loopback only, no public seeds) [L4-1]")
 	createPtr := flag.Bool("create", false, "Create a new quantum-safe wallet with 24-word recovery mnemonic")
 	newAddressPtr := flag.Bool("newaddress", false, "Create a new quantum-safe address/wallet (deprecated alias for -create)")
-	restorePtr := flag.String("restore", "", "Restore wallet from BIP-39 mnemonic phrase (24 or 12 words)")
+	restorePtr := flag.String("restore", "", "Restore wallet from BIP-39 mnemonic phrase (deprecated via flag: leaks to process table)")
+	restoreInteractivePtr := flag.Bool("restore-interactive", false, "Restore wallet interactively with masked input prompt [HIGH-06]")
 	balancePtr := flag.String("balance", "", "Check balance of a specific wallet address")
 	getBalancePtr := flag.String("getbalance", "", "Check balance of a specific wallet address (deprecated alias for -balance)")
 	addressPtr := flag.Bool("address", false, "Display address from encrypted keystore file")
@@ -95,9 +98,13 @@ func main() {
 	}
 
 	fileExplicit := false
+	restoreExplicit := false
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "file" || f.Name == "wallet" {
 			fileExplicit = true
+		}
+		if f.Name == "restore" {
+			restoreExplicit = true
 		}
 	})
 
@@ -193,8 +200,14 @@ func main() {
 
 	if *createPtr || *newAddressPtr {
 		createWallet(targetWalletPath, *forcePtr)
-	} else if *restorePtr != "" {
-		restoreWallet(*restorePtr, targetWalletPath, *forcePtr)
+	} else if *restoreInteractivePtr || restoreExplicit || *restorePtr != "" {
+		phrase := *restorePtr
+		if phrase != "" {
+			fmt.Fprintln(os.Stderr, "[!] WARNING: Passing mnemonic phrase via -restore flag leaks secret keys to the process table. Use -restore-interactive instead.")
+		} else {
+			phrase = promptRecoveryPhrase()
+		}
+		restoreWallet(phrase, targetWalletPath, *forcePtr)
 	} else if *balancePtr != "" || *getBalancePtr != "" {
 		addr := *balancePtr
 		if addr == "" {
@@ -219,12 +232,36 @@ func main() {
 	}
 }
 
+func promptRecoveryPhrase() string {
+	fmt.Print("Enter your 12- or 24-word recovery phrase: ")
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		bytePhrase, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Println()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[-] Failed to read recovery phrase: %v\n", err)
+			os.Exit(1)
+		}
+		phrase := strings.TrimSpace(string(bytePhrase))
+		clear(bytePhrase)
+		return phrase
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		fmt.Fprintf(os.Stderr, "[-] Failed to read recovery phrase from stdin: %v\n", err)
+		os.Exit(1)
+	}
+	return strings.TrimSpace(line)
+}
+
 func printUsage() {
 	fmt.Fprint(os.Stderr, `armwallet - create, inspect and back up wallets
 
 Usage:
   armwallet -create [-wallet <FILE>]                     create a wallet with a 24-word mnemonic
-  armwallet -restore "WORDS" [-wallet <FILE>]            restore a wallet from a mnemonic
+  armwallet -restore-interactive [-wallet <FILE>]        restore a wallet interactively (masked prompt)
+  armwallet -restore "WORDS" [-wallet <FILE>]            restore a wallet from a mnemonic (deprecated: leaks via ps)
   armwallet -address | -listaddresses [-wallet <FILE>]   show addresses in the keystore
   armwallet -walletcheck [-wallet <FILE>]                verify keystore decryption and integrity
   armwallet -backup <DEST_FILE> [-wallet <FILE>]         back up the keystore safely

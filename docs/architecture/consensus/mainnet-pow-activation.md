@@ -4,7 +4,7 @@
 
 ## Scope and compatibility boundary
 
-The proposal preserves the existing Mainnet genesis block and activates ArmaxHash v2 for block 1. It is conditional on owner approval of the activation height, bootstrap target, and the target-calculation code changes described below. No activation parameter should be set from this document alone.
+The proposal preserves the existing Mainnet genesis block and activates ArmaxHash v2 for block 1. It is conditional on formal protocol specification ratification of the activation height, bootstrap target, and the target-calculation code changes described below. No activation parameter should be set from this document alone.
 
 Relevant implementation is in `core/network.go`, `core/genesis.go`, `core/block.go`, `core/target.go`, and `core/consensus.go`. Mainnet currently has both ArmaxHash activation heights set to `-1`. Testnet has v1 at height 520 and v2 at height 2500; its parameters and historical validation must remain unchanged.
 

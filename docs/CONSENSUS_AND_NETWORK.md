@@ -149,6 +149,8 @@ It is critical to distinguish between two distinct concepts:
 2. **Proposed Internal Mining of 720 Blocks:** A launch tactic discussed in this document, not an implemented consensus rule or confirmed project decision.
 
 > **Timestamp rules (v1.0.5):** Below the activation height (testnet 8,000) a block timestamp must exceed MTP-11. From the activation height (mainnet: from genesis, activation height 0) it must exceed MTP-55 and must not be earlier than its parent. The 2-hour future limit applies throughout and is skipped when replaying stored blocks. See `docs/security/consensus-proposals.md`.
+>
+> **Future-timestamp limit (v1.0.7, planned):** From testnet block 20,000 the future limit tightens from 2 hours to 10 minutes (`FutureTimestampLimitActivationHeight`; -1 on mainnet, soak and regtest). The check is node-local wall-clock based, so nodes and miners need NTP; it is skipped for historical replay. See proposal C6 in `docs/security/consensus-proposals.md`.
 
 ### 6.3 Technical Implications & Security Analysis
 
@@ -174,7 +176,7 @@ Instead of private mining, the following transparent launch procedure is strongl
 2. **Open Public Bootstrap:** Deploy seed nodes with mainnet profile locked until the genesis moment.
 3. **Tokenomics Preservation:** Mainnet remains locked. Current source retains the 126,000,000 ARMX cap, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target time, and existing genesis. No special early reward, project treasury genesis output, or consensus mining destination is introduced for treasury accumulation. The genesis block has a 60 ARMX coinbase output to the canonical zero-payload address; source evidence does not establish off-chain arrangements.
 4. **Mining-Funded Treasury Objective:** After launch, project-operated miners may attempt to accumulate up to 1,000,000 ARMX using ordinary valid blocks and the same consensus rules as all miners. This is an operational target only; it is not guaranteed, is not reserved by consensus, and actual holdings depend on mining share and reward maturity. See [`architecture/tokenomics/mining-accumulation-plan.md`](architecture/tokenomics/mining-accumulation-plan.md).
-5. **Bridge/Liquidity Boundary:** Mining holdings are not automatically bridge backing or DEX liquidity. Do not mint wARMX without verified native backing under an approved custody and proof-of-lock model. Any BSC-first bridge or DEX allocation remains blocked pending separate owner approval and independent security review.
+5. **Bridge/Liquidity Boundary:** Mining holdings are not automatically bridge backing or DEX liquidity. Do not mint wARMX without verified native backing under an approved custody and proof-of-lock model. Any BSC-first bridge or DEX allocation remains blocked pending protocol governance ratification and independent security auditing.
 6. **Public Mining from Height 1:** Allow all community miners to compete openly from block 1 onwards under real-time LWMA-1 difficulty adjustment.
 7. **Checkpoint Policy (Optional):** Do not add checkpoints without a separately reviewed trust and governance model. Hardcoded checkpoints constrain which histories nodes accept and are not equivalent to proof-of-work consensus.
 
@@ -189,5 +191,6 @@ Instead of private mining, the following transparent launch procedure is strongl
     - P2P messages carry a `network_id`, a message `type`, and an optional `payload`. Messages are accepted only for the matching network profile; the protocol does not exchange a software-version `VERSION` message.
 3. **Block & Transaction Synchronization:**
     - Nodes compare height and cumulative chainwork using `GET_HEIGHT` / `HEIGHT_RESPONSE`.
-    - The syncing node locates a common ancestor with `GET_FORKPOINT`, then requests bounded chunks using `GET_BLOCK_RANGE` / `BLOCK_RANGE_RESPONSE`.
+    - The syncing node locates a common ancestor with `GET_FORKPOINT`, then requests bounded chunks using `GET_BLOCK_RANGE` / `BLOCK_RANGE_RESPONSE`. From v1.0.7 the request may advertise `accept: ["deflate"]` and the response may then be compressed; older nodes ignore the field and answer plain.
+    - A node that cannot accept inbound connections (NAT) can push blocks to a public peer over its own outbound connection with `PUSH_BLOCKS` (v1.0.7; ignored by older nodes).
     - Candidate blocks are validated before the active chain is changed and persisted in the bbolt database.
