@@ -68,6 +68,7 @@ func startTestPeerServer(bc *core.Blockchain, dir, port string) *PeerServer {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	time.Sleep(50 * time.Millisecond)
 	return ps
 }
 

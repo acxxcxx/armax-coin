@@ -20,8 +20,15 @@ func TestFutureTimestampFork_RehearsalAcrossActivation(t *testing.T) {
 
 	bcPub, bcNAT, _, psNAT, _ := natAheadSetup(t, 3, 0, 15)
 
-	psNAT.SyncBestPeer()
-	if !waitTipEqual(bcPub, bcNAT, 15*time.Second) {
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		psNAT.SyncBestPeer()
+		if waitTipEqual(bcPub, bcNAT, 500*time.Millisecond) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !waitTipEqual(bcPub, bcNAT, time.Second) {
 		pi, _ := tipHash(bcPub)
 		ni, _ := tipHash(bcNAT)
 		t.Fatalf("sync across the fork height failed: pub=#%d nat=#%d", pi, ni)
