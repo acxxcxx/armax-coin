@@ -20,8 +20,8 @@ This checklist defines the formal progression gates for the **Sequential Launch 
   - Digital signatures: NIST FIPS 204 (ML-DSA-65).
   - Hard supply ceiling: 126,000,000 ARMX mathematically bounded.
   - Tokenomics preserved: 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target, and existing genesis are unchanged.
-  - No mining-funded treasury is guaranteed: after launch, project miners may seek up to 1,000,000 ARMX using ordinary mining and the same consensus rules; this objective is not a premine, genesis allocation, or consensus reserve.
-  - Bridge backing and DEX liquidity are separate, unapproved decisions; no wARMX should be minted without verifiable native backing and approved custody/proof-of-lock controls.
+  - Developer Early-Mining Phase: Before public mainnet opening, the developers will mine blocks 1 through 16,667. Stop rule: Stop at block 16,667 or when total developer mining rewards reach 1,000,000 ARMX, whichever comes first. Developers will mine all blocks in this range. At 60 ARMX per block, 16,667 blocks yield up to 1,000,020 ARMX (16,666 blocks = 999,960 ARMX; block 16,667 yields 1,000,020 ARMX due to discrete block subsidies). Estimated duration is approximately 23.15 days at 120-second target block time; actual duration depends on hashrate and difficulty. Public mainnet opening: TBA. Treasury address will be published before mainnet launch.
+  - Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch.
 - [x] **Quality Gates Status (Core Packages vs Repository-Wide)**:
   - `go build` passes cleanly for Core binaries (`.`, `armsend`, `armwallet`, `gui`) (exit 0).
   - `go vet ./...` and `go vet -tags testhooks ./...` pass with 0 errors (exit 0).
@@ -61,7 +61,7 @@ This checklist defines the formal progression gates for the **Sequential Launch 
 
 ## Phase 4: Mainnet Unlock & Production Protocol Activation Gates
 
-- [ ] Fill all `<ISI>` placeholders in [`ANNOUNCEMENT_MAINNET.template.md`](../ANNOUNCEMENT_MAINNET.template.md).
+- [ ] Publish treasury address before mainnet launch (BLOCKER)
 - [ ] Set `core.MainnetLaunched = true` in a dedicated single consensus unlock commit.
 - [ ] Switch default network profile in `node.DefaultConfig()` to mainnet.
 - [ ] Deploy dedicated mainnet seed node cluster (`systemd/armcoind.service`, P2P port 19334).

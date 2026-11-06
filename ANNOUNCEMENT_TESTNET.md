@@ -10,67 +10,77 @@
 [list]
 [*] [b]Activation Height:[/b] [b]Testnet Block 20,000[/b]
 [*] [b]Consensus Rule Change:[/b] Maximum allowed future block timestamp is tightened from [b]7,200 seconds (2 hours)[/b] down to [b]600 seconds (10 minutes)[/b] ahead of the validating node's local clock. Historical blocks below height 20,000 preserve the legacy 2-hour window.
-[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools [b]MUST upgrade to v1.0.7 before block 20,000[/b] and maintain accurate NTP clock synchronization ([font=monospace]timedatectl set-ntp true[/font] / [font=monospace]w32tm /resync[/font]). Un-upgraded v1.0.6 nodes will accept blocks rejected by v1.0.7 after height 20,000, creating an unrecoverable chain split.
+[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools [b]MUST upgrade to v1.0.7 before block 20,000[/b] and maintain accurate NTP clock synchronization ([tt]timedatectl set-ntp true[/tt] / [tt]w32tm /resync[/tt]). Un-upgraded v1.0.6 nodes will accept blocks rejected by v1.0.7 after height 20,000, creating an unrecoverable chain split.
 [/list]
 
 [b]Official Links:[/b]
+[list]
+[*] [b]Official Website & Web Portal:[/b] [url=https://armax-coin.cloud]https://armax-coin.cloud[/url]
+[*] [b]Testnet Blockchain Explorer:[/b] [url=https://armax-coin.cloud/explorer]https://armax-coin.cloud/explorer[/url]
+[*] [b]Testnet Mining Pool:[/b] [url=https://pool.armax-coin.cloud]https://pool.armax-coin.cloud[/url]
 [*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
 [*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]
 [*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.7]refs/tags/v1.0.7[/url]
 [*] [b]v1.0.7 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.7.md]docs/releases/v1.0.7.md[/url]
 [*] [b]Documentation Suite:[/b] [url=https://github.com/acxxcxx/armax-coin#authoritative-documentation-index]Documentation Index[/url]
 [*] [b]License:[/b] MIT Open Source License
+[/list]
 
 [hr]
 
 [b][size=14pt]1. Testnet Purpose & Scope[/size][/b]
-The Armaxcoin Public Testnet ([font=monospace]ARMX-TESTNET-1[/font]) is an open, decentralized testing network for node operators, miners, developers, and security researchers to test and validate:
+The Armaxcoin Public Testnet ([tt]ARMX-TESTNET-1[/tt]) is an open, decentralized testing network for node operators, miners, developers, and security researchers to test and validate:
+[list]
 [*] Quantum-resistant digital signatures ([b]NIST FIPS 204 ML-DSA-65[/b]) in Layer-1 consensus transactions.
 [*] High-efficiency CPU Proof-of-Work mining ([b]ArmaxHash v2 Stream-Fast[/b]) activated at block #2500 (historical v1 Argon2id active blocks 520..2499).
-[*] Responsive difficulty retargeting via [b]LWMA-1[/b] ($N=60$ sliding evaluation window).
+[*] Responsive difficulty retargeting via [b]LWMA-1[/b] (N=60 sliding evaluation window).
 [*] P2P mesh transport encrypted with mandatory [b]TLS 1.3[/b], [b]TOFU certificate pinning[/b], optional SPKI seed fingerprint pinning, and [b]PUSH_BLOCKS[/b] NAT propagation.
-[*] Scalable initial sync with [b]incremental persistence[/b] ($O(1)$ batch write instead of $O(N^2)$ rewrite).
+[*] Scalable initial sync with [b]incremental persistence[/b] (O(1) batch write instead of O(N^2) rewrite).
+[/list]
 
 [color=red][b]CRITICAL EXPERIMENTAL TESTNET DISCLAIMER:[/b][/color]
 [list]
-[*] [b]Zero Economic Value:[/b] Testnet coins ([font=monospace]tARMX[/font]) carry [b]NO monetary value[/b], no investment utility, and no guarantee of exchange listing or token conversion.
+[*] [b]Zero Economic Value:[/b] Testnet coins ([tt]tARMX[/tt]) carry [b]NO monetary value[/b], no investment utility, and no guarantee of exchange listing or token conversion.
 [*] [b]Experimental Testnet:[/b] The consensus engine, ArmaxHash implementation, and cryptographic integration are active testnet implementations focused on verification and protocol stabilization.
 [*] [b]State Reset Possibility:[/b] As an active development testnet, blockchain state may be reset if critical protocol flaws are discovered.
-[*] [b]Mainnet Status:[/b] Mainnet is [b]locked in source[/b] ([font=monospace]core.MainnetLaunched = false[/font]). Invoking [font=monospace]-network mainnet[/font] is strictly rejected by all binaries.
+[*] [b]Mainnet Status:[/b] Mainnet is [b]locked in source[/b] ([tt]core.MainnetLaunched = false[/tt]). Invoking [tt]-network mainnet[/tt] is strictly rejected by all binaries.
 [/list]
 
 [hr]
 
 [b][size=14pt]2. Technical Specifications[/size][/b]
 [list]
-[*] [b]Network Identifier:[/b] [font=monospace]ARMX-TESTNET-1[/font] (isolated from mainnet)
-[*] [b]Wire Magic:[/b] [font=monospace]ARMX_TEST[/font]
+[*] [b]Network Identifier:[/b] [tt]ARMX-TESTNET-1[/tt] (isolated from mainnet)
+[*] [b]Wire Magic:[/b] [tt]ARMX_TEST[/tt]
 [*] [b]P2P Port:[/b] [b]19335[/b] (Public TCP peer gossip mesh)
-[*] [b]RPC Daemon Port:[/b] [b]19333[/b] (Bound strictly to loopback [font=monospace]127.0.0.1[/font] by default)
+[*] [b]RPC Daemon Port:[/b] [b]19333[/b] (Bound strictly to loopback [tt]127.0.0.1[/tt] by default)
 [*] [b]Block Header PoW Algorithm Timeline:[/b]
-    - [b]Blocks 0 .. 519:[/b] Double-SHA256 (SHA-256d bootstrap phase)
-    - [b]Blocks 520 .. 2499:[/b] ArmaxHash v1 (Argon2id 2,048 KiB + Blake2b-512)
-    - [b]Blocks 2500+ (Active):[/b] [b]ArmaxHash v2 Stream-Fast[/b] (domain-separated chained BLAKE2b; the fixed-header hash benchmark reports 0 allocations/op)
+[list]
+[*] [b]Blocks 0 .. 519:[/b] Double-SHA256 (SHA-256d bootstrap phase)
+[*] [b]Blocks 520 .. 2499:[/b] ArmaxHash v1 (Argon2id 2,048 KiB + Blake2b-512)
+[*] [b]Blocks 2500+ (Active):[/b] [b]ArmaxHash v2 Stream-Fast[/b] (domain-separated chained BLAKE2b; the fixed-header hash benchmark reports 0 allocations/op)
+[/list]
 [*] [b]Digital Signatures:[/b] NIST FIPS 204 (ML-DSA-65) Post-Quantum Module-Lattice Signatures (pure, non-hybrid)
 [*] [b]Target Block Time:[/b] 120 seconds (2 minutes)
-[*] [b]Difficulty Retargeting:[/b] Continuous LWMA-1 ($N=60$ sliding evaluation window)
+[*] [b]Difficulty Retargeting:[/b] Continuous LWMA-1 (N=60 sliding evaluation window)
 [*] [b]Initial Block Reward:[/b] 60.00000000 tARMX (6,000,000,000 Armoids)
 [*] [b]Halving Interval:[/b] Every 1,050,000 blocks (~4.0 years on 120s cadence)
 [*] [b]Maximum Hard Cap:[/b] 126,000,000 tARMX (12,600,000,000,000,000 Armoids, 8 decimal places)
-[*] [b]Mainnet Tokenomics Status:[/b] Mainnet remains locked and has not launched. Existing consensus settings remain unchanged: 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and the current genesis. The source-defined 60 ARMX genesis coinbase goes to the canonical zero-payload address; no separate project treasury genesis output is defined in that source. This is not a statement about off-chain arrangements.
-[*] [b]Long-term Mining Objective:[/b] After launch, the project may seek to accumulate up to 1,000,000 ARMX through ordinary mining under the same rules as all miners. It is not a premine, genesis allocation, or protocol reserve, and there is no guarantee of reaching it. Bridge backing and DEX liquidity require separate decisions and reviews.
-[*] [b]Genesis Block Allocation:[/b] 60 tARMX burned to unspendable zero address ([font=monospace]armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd[/font])
-[*] [b]Genesis Block Hash:[/b] [font=monospace]0000000dc84202e63a340a2439625fbf9cea5cb7b84119f93d52cff39f63a68b[/font]
-[*] [b]Genesis Merkle Root:[/b] [font=monospace]808a4007681dd123133bfe106b101d251ff0d2d023f600384394673bfc03768d[/font]
+[*] [b]Mainnet Tokenomics Status:[/b] Mainnet has not launched. Verifiable consensus parameters in source are: 126,000,000 ARMX maximum supply, 60 ARMX initial block reward, 1,050,000-block halving interval, and 120-second target block time. Planned developer early-mining details are disclosed in the repository README (section: Consensus & Tokenomics Parameters); full details will be announced in a separate thread.
+[*] [b]Genesis Block Allocation:[/b] 60 tARMX burned to unspendable zero address ([tt]armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd[/tt])
+[*] [b]Genesis Block Hash:[/b] [tt]0000000dc84202e63a340a2439625fbf9cea5cb7b84119f93d52cff39f63a68b[/tt]
+[*] [b]Genesis Merkle Root:[/b] [tt]808a4007681dd123133bfe106b101d251ff0d2d023f600384394673bfc03768d[/tt]
 [*] [b]Genesis Timestamp:[/b] 1710000001 (Nonce: 40,272,237)
-[*] [b]ArmaxHash Target Ceiling (Testnet):[/b] [font=monospace]000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff[/font] (Difficulty 3 bootstrap)
+[*] [b]ArmaxHash Target Ceiling (Testnet):[/b] [tt]000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff[/tt] (Difficulty 3 bootstrap)
 [*] [b]Coinbase Maturity:[/b] 10 confirmations on Testnet (100 confirmations on Mainnet)
 [*] [b]Max Reorganization Depth:[/b] 720 blocks (~24 hours at target cadence; local reorganization limit, not transaction finality)
 [*] [b]Active DNS Seed Nodes:[/b]
 [code]
-testnet-seed1.armax-coin.cloud:19335  (IP: 202.10.34.180)
-testnet-seed2.armax-coin.cloud:19335  (IP: 139.162.46.17)
+testnet-seed1.armax-coin.cloud:19335
+testnet-seed2.armax-coin.cloud:19335
 testnet-seed3.armax-coin.cloud:19335
+[/code]
+[/list]
 
 [hr]
 
@@ -88,11 +98,48 @@ Armaxcoin incorporates NIST FIPS 204 (ML-DSA-65) post-quantum signatures for eve
 
 [hr]
 
-[b][size=14pt]4. Quickstart: Building from Source & Running on Testnet[/size][/b]
+[b][size=14pt]4. Release Verification[/size][/b]
+Official pre-compiled release packages and archives are accompanied by cryptographic checksum manifests and detached OpenPGP signatures. Always verify the authenticity and integrity of downloaded files before execution:
+
+[list]
+[*] [b]Checksum Manifest:[/b] [tt]SHA256SUMS[/tt]
+[*] [b]Detached Signature File:[/b] [tt]SHA256SUMS.asc[/tt]
+[*] [b]Release Signing Public Key:[/b] [tt]ARMAX-PGP-KEY.asc[/tt] (available in release assets and repository root)
+[*] [b]Official Release Key Fingerprint:[/b]
+[code]
+C857 E67F 3FC6 3BE3 5125  C3D3 2ACE 863E D4BF 1460
+[/code]
+[*] [b]Verification Commands (Linux / macOS):[/b]
+[code]
+# 1. Import official PGP release key & verify fingerprint
+gpg --import ARMAX-PGP-KEY.asc
+gpg --fingerprint dev@armax-coin.cloud
+
+# 2. Verify detached signature on SHA256SUMS
+gpg --verify SHA256SUMS.asc SHA256SUMS
+
+# 3. Verify downloaded archive checksum
+sha256sum --check --ignore-missing SHA256SUMS
+[/code]
+[*] [b]Verification Commands (Windows PowerShell):[/b]
+[code]
+# Compute SHA-256 hash of archive
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.7-windows-amd64.zip
+
+# Match against published SHA256SUMS manifest
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.7-windows-amd64.zip"
+[/code]
+[/list]
+
+[hr]
+
+[b][size=14pt]5. Quickstart: Building from Source & Running on Testnet[/size][/b]
 
 [b]Prerequisites:[/b]
-[*] [b]Go Compiler:[/b] Go 1.27 or higher (required for native [font=monospace]crypto/mldsa[/font] standard library package)
+[list]
+[*] [b]Go Compiler:[/b] Go 1.27 or higher (required for native [tt]crypto/mldsa[/tt] standard library package)
 [*] [b]Git[/b]
+[/list]
 
 [b]Step 1 -- Clone the Repository & Compile:[/b]
 [code]
@@ -108,7 +155,7 @@ go build -o armwallet ./cli/armwallet
 go build -o armsend ./cli/armsend
 go build -o armminer miner/miner.go
 [/code]
-[i]On Windows, run: [font=monospace].\build-all.ps1[/font][/i]
+[i]On Windows, run: [tt].\build-all.ps1[/tt][/i]
 
 [b]Step 2 -- Create an Encrypted Post-Quantum Wallet:[/b]
 [code]
@@ -120,7 +167,7 @@ Enter a strong passphrase and securely record your 24-word recovery phrase.
 [code]
 ./armcoind
 [/code]
-By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers peers via DNS seeds, binds P2P to [font=monospace]0.0.0.0:19335[/font] with TLS 1.3, and binds RPC strictly to loopback [font=monospace]127.0.0.1:19333[/font].
+By default, [tt]armcoind[/tt] starts in testnet mode, discovers peers via DNS seeds, binds P2P to [tt]0.0.0.0:19335[/tt] with TLS 1.3, and binds RPC strictly to loopback [tt]127.0.0.1:19333[/tt].
 
 [b]Step 4 -- Mine Testnet Blocks (Multi-Threaded CPU Engine):[/b]
 [code]
@@ -141,11 +188,11 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 
 [hr]
 
-[b][size=14pt]5. Security Disclosures & Known Limitations[/size][/b]
+[b][size=14pt]6. Security Disclosures & Known Limitations[/size][/b]
 [list]
 [*] [b]Active Testnet Stabilization:[/b] The network is operating under continuous peer validation, multi-node synchronization testing, and consensus verification.
 [*] [b]P2P Transport Security (TOFU):[/b] TLS 1.3 and Trust On First Use (TOFU) pinning are active by default. While TOFU prevents ongoing passive surveillance and subsequent tampering, initial contact remains vulnerable to active in-path MITM adversaries without out-of-band seed pins.
-[*] [b]RPC Isolation:[/b] RPC daemon binds strictly to [font=monospace]127.0.0.1[/font]. Mutating endpoints require local cookie authentication ([font=monospace]armax.cookie[/font]) or HTTP Basic Auth. Binding to external interfaces requires explicit TLS certificates and credentials.
+[*] [b]RPC Isolation:[/b] RPC daemon binds strictly to [tt]127.0.0.1[/tt]. Mutating endpoints require local cookie authentication ([tt]armax.cookie[/tt]) or HTTP Basic Auth. Binding to external interfaces requires explicit TLS certificates and credentials.
 [*] [b]Low Bootstrap Hashrate & 51% Risk:[/b] During early testnet testing with few active miners, the network is susceptible to 51% hashrate spikes. Reorganizations are bounded by consensus to 720 blocks (~24 hours).
 [*] [b]ARM Single-Board Computers:[/b] ML-DSA-65 modular polynomial arithmetic introduces measurable verification latency on low-power ARM single-board computers (Raspberry Pi 3/4).
 [*] [b]No Economic Promises:[/b] Testnet coins (tARMX) have no economic value. The ARMX protocol is an experimental open-source protocol. There is no promise of future monetary value, exchange listing, airdrop, or financial return.
@@ -154,5 +201,7 @@ By default, [font=monospace]armcoind[/font] starts in testnet mode, discovers pe
 [hr]
 
 [b][size=14pt]Community & Contributions[/size][/b]
-We invite node operators, miners, developers, and security researchers to join and test the experimental testnet. Contributions are voluntary and credited in [CONTRIBUTORS.md](CONTRIBUTORS.md). Testnet coins have no monetary value, and no airdrops or financial rewards are promised.
+We invite node operators, miners, developers, and security researchers to join and test the experimental testnet. Contributions are voluntary and credited in [url=https://github.com/acxxcxx/armax-coin/blob/main/CONTRIBUTORS.md]CONTRIBUTORS.md[/url]. Testnet coins have no monetary value, and no airdrops or financial rewards are promised.
+[list]
 [*] [b]Responsible Security Reporting:[/b] Please report security vulnerabilities responsibly via GitHub Private Vulnerability Reporting on the repository ([b]Security[/b] -> [b]Advisories[/b] -> [b]Report a vulnerability[/b]).
+[/list]

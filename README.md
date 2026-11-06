@@ -30,7 +30,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **[Release Notes (v1.0.7)](RELEASE_NOTES.md)** | Authoritative v1.0.7 release notes, Block 20,000 consensus fork, and upgrade instructions |
 | **[Open Testnet Guide](docs/TESTNET_GUIDE.md)** | Step-by-step instructions for installing, syncing, and testing transactions |
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
-| **[Mining Accumulation Plan](docs/architecture/tokenomics/mining-accumulation-plan.md)** | Non-consensus model for the long-term 1,000,000 ARMX ordinary-mining objective |
+| **[Developer Early-Mining Plan](docs/architecture/tokenomics/mining-accumulation-plan.md)** | Operational parameters, block boundaries, and disclosure for the developer early-mining phase |
 | **[Node Operations Guide](docs/NODE_OPERATIONS.md)** | Running full nodes, seed nodes, systemd units, TLS 1.3, and TOFU certificate security |
 | **[Consensus & Network Specification](docs/CONSENSUS_AND_NETWORK.md)** | Mathematical specifications for LWMA-1, ArmaxHash, ML-DSA-65, and reorg limits |
 | **[Contributors](CONTRIBUTORS.md)** | List of project contributors derived from Git history |
@@ -47,7 +47,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 ## Consensus & Tokenomics Parameters
 
-> Mainnet is locked and has not launched. Source code preserves the 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and existing genesis. The genesis block contains a 60 ARMX coinbase output to the canonical zero-payload address; this source-level fact is not a claim about off-chain arrangements or future holdings. After launch, the project may seek to accumulate up to 1,000,000 ARMX through ordinary, publicly observable mining under the same rules as every miner. This is a long-term operational target, not a premine, genesis allocation, protocol reserve, or guarantee of holdings.
+> Mainnet is locked and has not launched. Source code preserves the 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and existing genesis (60 ARMX genesis coinbase burned to the canonical zero-payload address). Before public mainnet opening, the developers will mine blocks 1 through 16,667. Stop rule: Stop at block 16,667 or when total developer mining rewards reach 1,000,000 ARMX, whichever comes first. Developers will mine all blocks in this range. At 60 ARMX per block, 16,667 blocks yield up to 1,000,020 ARMX (16,666 blocks = 999,960 ARMX; block 16,667 yields 1,000,020 ARMX due to discrete block subsidies). Estimated duration is approximately 23.15 days at 120-second target block time; actual duration depends on hashrate and difficulty. Public mainnet opening: TBA. Treasury address will be published before mainnet launch. Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch. Risks / Criticism: Early developer mining represents an initial point of centralization and grants the developer team a material fraction (~0.79% of the total 126,000,000 ARMX supply) before the public opening.
 
 | Parameter | Specification | Details / Rules |
 |---|---|---|
@@ -76,7 +76,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Halving Interval** | Every 1,050,000 blocks (~4 years) | Reward cuts in half ($60 \to 30 \to 15 \to \dots$ ARMX) |
 | **Maximum Total Supply** | 126,000,000 ARMX | Strict hard cap (12,600,000,000,000,000 Armoids, 8 decimal places; real theoretical emission: 125,999,999.874 ARMX) |
 | **Supply Accounting** | $O(1)$ Incremental State Cache | Constant-time circulating supply tracking without block history traversal |
-| **Project Mining Objective** | Up to 1,000,000 ARMX | Operational target only; mined rewards depend on valid blocks won and are not reserved by consensus |
+| **Developer Early-Mining** | Up to 1,000,020 ARMX (Blocks 1..16,667) | Before public mainnet opening, developers mine all blocks in range 1..16,667. Stop rule: Stop at block 16,667 or when total developer mining rewards reach 1,000,000 ARMX, whichever comes first. Estimated duration: ~23.15 days at 120s block time. Public opening: TBA. Treasury address will be published before mainnet launch. Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch. |
 | **Transfer Confirmation Guidance** | 6 confirmations (standard), 12 (high-value) | These are operator guidance values exposed by RPC/UI, not consensus rules or irreversible finality. Ordinary transfers have no coinbase-maturity delay. |
 | **Coinbase Reward Maturity** | Profile-Enforced Lock Queue | Newly mined block rewards enter an immature lock queue before becoming spendable: **Public Testnet: 10 confirmations**, **Mainnet: 100 confirmations**, Regtest: 1 confirmation. |
 | **Network Profiles** | Mainnet (Unreleased / Locked) & Testnet Profiles | Mainnet (`ARMX-MAINNET-1`: P2P 19334, RPC 19332 - locked / rejected) \| Testnet (`ARMX-TESTNET-1`: P2P 19335, RPC 19333 - active) |
@@ -127,14 +127,14 @@ Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](ht
 #### On Linux / ARM64:
 ```bash
 # Download package and checksum
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.6/armax-v1.0.6-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.6/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.7/armax-v1.0.7-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.7/SHA256SUMS
 
 # Verify checksum integrity
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
-tar -xzf armax-v1.0.6-linux-amd64.tar.gz
+tar -xzf armax-v1.0.7-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet armgui
 ```
 
@@ -143,10 +143,10 @@ Each archive contains: `armcoind` (node daemon), `armminer` (CPU miner), `armwal
 #### On Windows (PowerShell):
 ```powershell
 # Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.6-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.7-windows-amd64.zip
 
 # Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.6-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.7-windows-amd64.zip"
 ```
 
 #### Verifying releases
