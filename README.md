@@ -1,20 +1,20 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.7` (Testnet Consensus Fork & Optimization Release)<br>
+**Current Release:** `v1.0.8` (Desktop GUI Security, First-Time Onboarding & Peer Privacy Hardening)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
 
 > [!IMPORTANT]
 > **SCHEDULED TESTNET CONSENSUS FORK AT BLOCK 20,000:**
-> Armaxcoin v1.0.7 introduces a scheduled consensus hard fork on `ARMX-TESTNET-1` activating at **Block 20,000**:
+> Armaxcoin v1.0.7+ introduces a scheduled consensus hard fork on `ARMX-TESTNET-1` activating at **Block 20,000**:
 > - **Before Block 20,000:** Block timestamps may be up to 7,200 seconds (2 hours) ahead of the validating node's clock.
 > - **From Block 20,000:** Block timestamps must not exceed **600 seconds (10 minutes)** ahead of the validating node's local clock.
 > 
-> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade to v1.0.7 before height 20,000 and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Un-upgraded v1.0.6 nodes may accept forward-stamped blocks that v1.0.7 nodes reject, creating an unrecoverable chain split.
+> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade to v1.0.8 (or at least v1.0.7) before height 20,000 and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Un-upgraded v1.0.6 nodes may accept forward-stamped blocks that v1.0.7+ nodes reject, creating an unrecoverable chain split.
 > 
-> Detailed release notes and upgrade instructions: **[v1.0.7 Release Notes](docs/releases/v1.0.7.md)** | **[RELEASE_NOTES.md](RELEASE_NOTES.md)**.
+> Detailed release notes and upgrade instructions: **[v1.0.8 Release Notes](docs/releases/v1.0.8.md)** | **[v1.0.7 Release Notes](docs/releases/v1.0.7.md)** | **[RELEASE_NOTES.md](RELEASE_NOTES.md)**.
 
 > [!NOTE]
 > **PUBLIC TESTNET ENVIRONMENT:**
@@ -27,7 +27,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 | Guide | Description |
 |---|---|
-| **[Release Notes (v1.0.7)](RELEASE_NOTES.md)** | Authoritative v1.0.7 release notes, Block 20,000 consensus fork, and upgrade instructions |
+| **[Release Notes (v1.0.8)](RELEASE_NOTES.md)** | Authoritative v1.0.8 release notes, desktop GUI security, onboarding flow, and peer privacy |
 | **[Open Testnet Guide](docs/TESTNET_GUIDE.md)** | Step-by-step instructions for installing, syncing, and testing transactions |
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
 | **[Developer Early-Mining Plan](docs/architecture/tokenomics/mining-accumulation-plan.md)** | Operational parameters, block boundaries, and disclosure for the developer early-mining phase |
@@ -127,14 +127,14 @@ Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](ht
 #### On Linux / ARM64:
 ```bash
 # Download package and checksum
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.7/armax-v1.0.7-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.7/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/armax-v1.0.8-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/SHA256SUMS
 
 # Verify checksum integrity
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
-tar -xzf armax-v1.0.7-linux-amd64.tar.gz
+tar -xzf armax-v1.0.8-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet armgui
 ```
 
@@ -143,10 +143,10 @@ Each archive contains: `armcoind` (node daemon), `armminer` (CPU miner), `armwal
 #### On Windows (PowerShell):
 ```powershell
 # Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.7-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.8-windows-amd64.zip
 
 # Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.7-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.8-windows-amd64.zip"
 ```
 
 #### Verifying releases
@@ -303,7 +303,7 @@ Transfer testnet coins to another address (requires sufficient spendable balance
 
 ---
 
-## Command Reference (v1.0.7)
+## Command Reference (v1.0.8)
 
 Run any binary with `-h` for the full, current flag list. Defaults target testnet.
 
@@ -554,9 +554,9 @@ Armaxcoin nodes communicate over raw TCP sockets using newline-delimited JSON me
 | `NEW_BLOCK` | Broadcast | Propagates a newly mined `core.Block`. Peers validate and append or trigger catch-up sync. |
 | `GET_HEIGHT` | Direct | Queries peer height, latest block hash, and cumulative chainwork. |
 | `HEIGHT_RESPONSE` | Direct | Returns `HeightResponse{Height, LatestHash, Chainwork}`. |
-| `GET_BLOCK_RANGE` | Direct | Requests a chunk of blocks bounded to ~1.5 MB (`BlockRangeRequest`). v1.0.7 requesters may add `accept: ["deflate"]`. |
-| `BLOCK_RANGE_RESPONSE` | Direct | Returns chunked `[]core.Block`, or (v1.0.7, only if requested) `enc: "deflate"` with `z` = base64 DEFLATE of the block array. |
-| `PUSH_BLOCKS` | Direct | (v1.0.7) A node that cannot be dialed pushes blocks the peer lacks. Older nodes ignore it. |
+| `GET_BLOCK_RANGE` | Direct | Requests a chunk of blocks bounded to ~1.5 MB (`BlockRangeRequest`). v1.0.7+ requesters may add `accept: ["deflate"]`. |
+| `BLOCK_RANGE_RESPONSE` | Direct | Returns chunked `[]core.Block`, or (v1.0.7+, only if requested) `enc: "deflate"` with `z` = base64 DEFLATE of the block array. |
+| `PUSH_BLOCKS` | Direct | (v1.0.7+) A node that cannot be dialed pushes blocks the peer lacks. Older nodes ignore it. |
 | `REQUEST_CHAIN` | Direct | Requests candidate chain for fork resolution / reorganization. |
 | `CHAIN_RESPONSE` | Direct | Returns candidate chain in response to local request (unsolicited responses rejected). |
 | `NEW_TX` | Broadcast | Gossips an incoming `core.Transaction` to peer mempools. |
@@ -655,9 +655,14 @@ Target release: `v1.0.8` (Official Release). Testnet (`ARMX-TESTNET-1`). Mainnet
 #### 3. P2P Peer Display Privacy Filter
 - **Residential Home Node Masking:** Filters out ephemeral non-listening outbound client sockets from the GUI's connected peers and diagnostics. Only DNS seeds, domain hostnames, and public IPs with open listening P2P ports (`19335`/`19334`) are displayed, shielding home node IPs from public exposure.
 
+For full technical specifications, test evidence, and operational runbooks, see **[v1.0.8 Release Notes](docs/releases/v1.0.8.md)**.
+
 ### v1.0.7 (Previous -- Testnet Consensus Fork & Optimization Release) -- 2026-11-05
 
 Target release: `v1.0.7` (`core.Version = "1.0.7"`). Testnet only (`ARMX-TESTNET-1`). Mainnet remains locked (`core.MainnetLaunched = false`).
+
+> [!NOTE]
+> **Known Issue in v1.0.7:** Linux and ARM GUI wallet creation encounters authentication errors in v1.0.7 due to session token handling. Linux and ARM users should upgrade to v1.0.8.
 
 > [!WARNING]
 > **STORAGE COMPATIBILITY & DOWNGRADE WARNING:**

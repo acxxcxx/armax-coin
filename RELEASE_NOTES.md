@@ -23,9 +23,12 @@ Armaxcoin v1.0.8 resolves critical user-facing issues in the Linux/Unix Desktop 
 ## Armaxcoin v1.0.7
 
 **Target Release:** Armaxcoin v1.0.7 — Testnet Consensus Fork & Optimization Release  
-**Status:** IN DEVELOPMENT (`core.Version = "1.0.7"`). Uncommitted, untagged.  
+**Status:** OFFICIAL RELEASE (Released 2026-11-05, Tagged `v1.0.7`).  
 **Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
 **Detailed Technical Specification:** [docs/releases/v1.0.7.md](docs/releases/v1.0.7.md)
+
+> [!NOTE]
+> **Known Issue in v1.0.7:** Linux and ARM GUI wallet creation encounters authentication errors in v1.0.7 due to session token handling. Linux and ARM users should upgrade to [v1.0.8](docs/releases/v1.0.8.md).
 
 ---
 

@@ -55,24 +55,24 @@ Every official release tag (`v*`) publishes pre-compiled archive packages accomp
 ### Verification on Linux / macOS
 ```bash
 # Download archive and checksum file
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.6/armax-v1.0.6-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.6/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/armax-v1.0.8-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/SHA256SUMS
 
 # Verify integrity using sha256sum
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 Expected output:
 ```text
-armax-v1.0.6-linux-amd64.tar.gz: OK
+armax-v1.0.8-linux-amd64.tar.gz: OK
 ```
 
 ### Verification on Windows (PowerShell)
 ```powershell
 # 1. Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.6-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.8-windows-amd64.zip
 
 # 2. Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.6-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.8-windows-amd64.zip"
 ```
 
 ---

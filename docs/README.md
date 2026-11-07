@@ -27,7 +27,8 @@ This documentation directory contains official user guides, operator manuals, sp
 
 ## 4. Release History
 
-- [Release Notes Overview (v1.0.7)](../RELEASE_NOTES.md): Top-level summary of the active release and upgrade requirements.
+- [Release Notes Overview (v1.0.8)](../RELEASE_NOTES.md): Top-level summary of the active release and upgrade requirements.
+- [v1.0.8 Release Notes](releases/v1.0.8.md): Desktop GUI Security, First-Time Onboarding Flow & Peer Privacy Hardening.
 - [v1.0.7 Release Notes](releases/v1.0.7.md): Testnet Consensus Fork (Block 20,000), Sync & Storage Optimization, and Subsystem Hardening.
 - [v1.0.6 Release Notes](releases/v1.0.6.md): Testnet Core v1.0.6 stability, security hardening, and P2P deduplication.
 

@@ -5,9 +5,7 @@ All notable changes to the **Armaxcoin** (`armax-coin`) project will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### [v1.0.8] - 2026-11-07
+## [v1.0.8] - 2026-11-07
 
 > **Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening.** Resolves Linux/Unix Desktop GUI session authentication failure on wallet creation, implements automated first-time wallet setup and mnemonic restore dialogs when no keystore exists, protects residential peer privacy by filtering ephemeral client ports, and fixes snapshot script flag precedence.
 
@@ -22,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Undefined Active Address State (`gui/main_unix.go`):** Handled missing keystore state in `/api/wallet/info` (`"address": "", "initialized": false`), preventing DOM elements from evaluating to `undefined`.
 - **Public Snapshot Tooling Precedence (`scripts/make_public_snapshot.ps1`, `scripts/make_public_snapshot.sh`):** Prioritized `-SkipGitleaks` / `--skip-gitleaks` checks ahead of local `gitleaks` executable detection, ensuring test runs and automated snapshot tools bypass synthetic test fixtures cleanly.
 
-### [v1.0.7] - 2026-11-05 (in development; `core.Version` is `1.0.7`)
+### [v1.0.7] - 2026-11-05
 
 > **Consensus fork at testnet block 20,000.** All nodes and miners must upgrade to v1.0.7 before the tip reaches 20,000. From that height, a block timestamp may be at most **10 minutes (600 seconds)** ahead of the validating node's clock (previously 2 hours / 7,200 seconds). Below 20,000, the 2-hour rule is unchanged, so existing blocks stay valid. Mainnet, soak, and regtest profiles keep the 2-hour rule (activation height `-1`). All consensus invariants (PoW schedule, 120s block target, LWMA-1 $N=60$, halving schedule, and 126,000,000 ARMX supply cap) remain strictly preserved.
 
