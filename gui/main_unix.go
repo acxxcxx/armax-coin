@@ -308,6 +308,9 @@ func secureGUIHandler(mux *http.ServeMux, token string) http.Handler {
 					reqToken = cookie.Value
 				}
 			}
+			if reqToken == "" {
+				reqToken = r.URL.Query().Get("token")
+			}
 			if token != "" && (reqToken == "" || subtle.ConstantTimeCompare([]byte(reqToken), []byte(token)) != 1) {
 				http.Error(w, `{"error":"Unauthorized: Invalid or missing GUI session token"}`, http.StatusUnauthorized)
 				return
@@ -519,9 +522,17 @@ func handleCLI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		http.Error(w, "Failed to read node response", http.StatusInternalServerError)
+		return
+	}
+	if command == "getpeerinfo" {
+		bodyBytes = filterSafePeersJSON(bodyBytes, core.GetActiveNetwork())
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, io.LimitReader(resp.Body, 4<<20))
+	_, _ = w.Write(bodyBytes)
 }
 
 func verifyNodeNetwork(url string, expectedNetID string) error {
@@ -614,8 +625,108 @@ func handlePeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	filtered := filterSafePeersJSON(bodyBytes, core.GetActiveNetwork())
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = w.Write(filtered)
+}
+
+// isSafeP2PDisplayPeer checks if a peer is a DNS seed or a public node with an open listening P2P port.
+// Residential home nodes on ephemeral client ports are excluded to protect node privacy.
+func isSafeP2PDisplayPeer(endpoint string, p2pPort string, defaultSeeds []string) bool {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return false
+	}
+	for _, seed := range defaultSeeds {
+		seedClean := strings.TrimSpace(seed)
+		if strings.EqualFold(seedClean, endpoint) {
+			return true
+		}
+		seedHost, _, _ := net.SplitHostPort(seedClean)
+		if seedHost != "" && strings.EqualFold(seedHost, endpoint) {
+			return true
+		}
+	}
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		host = endpoint
+		port = ""
+	}
+	parsedIP := net.ParseIP(host)
+	if parsedIP == nil {
+		return true // DNS domain name
+	}
+	if parsedIP.IsLoopback() {
+		return true // Localhost test/dev node
+	}
+	if p2pPort != "" && port == p2pPort {
+		return true
+	}
+	if p2pPort == "" && (port == core.TestnetP2PPort || port == core.MainnetP2PPort) {
+		return true
+	}
+	return false
+}
+
+// filterSafePeersJSON filters peer lists from /peers, keeping only DNS seeds and public nodes with open P2P ports.
+func filterSafePeersJSON(raw []byte, netProfile core.NetworkProfile) []byte {
+	var strPeers []string
+	if err := json.Unmarshal(raw, &strPeers); err == nil {
+		var filtered []string
+		for _, p := range strPeers {
+			if isSafeP2PDisplayPeer(p, netProfile.P2PPort, netProfile.DefaultSeeds) {
+				filtered = append(filtered, p)
+			}
+		}
+		if filtered == nil {
+			filtered = []string{}
+		}
+		out, err := json.Marshal(filtered)
+		if err == nil {
+			return out
+		}
+		return raw
+	}
+	var objPeers []map[string]interface{}
+	if err := json.Unmarshal(raw, &objPeers); err == nil {
+		var filtered []map[string]interface{}
+		for _, obj := range objPeers {
+			if isSeed, ok := obj["is_seed"].(bool); ok && isSeed {
+				filtered = append(filtered, obj)
+				continue
+			}
+			addr, _ := obj["display_address"].(string)
+			if addr == "" {
+				addr, _ = obj["endpoint"].(string)
+			}
+			if addr == "" {
+				addr, _ = obj["addr"].(string)
+			}
+			if addr == "" {
+				addr, _ = obj["address"].(string)
+			}
+			if addr == "" {
+				addr, _ = obj["peer"].(string)
+			}
+			if isSafeP2PDisplayPeer(addr, netProfile.P2PPort, netProfile.DefaultSeeds) {
+				filtered = append(filtered, obj)
+			}
+		}
+		if filtered == nil {
+			filtered = []map[string]interface{}{}
+		}
+		out, err := json.Marshal(filtered)
+		if err == nil {
+			return out
+		}
+		return raw
+	}
+	return raw
 }
 
 func handleChain(w http.ResponseWriter, r *http.Request) {
@@ -1163,9 +1274,19 @@ func handleExportCSV(w http.ResponseWriter, r *http.Request) {
 
 // Embedded Web UI HTML/CSS/JavaScript
 func handleWebUI(w http.ResponseWriter, r *http.Request) {
+	token := initSessionToken()
+	http.SetCookie(w, &http.Cookie{
+		Name:     "armax_gui_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	ticker := core.TickerForNetworkID(core.ActiveNetwork.NetworkID)
-	w.Write([]byte(strings.ReplaceAll(webUIHTML, "{{TICKER}}", ticker)))
+	html := strings.ReplaceAll(webUIHTML, "{{TICKER}}", ticker)
+	html = strings.ReplaceAll(html, "{{SESSION_TOKEN}}", token)
+	w.Write([]byte(html))
 }
 
 const webUIHTML = `<!DOCTYPE html>
@@ -1299,6 +1420,21 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
         <input type="text" class="addr-input" id="lblOverviewAddr" readonly value="Loading address...">
         <button class="btn btn-secondary" onclick="copyText(document.getElementById('lblOverviewAddr').value)"> Copy</button>
         <button class="btn btn-outline" onclick="openVisualCard()"> Visual Card</button>
+      </div>
+    </div>
+
+    <!-- ONBOARDING: NO WALLET DETECTED BANNER -->
+    <div id="noWalletCard" class="card" style="display:none; border:1px solid #38bdf8; background:rgba(56, 189, 248, 0.05);">
+      <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px;">
+        <span style="font-size:28px;">🔑</span>
+        <div>
+          <div style="font-size:16px; font-weight:700; color:#38bdf8;">No Wallet Initialized</div>
+          <div style="font-size:13px; color:var(--text-muted); margin-top:2px;">No encrypted keystore was found at <code id="lblMissingWalletPath" style="color:#f8fafc; background:#090d16; padding:2px 6px; border-radius:4px;">testnet/wallet.json</code>. You must create or restore a wallet to transact and receive mining rewards.</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
+        <button class="btn" type="button" onclick="openModal('setupWalletModal')">⚡ Create New Encrypted Wallet</button>
+        <button class="btn btn-secondary" type="button" onclick="openModal('restoreWalletModal')">📥 Restore from 24-Word Mnemonic</button>
       </div>
     </div>
 
@@ -1623,7 +1759,96 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
   </div>
 </div>
 
+<!-- MODAL: SETUP NEW WALLET -->
+<div class="modal-backdrop" id="setupWalletModal">
+  <div class="modal" style="max-width:540px;">
+    <div class="modal-header">
+      <div class="modal-title">🔐 Create New Armaxcoin Wallet</div>
+      <button class="modal-close" onclick="closeModal('setupWalletModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
+        No wallet keystore was found on this system. Create a new encrypted keystore protected by post-quantum <b>ML-DSA-65 (FIPS 204)</b> to begin.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label">New Keystore Passphrase (minimum 12 characters):</label>
+        <input type="password" class="form-control" id="txtModalCreatePass" placeholder="Enter strong passphrase (min 12 chars)...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm Keystore Passphrase:</label>
+        <input type="password" class="form-control" id="txtModalCreatePassConfirm" placeholder="Confirm passphrase...">
+      </div>
+
+      <div id="modalCreateActions" style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-outline" type="button" onclick="closeModal('setupWalletModal'); openModal('restoreWalletModal');">Restore from Mnemonic</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-secondary" type="button" onclick="closeModal('setupWalletModal')">Spectator Mode</button>
+          <button class="btn" type="button" id="btnModalCreateWallet" onclick="executeModalCreateWallet()"> Generate & Save Wallet</button>
+        </div>
+      </div>
+
+      <div id="modalCreateMnemonicBox" style="margin-top:16px; display:none; padding:14px; border-radius:6px; background:#090d16; border:1px solid #10b981; font-size:13px; font-family:monospace; color:#f8fafc; line-height:1.6;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: RESTORE WALLET -->
+<div class="modal-backdrop" id="restoreWalletModal">
+  <div class="modal" style="max-width:540px;">
+    <div class="modal-header">
+      <div class="modal-title">📥 Restore Armaxcoin Wallet</div>
+      <button class="modal-close" onclick="closeModal('restoreWalletModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
+        Enter your 12 or 24-word BIP-39 recovery seed phrase to restore an existing wallet address and private keys.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label">Recovery Mnemonic Seed Phrase:</label>
+        <input type="text" class="form-control" id="txtModalRestoreMnemonic" placeholder="word1 word2 word3 ...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Keystore Passphrase (minimum 12 characters):</label>
+        <input type="password" class="form-control" id="txtModalRestorePass" placeholder="Enter password to encrypt wallet...">
+      </div>
+
+      <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <button class="btn btn-outline" type="button" onclick="closeModal('restoreWalletModal'); openModal('setupWalletModal');">Create New Instead</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-secondary" type="button" onclick="closeModal('restoreWalletModal')">Cancel</button>
+          <button class="btn" type="button" onclick="executeModalRestoreWallet()"> Restore Wallet</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+const GUI_SESSION_TOKEN = "{{SESSION_TOKEN}}";
+
+// Transparently attach session security token to all GUI API requests
+const _nativeFetch = window.fetch;
+window.fetch = function(resource, init) {
+  init = init || {};
+  let headers = init.headers;
+  if (!headers) {
+    headers = {};
+  } else if (headers instanceof Headers) {
+    const h = {};
+    headers.forEach((v, k) => { h[k] = v; });
+    headers = h;
+  } else {
+    headers = Object.assign({}, headers);
+  }
+  if (GUI_SESSION_TOKEN && !headers['X-Armx-GUI-Token']) {
+    headers['X-Armx-GUI-Token'] = GUI_SESSION_TOKEN;
+  }
+  init.headers = headers;
+  return _nativeFetch(resource, init);
+};
+
 let currentAddress = "";
 let currentTxRecords = [];
 let filteredTxRecords = [];
@@ -1819,6 +2044,100 @@ function renderTransactionPage() {
   document.getElementById('txPageInfo').innerText = 'Page ' + (currentTxPage + 1) + ' / ' + pageCount + ' -- ' + filteredTxRecords.length + ' matching / ' + currentTxRecords.length + ' total loaded';
 }
 
+function applyWalletLoaded(address) {
+  currentAddress = address;
+  const overviewInput = document.getElementById('lblOverviewAddr');
+  if (overviewInput) overviewInput.value = address;
+  const receiveInput = document.getElementById('txtReceiveAddr');
+  if (receiveInput) receiveInput.value = address;
+  const minerInput = document.getElementById('txtMinerAddr');
+  if (minerInput) minerInput.value = address;
+  const noWalletCard = document.getElementById('noWalletCard');
+  if (noWalletCard) noWalletCard.style.display = 'none';
+  fetchBalance();
+  loadHistory();
+}
+
+async function executeModalCreateWallet() {
+  const pass = document.getElementById('txtModalCreatePass').value;
+  const confirmPass = document.getElementById('txtModalCreatePassConfirm').value;
+  const box = document.getElementById('modalCreateMnemonicBox');
+  const btn = document.getElementById('btnModalCreateWallet');
+  if (!pass || pass.length < 12) {
+    alert("Passphrase must be at least 12 characters.");
+    return;
+  }
+  if (pass !== confirmPass) {
+    alert("Passphrases do not match.");
+    return;
+  }
+  btn.disabled = true;
+  btn.innerText = "Generating ML-DSA-65 Keys...";
+  try {
+    const res = await fetch('/api/wallet/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passphrase: pass })
+    });
+    const text = await res.text();
+    btn.disabled = false;
+    btn.innerText = " Generate & Save Wallet";
+    if (!res.ok) {
+      alert("Wallet creation failed: " + text);
+      return;
+    }
+    const data = JSON.parse(text);
+    applyWalletLoaded(data.address);
+    document.getElementById('txtModalCreatePass').value = '';
+    document.getElementById('txtModalCreatePassConfirm').value = '';
+    const actions = document.getElementById('modalCreateActions');
+    if (actions) actions.style.display = 'none';
+    box.style.display = 'block';
+    box.innerHTML = '<div style="color:#10b981; font-weight:700; margin-bottom:8px;">✅ WALLET CREATED & SAVED!</div>' +
+      '<div style="color:#fbbf24; font-weight:700; margin-bottom:6px;">⚠️ WRITE DOWN YOUR 24-WORD RECOVERY PHRASE (SHOWN ONCE):</div>' +
+      '<div style="background:#020617; padding:10px; border-radius:4px; user-select:all; word-break:break-word; margin-bottom:10px; color:#38bdf8; font-size:13px;">' + data.mnemonic + '</div>' +
+      '<div style="color:var(--text-muted); font-size:12px; margin-bottom:12px;">Active Address: <b style="color:#f8fafc;">' + data.address + '</b></div>' +
+      '<button class="btn" style="width:100%;" onclick="copyText(\'' + data.mnemonic + '\'); closeModal(\'setupWalletModal\');"> Copy Phrase & Enter Wallet</button>';
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerText = " Generate & Save Wallet";
+    alert("Error creating wallet: " + e.message);
+  }
+}
+
+async function executeModalRestoreWallet() {
+  const mnemonic = document.getElementById('txtModalRestoreMnemonic').value.trim();
+  const pass = document.getElementById('txtModalRestorePass').value;
+  if (!mnemonic) {
+    alert("Please enter your 12 or 24-word BIP-39 recovery phrase.");
+    return;
+  }
+  if (!pass || pass.length < 12) {
+    alert("Passphrase must be at least 12 characters.");
+    return;
+  }
+  try {
+    const res = await fetch('/api/wallet/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mnemonic: mnemonic, passphrase: pass })
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      alert("Restore failed: " + text);
+      return;
+    }
+    const data = JSON.parse(text);
+    applyWalletLoaded(data.address);
+    document.getElementById('txtModalRestoreMnemonic').value = '';
+    document.getElementById('txtModalRestorePass').value = '';
+    closeModal('restoreWalletModal');
+    alert("Wallet restored and saved! Active address: " + data.address);
+  } catch (e) {
+    alert("Error restoring wallet: " + e.message);
+  }
+}
+
 async function executeCreateWallet() {
   const pass = document.getElementById('txtCreatePass').value;
   const confirmPass = document.getElementById('txtCreatePassConfirm').value;
@@ -1843,16 +2162,11 @@ async function executeCreateWallet() {
       return;
     }
     const data = JSON.parse(text);
-    currentAddress = data.address;
-    document.getElementById('lblOverviewAddr').value = currentAddress;
-    document.getElementById('txtReceiveAddr').value = currentAddress;
-    document.getElementById('txtMinerAddr').value = currentAddress;
+    applyWalletLoaded(data.address);
     document.getElementById('txtCreatePass').value = '';
     document.getElementById('txtCreatePassConfirm').value = '';
     box.style.display = 'block';
     box.innerText = "IMPORTANT - WRITE DOWN YOUR 24-WORD RECOVERY PHRASE NOW (SHOWN ONCE):\n\n" + data.mnemonic + "\n\nSaved Address: " + data.address;
-    fetchBalance();
-    loadHistory();
   } catch (e) {
     alert("Error creating wallet: " + e.message);
   }
@@ -1881,15 +2195,10 @@ async function executeRestoreWallet() {
       return;
     }
     const data = JSON.parse(text);
-    currentAddress = data.address;
-    document.getElementById('lblOverviewAddr').value = currentAddress;
-    document.getElementById('txtReceiveAddr').value = currentAddress;
-    document.getElementById('txtMinerAddr').value = currentAddress;
+    applyWalletLoaded(data.address);
     document.getElementById('txtRestoreMnemonic').value = '';
     document.getElementById('txtRestorePass').value = '';
-    alert("Wallet restored and saved! Active address: " + currentAddress);
-    fetchBalance();
-    loadHistory();
+    alert("Wallet restored and saved! Active address: " + data.address);
   } catch (e) {
     alert("Error restoring wallet: " + e.message);
   }
@@ -2204,11 +2513,25 @@ async function runCLI() {
 (async function init() {
   try {
     const res = await fetch('/api/wallet/info');
-    const info = await res.json();
-    currentAddress = info.address;
-    document.getElementById('lblOverviewAddr').value = currentAddress;
-    document.getElementById('txtReceiveAddr').value = currentAddress;
-    document.getElementById('txtMinerAddr').value = currentAddress;
+    if (res.ok) {
+      const info = await res.json();
+      if (info.address && info.address.length > 0) {
+        applyWalletLoaded(info.address);
+      } else {
+        document.getElementById('lblOverviewAddr').value = 'No wallet detected (Click "Create New Wallet" below)';
+        document.getElementById('txtReceiveAddr').value = 'No active wallet';
+        document.getElementById('txtMinerAddr').value = 'No active wallet';
+        const card = document.getElementById('noWalletCard');
+        if (card) card.style.display = 'block';
+        if (info.wallet_path && document.getElementById('lblMissingWalletPath')) {
+          document.getElementById('lblMissingWalletPath').innerText = info.wallet_path;
+        }
+        // Automatically prompt the wallet creation modal on first launch without a wallet
+        openModal('setupWalletModal');
+      }
+    } else {
+      document.getElementById('lblOverviewAddr').value = '';
+    }
   } catch(e) {}
 
   fetchStats();

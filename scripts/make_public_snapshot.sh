@@ -314,17 +314,17 @@ if ! command -v "${GITLEAKS_CMD}" &> /dev/null; then
     fi
 fi
 
-if [ -n "${GITLEAKS_CMD}" ]; then
+if [ "${SKIP_GITLEAKS}" -eq 1 ]; then
+    echo "********************************************************************************"
+    echo "[!] WARNING: Skipping secret scan due to explicit --skip-gitleaks flag!"
+    echo "    SECURITY RISK: Snapshot is NOT verified against credential/key leakage!"
+    echo "********************************************************************************"
+elif [ -n "${GITLEAKS_CMD}" ]; then
     (
         cd "${STAGING_DIR}"
         "${GITLEAKS_CMD}" detect --source . --verbose --exit-code 1
     )
     echo "[OK] Gitleaks secret verification passed!"
-elif [ "${SKIP_GITLEAKS}" -eq 1 ]; then
-    echo "********************************************************************************"
-    echo "[!] WARNING: Gitleaks not found. Skipping secret scan due to explicit --skip-gitleaks flag!"
-    echo "    SECURITY RISK: Snapshot is NOT verified against credential/key leakage!"
-    echo "********************************************************************************"
 else
     echo "********************************************************************************"
     echo "[x] ERROR: 'gitleaks' executable not found in PATH or ~/go/bin/gitleaks."

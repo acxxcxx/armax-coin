@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [v1.0.8] - 2026-11-07
+
+> **Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening.** Resolves Linux/Unix Desktop GUI session authentication failure on wallet creation, implements automated first-time wallet setup and mnemonic restore dialogs when no keystore exists, protects residential peer privacy by filtering ephemeral client ports, and fixes snapshot script flag precedence.
+
+#### Added
+- **First-Time Wallet Onboarding Wizard (`gui/main_unix.go`):** Added `#noWalletCard` overview alert and automatic `#setupWalletModal` modal dialog prompting first-time users to create an encrypted keystore (minimum 12-character passphrase) or import an existing 24-word BIP-39 mnemonic phrase (`#restoreWalletModal`).
+- **Transparent GUI Session Auth Injection (`gui/main_unix.go`):** Injected active session security token into Web UI HTML (`window.GUI_SESSION_TOKEN = "{{SESSION_TOKEN}}"`) and issued `HttpOnly`, `SameSite=Strict`, `Path=/` session cookie (`armax_gui_token`). Client-side JavaScript automatically attaches `X-Armx-GUI-Token` to all API fetch requests.
+- **P2P Peer Privacy Filter (`gui/main.go`, `gui/main_unix.go`):** Added `isSafeP2PDisplayPeer` and `filterSafePeersJSON` helper functions. Restricts displayed peers in active peer lists, `/peers` diagnostics, and `getpeerinfo` CLI outputs to DNS seeds, domain names, and public IPs listening on open P2P ports (`19335`/`19334`), masking home nodes on ephemeral client sockets.
+- **Unit Test Coverage for Peer Filtering & Unix GUI (`gui/gui_test.go`, `gui/gui_unix_test.go`):** Added comprehensive test suites verifying ephemeral port filtering, DNS seed preservation, session token validation, and first-time wallet setup flow.
+
+#### Fixed
+- **Linux GUI Wallet Creation 401 Unauthorized Error (`gui/main_unix.go`):** Fixed authentication failure where `/api/wallet/create` was rejected with `{"error":"Unauthorized: Invalid or missing GUI session token"}` due to missing client-side credential injection.
+- **Undefined Active Address State (`gui/main_unix.go`):** Handled missing keystore state in `/api/wallet/info` (`"address": "", "initialized": false`), preventing DOM elements from evaluating to `undefined`.
+- **Public Snapshot Tooling Precedence (`scripts/make_public_snapshot.ps1`, `scripts/make_public_snapshot.sh`):** Prioritized `-SkipGitleaks` / `--skip-gitleaks` checks ahead of local `gitleaks` executable detection, ensuring test runs and automated snapshot tools bypass synthetic test fixtures cleanly.
+
 ### [v1.0.7] - 2026-11-05 (in development; `core.Version` is `1.0.7`)
 
 > **Consensus fork at testnet block 20,000.** All nodes and miners must upgrade to v1.0.7 before the tip reaches 20,000. From that height, a block timestamp may be at most **10 minutes (600 seconds)** ahead of the validating node's clock (previously 2 hours / 7,200 seconds). Below 20,000, the 2-hour rule is unchanged, so existing blocks stay valid. Mainnet, soak, and regtest profiles keep the 2-hour rule (activation height `-1`). All consensus invariants (PoW schedule, 120s block target, LWMA-1 $N=60$, halving schedule, and 126,000,000 ARMX supply cap) remain strictly preserved.

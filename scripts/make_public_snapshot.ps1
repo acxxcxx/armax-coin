@@ -385,17 +385,17 @@ try {
             }
         }
 
-        if ($gitleaksPath) {
+        if ($SkipGitleaks -or ($args -contains "--skip-gitleaks")) {
+            Write-Host "********************************************************************************" -ForegroundColor Yellow
+            Write-Host "[!] WARNING: Skipping secret scan due to explicit --skip-gitleaks flag!" -ForegroundColor Yellow
+            Write-Host "    SECURITY RISK: Snapshot is NOT verified against credential/key leakage!" -ForegroundColor Yellow
+            Write-Host "********************************************************************************" -ForegroundColor Yellow
+        } elseif ($gitleaksPath) {
             & $gitleaksPath detect --source . --verbose --exit-code 1
             if ($LASTEXITCODE -ne 0) {
                 throw "Gitleaks scan failed: potential secrets detected!"
             }
             Write-Host "[OK] Gitleaks secret verification passed!" -ForegroundColor Green
-        } elseif ($SkipGitleaks -or ($args -contains "--skip-gitleaks")) {
-            Write-Host "********************************************************************************" -ForegroundColor Yellow
-            Write-Host "[!] WARNING: Gitleaks not found. Skipping secret scan due to explicit --skip-gitleaks flag!" -ForegroundColor Yellow
-            Write-Host "    SECURITY RISK: Snapshot is NOT verified against credential/key leakage!" -ForegroundColor Yellow
-            Write-Host "********************************************************************************" -ForegroundColor Yellow
         } else {
             Write-Host "********************************************************************************" -ForegroundColor Red
             Write-Host "[x] ERROR: 'gitleaks' executable not found in PATH or $env:USERPROFILE\go\bin\gitleaks.exe." -ForegroundColor Red

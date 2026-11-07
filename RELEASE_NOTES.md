@@ -1,4 +1,26 @@
-# Armaxcoin v1.0.7 Release Notes
+# Armaxcoin Release Notes
+
+## Armaxcoin v1.0.8
+
+**Target Release:** Armaxcoin v1.0.8 — Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening  
+**Status:** OFFICIAL RELEASE  
+**Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
+**Detailed Technical Specification:** [docs/releases/v1.0.8.md](docs/releases/v1.0.8.md)
+
+---
+
+### 1. Release Overview & Objective
+
+Armaxcoin v1.0.8 resolves critical user-facing issues in the Linux/Unix Desktop GUI, implements automated first-time wallet onboarding when no keystore exists, protects residential peer privacy by filtering ephemeral client ports, and ensures snapshot script safety.
+
+1. **Linux Desktop GUI Authentication Fix:** Eliminates the `{"error":"Unauthorized: Invalid or missing GUI session token"}` error when creating or restoring wallets. The session token is injected into browser HTML and set as a secure `HttpOnly` cookie with transparent `window.fetch` header injection.
+2. **First-Time Wallet Onboarding:** Replaces the unhandled empty wallet state (`undefined` address and balance) with interactive `#noWalletCard` and `#setupWalletModal` dialogs prompting users to generate a 24-word BIP-39 mnemonic with ML-DSA-65 post-quantum keys or restore an existing keystore.
+3. **P2P Peer Privacy Protection:** In both Windows GUI (`gui/main.go`) and Unix GUI (`gui/main_unix.go`), active peer listings filter out residential home node public IPs connecting on ephemeral ports. Only DNS seeds, domain names, and public nodes listening on the network P2P port (`19335`/`19334`) are displayed.
+4. **Snapshot Tooling Precedence:** Prioritizes explicit `-SkipGitleaks` / `--skip-gitleaks` flags in snapshot scripts over local gitleaks detection.
+
+---
+
+## Armaxcoin v1.0.7
 
 **Target Release:** Armaxcoin v1.0.7 — Testnet Consensus Fork & Optimization Release  
 **Status:** IN DEVELOPMENT (`core.Version = "1.0.7"`). Uncommitted, untagged.  

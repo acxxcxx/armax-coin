@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -3158,7 +3159,104 @@ func executeConsoleCommand(rawCmd string, targetRPCURL string, expectedNetID str
 		}
 		return fmt.Sprintf("CLI error: network validation failed: %v", err)
 	}
+	if cmd == "getpeerinfo" {
+		data = filterSafePeersJSON(data, activeNetwork)
+	}
 	return fmt.Sprintf("$ %s\nHTTP %d\n%s", strings.TrimSpace(rawCmd), statusCode, string(data))
+}
+
+// isSafeP2PDisplayPeer checks if a peer is a DNS seed or a public node with an open listening P2P port.
+// Residential home nodes on ephemeral client ports are excluded to protect node privacy.
+func isSafeP2PDisplayPeer(endpoint string, p2pPort string, defaultSeeds []string) bool {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return false
+	}
+	for _, seed := range defaultSeeds {
+		seedClean := strings.TrimSpace(seed)
+		if strings.EqualFold(seedClean, endpoint) {
+			return true
+		}
+		seedHost, _, _ := net.SplitHostPort(seedClean)
+		if seedHost != "" && strings.EqualFold(seedHost, endpoint) {
+			return true
+		}
+	}
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		host = endpoint
+		port = ""
+	}
+	parsedIP := net.ParseIP(host)
+	if parsedIP == nil {
+		return true // DNS domain name
+	}
+	if parsedIP.IsLoopback() {
+		return true // Localhost test/dev node
+	}
+	if p2pPort != "" && port == p2pPort {
+		return true
+	}
+	if p2pPort == "" && (port == core.TestnetP2PPort || port == core.MainnetP2PPort) {
+		return true
+	}
+	return false
+}
+
+// filterSafePeersJSON filters peer lists from /peers, keeping only DNS seeds and public nodes with open P2P ports.
+func filterSafePeersJSON(raw []byte, netProfile core.NetworkProfile) []byte {
+	var strPeers []string
+	if err := json.Unmarshal(raw, &strPeers); err == nil {
+		var filtered []string
+		for _, p := range strPeers {
+			if isSafeP2PDisplayPeer(p, netProfile.P2PPort, netProfile.DefaultSeeds) {
+				filtered = append(filtered, p)
+			}
+		}
+		if filtered == nil {
+			filtered = []string{}
+		}
+		out, err := json.Marshal(filtered)
+		if err == nil {
+			return out
+		}
+		return raw
+	}
+	var objPeers []map[string]interface{}
+	if err := json.Unmarshal(raw, &objPeers); err == nil {
+		var filtered []map[string]interface{}
+		for _, obj := range objPeers {
+			if isSeed, ok := obj["is_seed"].(bool); ok && isSeed {
+				filtered = append(filtered, obj)
+				continue
+			}
+			addr, _ := obj["display_address"].(string)
+			if addr == "" {
+				addr, _ = obj["endpoint"].(string)
+			}
+			if addr == "" {
+				addr, _ = obj["addr"].(string)
+			}
+			if addr == "" {
+				addr, _ = obj["address"].(string)
+			}
+			if addr == "" {
+				addr, _ = obj["peer"].(string)
+			}
+			if isSafeP2PDisplayPeer(addr, netProfile.P2PPort, netProfile.DefaultSeeds) {
+				filtered = append(filtered, obj)
+			}
+		}
+		if filtered == nil {
+			filtered = []map[string]interface{}{}
+		}
+		out, err := json.Marshal(filtered)
+		if err == nil {
+			return out
+		}
+		return raw
+	}
+	return raw
 }
 
 func runGUICommand(owner walk.Form, input *walk.LineEdit, output *walk.TextEdit) {
@@ -3194,6 +3292,7 @@ func queryNodeDiagnostics(teConsole *walk.TextEdit) {
 		peersData, _, pErr := queryValidatedNodeEndpoint(rpcURL, "/peers", activeNetwork.NetworkID, 3*time.Second)
 		peersStr := "[]"
 		if pErr == nil {
+			peersData = filterSafePeersJSON(peersData, activeNetwork)
 			var pPretty bytes.Buffer
 			if json.Indent(&pPretty, peersData, "", "  ") == nil {
 				peersStr = pPretty.String()
@@ -3216,6 +3315,7 @@ func queryNodePeers(teConsole *walk.TextEdit) {
 			})
 			return
 		}
+		data = filterSafePeersJSON(data, activeNetwork)
 		var pPretty bytes.Buffer
 		_ = json.Indent(&pPretty, data, "", "  ")
 		output := fmt.Sprintf("=== CONNECTED PEERS (%s) ===\r\n%s\r\n", time.Now().Format("15:04:05"), pPretty.String())

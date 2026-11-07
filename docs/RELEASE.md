@@ -87,7 +87,17 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.6-windows-amd64.zip"
 
 ## 5. Official Release Status
 
-- **Target Release (`v1.0.7`):** **In Development / Testnet Consensus Fork Candidate**
+- **Target Release (`v1.0.8`):** **Official Release**
+  - **Release Notes:** [`docs/releases/v1.0.8.md`](releases/v1.0.8.md)
+  - **Status:** Desktop GUI Authentication & First-Time Onboarding, P2P Residential Peer Privacy Protection, Snapshot Safety Precedence
+  - **Target Architectures:**
+    - `armax-v1.0.8-linux-amd64.tar.gz` (Linux 64-bit x86; includes Linux Web GUI)
+    - `armax-v1.0.8-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC; includes Linux Web GUI)
+    - `armax-v1.0.8-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
+    - `armax-v1.0.8-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
+  - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; staticcheck and govulncheck 0 issues).
+
+- **Previous Consensus Fork Release (`v1.0.7`):**
   - **Release Notes:** [`docs/releases/v1.0.7.md`](releases/v1.0.7.md)
   - **Status:** Testnet Consensus Hard Fork at Block 20,000 (10-minute future timestamp ceiling), Sync & Storage Optimization, Subsystem Hardening
   - **Target Architectures:**

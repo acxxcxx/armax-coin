@@ -858,3 +858,71 @@ func TestGUICreateAndSignTransaction_BoundsErrorFormat(t *testing.T) {
 		})
 	}
 }
+
+// TestSafeP2PDisplayFilter verifies that home residential nodes with ephemeral client ports
+// are excluded from GUI active peer display, while DNS seeds and public nodes with open listening P2P ports are preserved.
+func TestSafeP2PDisplayFilter(t *testing.T) {
+	testSeeds := []string{"testnet-seed1.armax-coin.cloud:19335", "testnet-seed2.armax-coin.cloud:19335"}
+	p2pPort := "19335"
+
+	// 1. Ephemeral residential client ports must be rejected to protect home nodes
+	if isSafeP2PDisplayPeer("198.51.100.25:58539", p2pPort, testSeeds) {
+		t.Errorf("expected 198.51.100.25:58539 to be rejected (ephemeral port)")
+	}
+	if isSafeP2PDisplayPeer("192.168.1.100:49152", p2pPort, testSeeds) {
+		t.Errorf("expected 192.168.1.100:49152 to be rejected (ephemeral port)")
+	}
+
+	// 2. DNS seeds must be accepted
+	if !isSafeP2PDisplayPeer("testnet-seed1.armax-coin.cloud:19335", p2pPort, testSeeds) {
+		t.Errorf("expected testnet-seed1.armax-coin.cloud:19335 to be accepted (seed)")
+	}
+	if !isSafeP2PDisplayPeer("seed.custom-domain.org", p2pPort, testSeeds) {
+		t.Errorf("expected seed.custom-domain.org to be accepted (domain)")
+	}
+
+	// 3. Public IP with open listening P2P port must be accepted
+	if !isSafeP2PDisplayPeer("198.51.100.25:19335", p2pPort, testSeeds) {
+		t.Errorf("expected 198.51.100.25:19335 to be accepted (standard listening port)")
+	}
+
+	// 4. filterSafePeersJSON on string array
+	rawStringArray := []byte(`["198.51.100.25:58539", "testnet-seed1.armax-coin.cloud:19335", "198.51.100.30:19335"]`)
+	netProfile := core.NetworkProfile{
+		P2PPort:      "19335",
+		DefaultSeeds: testSeeds,
+	}
+	filteredRaw := filterSafePeersJSON(rawStringArray, netProfile)
+	var filteredStrings []string
+	if err := json.Unmarshal(filteredRaw, &filteredStrings); err != nil {
+		t.Fatalf("failed to unmarshal filtered JSON: %v", err)
+	}
+	if len(filteredStrings) != 2 {
+		t.Fatalf("expected 2 filtered peers, got %d: %v", len(filteredStrings), filteredStrings)
+	}
+	for _, p := range filteredStrings {
+		if strings.Contains(p, "58539") {
+			t.Fatalf("found ephemeral peer in filtered output: %s", p)
+		}
+	}
+
+	// 5. filterSafePeersJSON on object array
+	rawObjArray := []byte(`[
+		{"endpoint":"198.51.100.25:58539", "display_address":"198.51.100.25:58539", "is_active":true},
+		{"endpoint":"testnet-seed1.armax-coin.cloud:19335", "display_address":"testnet-seed1.armax-coin.cloud:19335", "is_seed":true},
+		{"endpoint":"198.51.100.30:19335", "display_address":"198.51.100.30:19335", "is_active":true}
+	]`)
+	filteredObjRaw := filterSafePeersJSON(rawObjArray, netProfile)
+	var filteredObjs []map[string]interface{}
+	if err := json.Unmarshal(filteredObjRaw, &filteredObjs); err != nil {
+		t.Fatalf("failed to unmarshal filtered obj JSON: %v", err)
+	}
+	if len(filteredObjs) != 2 {
+		t.Fatalf("expected 2 filtered objects, got %d: %v", len(filteredObjs), filteredObjs)
+	}
+	for _, obj := range filteredObjs {
+		if ep, _ := obj["endpoint"].(string); strings.Contains(ep, "58539") {
+			t.Fatalf("found ephemeral peer in filtered obj output: %s", ep)
+		}
+	}
+}

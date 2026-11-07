@@ -640,7 +640,22 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 ## Release History & Changelog
 
-### v1.0.7 (Current -- Testnet Consensus Fork & Optimization Release) -- 2026-11-05
+### v1.0.8 (Current -- Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening) -- 2026-11-07
+
+Target release: `v1.0.8` (Official Release). Testnet (`ARMX-TESTNET-1`). Mainnet remains locked (`core.MainnetLaunched = false`).
+
+#### 1. Linux Desktop GUI Authentication Fix & Session Security
+- **Transparent Session Injection:** Injects active session security tokens directly into the Web UI HTML and issues a secure `HttpOnly`, `SameSite=Strict` session cookie (`armax_gui_token`). Client-side JavaScript automatically attaches `X-Armx-GUI-Token` to all API requests, resolving the `401 Unauthorized` error when creating new wallets.
+- **DNS Rebinding Protection:** Preserves strict validation of the `Host` header (`127.0.0.1`, `localhost`, `::1`), protecting users from malicious cross-origin websites attempting to access local node RPCs.
+
+#### 2. First-Time Wallet Onboarding & UI Enhancements
+- **Automated Setup Dialog (`#setupWalletModal`):** Automatically appears on first launch when no active keystore exists, guiding users through encrypted wallet creation (minimum 12-character passphrase) or restoring existing 24-word BIP-39 mnemonic seed phrases (`#restoreWalletModal`).
+- **Overview Status Banner (`#noWalletCard`):** Displays a persistent onboarding card on the Overview tab when no active address is loaded, replacing the previous `undefined` address display.
+
+#### 3. P2P Peer Display Privacy Filter
+- **Residential Home Node Masking:** Filters out ephemeral non-listening outbound client sockets from the GUI's connected peers and diagnostics. Only DNS seeds, domain hostnames, and public IPs with open listening P2P ports (`19335`/`19334`) are displayed, shielding home node IPs from public exposure.
+
+### v1.0.7 (Previous -- Testnet Consensus Fork & Optimization Release) -- 2026-11-05
 
 Target release: `v1.0.7` (`core.Version = "1.0.7"`). Testnet only (`ARMX-TESTNET-1`). Mainnet remains locked (`core.MainnetLaunched = false`).
 
