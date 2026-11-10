@@ -318,14 +318,13 @@ sudo systemctl start armcoind-testnet
 
 ---
 
-## 9. Node Upgrade and Rollback Runbook (v1.0.8 / v1.0.7)
+## 9. Node Upgrade and Rollback Runbook (v1.0.9 / v1.0.8 / v1.0.7)
 
 > [!IMPORTANT]
-> **SCHEDULED CONSENSUS FORK (TESTNET BLOCK 20,000):**
-> Armaxcoin v1.0.7+ activates proposal C6 at **Block 20,000**:
-> - Block timestamps may be at most **600 seconds (10 minutes)** ahead of the validator's local clock (narrowed from 2 hours).
-> - All node operators and miners **MUST** upgrade to v1.0.8 (or at least v1.0.7) before height 20,000 and ensure server clocks are synchronized with NTP.
-> - Un-upgraded v1.0.6 nodes may accept forward-stamped blocks rejected by v1.0.7+, causing an unrecoverable chain split.
+> **ACTIVE & SCHEDULED CONSENSUS FORKS (TESTNET BLOCKS 13,293 & 20,000):**
+> - **Block 13,293 (v1.0.9 — Anti-Stall TEDR):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When a candidate block's timestamp exceeds the parent block's timestamp by more than **1,200 seconds (20 minutes)**, the candidate block qualifies for the emergency fallback target (`ArmaxHashPowLimitHex`, Difficulty 3) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`).
+> - **Block 20,000 (v1.0.7+ — Proposal C6):** Block timestamps may be at most **600 seconds (10 minutes)** ahead of the validator's local clock (narrowed from 2 hours).
+> - All node operators and miners **MUST** upgrade immediately to **v1.0.9** and ensure server clocks are synchronized with NTP.
 
 > [!CAUTION]
 > **STORAGE COMPATIBILITY & ROLLBACK WARNING:**
@@ -336,7 +335,7 @@ sudo systemctl start armcoind-testnet
 > ```
 > Always back up `blockchain.db` before executing store conversion.
 
-### Seamless Upgrade Procedure to v1.0.8
+### Seamless Upgrade Procedure to v1.0.9
 1. Verify the current tip height and peer connectivity:
    ```bash
    curl -s http://127.0.0.1:19333/status | jq .
@@ -355,10 +354,10 @@ sudo systemctl start armcoind-testnet
    ```
 4. Back up the database and working binary:
    ```bash
-   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.v106.bak
-   sudo tar -czvf /var/backups/armax_db_pre_v108_$(date +%F).tar.gz -C /var/armax testnet/blockchain.db
+   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.v108.bak
+   sudo tar -czvf /var/backups/armax_db_pre_v109_$(date +%F).tar.gz -C /var/armax testnet/blockchain.db
    ```
-5. Install the new v1.0.8 binary:
+5. Install the new v1.0.9 binary:
    ```bash
    sudo cp armcoind /usr/local/bin/armcoind
    sudo chmod 755 /usr/local/bin/armcoind
@@ -368,10 +367,10 @@ sudo systemctl start armcoind-testnet
    sudo systemctl start armcoind-testnet
    sudo journalctl -u armcoind-testnet -n 50 --no-pager
    ```
-7. Verify running software version is `"1.0.8"`:
+7. Verify running software version is `"1.0.9"`:
    ```bash
    curl -s http://127.0.0.1:19333/status | jq .version
-   # Expected output: "1.0.8"
+   # Expected output: "1.0.9"
    ```
 
 ### Emergency Rollback Procedure (to v1.0.6)

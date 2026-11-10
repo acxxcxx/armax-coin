@@ -55,24 +55,24 @@ Every official release tag (`v*`) publishes pre-compiled archive packages accomp
 ### Verification on Linux / macOS
 ```bash
 # Download archive and checksum file
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/armax-v1.0.8-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.9/armax-v1.0.9-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.9/SHA256SUMS
 
 # Verify integrity using sha256sum
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 Expected output:
 ```text
-armax-v1.0.8-linux-amd64.tar.gz: OK
+armax-v1.0.9-linux-amd64.tar.gz: OK
 ```
 
 ### Verification on Windows (PowerShell)
 ```powershell
 # 1. Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.8-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.9-windows-amd64.zip
 
 # 2. Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.8-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
 ```
 
 ---
@@ -87,15 +87,19 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.8-windows-amd64.zip"
 
 ## 5. Official Release Status
 
-- **Target Release (`v1.0.8`):** **Official Release**
+- **Target Release (`v1.0.9`):** **Official Release**
+  - **Release Notes:** [`docs/releases/v1.0.9.md`](releases/v1.0.9.md)
+  - **Status:** Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR at Block #13,293), Zero-Allocation CPU Miner Optimization (`5.45x` Speedup), Linux GUI Embedded Daemon Auto-Start
+  - **Target Architectures:**
+    - `armax-v1.0.9-linux-amd64.tar.gz` (Linux 64-bit x86; includes Linux Web GUI)
+    - `armax-v1.0.9-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC; includes Linux Web GUI)
+    - `armax-v1.0.9-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
+    - `armax-v1.0.9-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
+  - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; staticcheck and govulncheck 0 issues).
+
+- **Previous Maintenance Release (`v1.0.8`):**
   - **Release Notes:** [`docs/releases/v1.0.8.md`](releases/v1.0.8.md)
   - **Status:** Desktop GUI Authentication & First-Time Onboarding, P2P Residential Peer Privacy Protection, Snapshot Safety Precedence
-  - **Target Architectures:**
-    - `armax-v1.0.8-linux-amd64.tar.gz` (Linux 64-bit x86; includes Linux Web GUI)
-    - `armax-v1.0.8-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC; includes Linux Web GUI)
-    - `armax-v1.0.8-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
-    - `armax-v1.0.8-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
-  - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; staticcheck and govulncheck 0 issues).
 
 - **Previous Consensus Fork Release (`v1.0.7`):**
   - **Release Notes:** [`docs/releases/v1.0.7.md`](releases/v1.0.7.md)

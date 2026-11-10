@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.8]
-	Version = "1.0.8"
+	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.9]
+	Version = "1.0.9"
 
 	// MaxReorganizationDepth defines the maximum depth of reorganization allowed (prevents deep 51% history overwrites, 720 blocks = ~1 day at 120s) [D-05]
 	MaxReorganizationDepth = 720
@@ -219,8 +219,8 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 		return fmt.Errorf("calculated hash mismatch")
 	}
 
-	// 7. LWMA Difficulty and Numerical Target [C-09]
-	expectedTarget := CalculateExpectedTarget(chainHistory, b.Index)
+	// 7. LWMA Difficulty and Numerical Target [C-09] (with TEDR anti-stall support)
+	expectedTarget := CalculateExpectedTargetForCandidate(chainHistory, b.Index, b.Timestamp)
 	expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
 	if b.Target != expectedTargetHex {
 		return fmt.Errorf("target mismatch (got %s, expected %s)", b.Target, expectedTargetHex)
@@ -382,7 +382,7 @@ func (bc *Blockchain) PreCheckBlock(b *Block) error {
 		return fmt.Errorf("PrevHash mismatch (got %s, expected %s)", b.PrevHash, latest.Hash)
 	}
 
-	expectedTarget := CalculateExpectedTarget(bc.Chain, b.Index)
+	expectedTarget := CalculateExpectedTargetForCandidate(bc.Chain, b.Index, b.Timestamp)
 	expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
 	if b.Target != expectedTargetHex {
 		return fmt.Errorf("target mismatch (got %s, expected %s)", b.Target, expectedTargetHex)

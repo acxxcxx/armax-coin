@@ -13,6 +13,10 @@ const (
 
 	// TargetBlockTimeSeconds is the ideal interval between blocks (120 seconds / 2 minutes) [D-02]
 	TargetBlockTimeSeconds = int64(120)
+
+	// TestnetStallThresholdSeconds is the elapsed solve time threshold (20 minutes) beyond which
+	// an anti-stall emergency target is permitted on testnet post-activation [TEDR Draft v2].
+	TestnetStallThresholdSeconds = int64(1200)
 )
 
 // Two256 is 2^256 used for chainwork computation
@@ -118,8 +122,33 @@ func GetArmaxHashPowLimit() *big.Int {
 
 var targetOverrideHook func() *big.Int
 
+// IsEmergencyBlockCandidate checks if a candidate block qualifies for the anti-stall emergency target:
+// candidate timestamp - parent timestamp > 1200s, within active testnet post-activation [TEDR Draft v2].
+func IsEmergencyBlockCandidate(prevTimestamp, candidateTimestamp int64, blockIndex int) bool {
+	if !IsAntiStallActive(blockIndex) {
+		return false
+	}
+	return (candidateTimestamp - prevTimestamp) > TestnetStallThresholdSeconds
+}
+
+// IsBlockEmergencyRecord checks if a historical block in the chain was an emergency block:
+// it was mined at or above activation height, solve interval > 1200s, and target equals ArmaxHashPowLimit.
+func IsBlockEmergencyRecord(curr *Block, prev *Block) bool {
+	if curr == nil || prev == nil {
+		return false
+	}
+	if !IsAntiStallActive(curr.Index) {
+		return false
+	}
+	if (curr.Timestamp - prev.Timestamp) <= TestnetStallThresholdSeconds {
+		return false
+	}
+	emTgtHex := fmt.Sprintf("%064x", GetArmaxHashPowLimit())
+	return curr.Target == emTgtHex
+}
+
 // CalculateExpectedTarget computes the deterministic 256-bit target expected for a specific block index
-// based on the preceding chain history using zawy's LWMA-1 algorithm [C-31].
+// based on the preceding chain history using zawy's LWMA-1 algorithm [C-31] with TEDR Model 3 Synthetic Normalization.
 func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 	if targetOverrideHook != nil {
 		// Hard-guard: target overrides are strictly prohibited on Mainnet profile identity [F3]
@@ -164,13 +193,37 @@ func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 	actHeight := GetArmaxHashActivationHeight()
 	isNextArmax := actHeight > 0 && int64(nextIndex) >= actHeight
 
+	// TEDR Model 3: Locate the last non-emergency target before or at the start of the window
+	var lastNormalTarget *big.Int
+	startSearch := nextIndex - (LWMAWindowSize + 1)
+	if startSearch < 0 {
+		startSearch = 0
+	}
+	for k := startSearch; k >= 0 && k < len(chain); k-- {
+		var prevK *Block
+		if k > 0 {
+			prevK = &chain[k-1]
+		}
+		if !IsBlockEmergencyRecord(&chain[k], prevK) {
+			lastNormalTarget = chain[k].GetTarget()
+			break
+		}
+	}
+	if lastNormalTarget == nil || lastNormalTarget.Sign() <= 0 {
+		lastNormalTarget = GetArmaxHashPowLimit()
+	}
+
 	for i := 1; i < subWindowLen; i++ {
 		prev := window[i-1]
 		curr := window[i]
 
+		isEmergency := IsBlockEmergencyRecord(&curr, &prev)
+
 		solveTime := curr.Timestamp - prev.Timestamp
-		// Clamp solve time between -6*T and +6*T to prevent timestamp manipulation / timewarp
-		if solveTime > maxSolveTime {
+		if isEmergency {
+			// TEDR Model 3: Normalize emergency solve time to max allowable loosening interval (720s)
+			solveTime = maxSolveTime
+		} else if solveTime > maxSolveTime {
 			solveTime = maxSolveTime
 		} else if solveTime < -maxSolveTime {
 			solveTime = -maxSolveTime
@@ -179,7 +232,17 @@ func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 		weight := int64(i)
 		weightedSolveTimes += weight * solveTime
 
-		currTarget := curr.GetTarget()
+		var currTarget *big.Int
+		if isEmergency {
+			// TEDR Model 3: Synthetic Target Normalization.
+			// Do not leak the low-difficulty ArmaxHashPowLimit into sumTargets!
+			// Instead, inherit the last legitimate non-emergency target.
+			currTarget = new(big.Int).Set(lastNormalTarget)
+		} else {
+			currTarget = curr.GetTarget()
+			lastNormalTarget = currTarget
+		}
+
 		// If we are currently evaluating an ArmaxHash block (nextIndex >= act),
 		// any block in the historical window that preceded the ArmaxHash activation (curr.Index < act)
 		// was mined under SHA-256d at an unrelated difficulty scale.
@@ -233,6 +296,18 @@ func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 	}
 
 	return nextTarget
+}
+
+// CalculateExpectedTargetForCandidate computes the expected 256-bit target for a candidate block,
+// taking into account candidate solve interval for TEDR anti-stall emergency fallback.
+func CalculateExpectedTargetForCandidate(chain []Block, nextIndex int, candidateTimestamp int64) *big.Int {
+	if len(chain) > 0 {
+		prevBlock := chain[len(chain)-1]
+		if nextIndex == prevBlock.Index+1 && IsEmergencyBlockCandidate(prevBlock.Timestamp, candidateTimestamp, nextIndex) {
+			return GetArmaxHashPowLimit()
+		}
+	}
+	return CalculateExpectedTarget(chain, nextIndex)
 }
 
 // CalculateLWMA1 computes the next PoW 256-bit target for the current tip of the blockchain

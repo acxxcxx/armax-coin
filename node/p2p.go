@@ -1588,7 +1588,7 @@ func (p *PeerServer) AddOrphanBlock(b core.Block, peerIP string) bool {
 		p.Blockchain.Lock.RLock()
 		if parentBlock, err := p.Blockchain.GetBlockByHash(b.PrevHash); err == nil && parentBlock != nil {
 			if b.Index == parentBlock.Index+1 {
-				expectedTarget := core.CalculateExpectedTarget(p.Blockchain.Chain, b.Index)
+				expectedTarget := core.CalculateExpectedTargetForCandidate(p.Blockchain.Chain, b.Index, b.Timestamp)
 				expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
 				if b.Target != expectedTargetHex || !core.HashMeetsTarget(calcHash, expectedTarget) {
 					p.Blockchain.Lock.RUnlock()

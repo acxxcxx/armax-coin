@@ -107,6 +107,16 @@ $$\text{TargetSolveTime} = T \times \frac{N \times (N + 1)}{2} = 120 \times \fra
 - **Weighted Solve-Time Bound:** The weighted solve-time sum is clamped to $[E/4, 4E]$ before target adjustment, where $E$ is the expected weighted solve time. This is not a direct factor-of-two bound on the final target, which also depends on the average target in the window.
 - **Target Ceiling:** The next target is capped at the active profile's applicable floor. During ArmaxHash operation on testnet, the maximum target is `DifficultyToTarget(1)`; before that activation, the genesis/network target ceiling applies.
 
+### 3.3 Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR - Block 13,293+)
+Active from Block `#13,293` on Testnet (`core.TestnetProfile.AntiStallActivationHeight = 13293`), TEDR prevents network stalling during severe hashrate crashes:
+- **Emergency Threshold:** If $\Delta t = \text{Timestamp}_i - \text{Timestamp}_{i-1} > 1,200\text{ seconds}$ (20 minutes, or $10 \times T$), the block candidate qualifies for an emergency fallback target:
+  $$\text{Target}_{\text{emergency}} = \text{ArmaxHashPowLimitHex} \quad (\text{Difficulty 3 / 4,096 expected hashes})$$
+- **Model 3 Synthetic Target Normalization:** When an emergency block enters the 60-block LWMA window:
+  - Its solve time is normalized to $720\text{s}$ (the maximum allowable loosening step).
+  - Its target is normalized to the target of the most recent non-emergency block before the stall.
+  - This prevents low-difficulty emergency targets from contaminating `sumTargets`, enabling the network to smoothly step down difficulty towards commodity CPU levels without crashing moving-average stability.
+- **Mainnet Isolation:** Permanently disabled on Mainnet (`MainnetLaunched = false`, `AntiStallActivationHeight = -1`).
+
 ---
 
 ## 4. Cumulative Chainwork & Fork Resolution

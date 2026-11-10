@@ -80,7 +80,7 @@ This checklist defines the formal verification gates and operational procedures 
 ## 6. Git & Release Publication Procedures
 
 - [ ] Ensure local working tree is clean (`git status`).
-- [ ] Tag the release commit using strict SemVer (`v1.0.8`).
+- [ ] Tag the release commit using strict SemVer (`v1.0.9`).
 - [ ] Trigger `.github/workflows/release.yml` with version tag.
 - [ ] Quality gates and vulnerability checks completed successfully.
 - [ ] Binaries compiled and published for all 4 target platforms.

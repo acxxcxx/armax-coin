@@ -547,3 +547,29 @@ func TestUnixGUIHandlePeers_FiltersEphemeralPort(t *testing.T) {
 		t.Fatalf("handleCLI getpeerinfo output missing seed: %s", cliBody)
 	}
 }
+
+func TestUnixGUIIsLoopbackRPC(t *testing.T) {
+	loopbacks := []string{
+		"http://127.0.0.1:19333",
+		"http://localhost:19333",
+		"http://127.0.0.1",
+		"http://[::1]:19333",
+	}
+	for _, u := range loopbacks {
+		if !isLoopbackRPC(u) {
+			t.Errorf("expected %s to be recognized as loopback RPC", u)
+		}
+	}
+
+	remotes := []string{
+		"http://192.168.1.100:19333",
+		"http://10.0.0.5:19333",
+		"http://node.armax-coin.cloud:19333",
+		"https://api.armax-coin.cloud",
+	}
+	for _, u := range remotes {
+		if isLoopbackRPC(u) {
+			t.Errorf("expected %s to NOT be recognized as loopback RPC", u)
+		}
+	}
+}

@@ -1,5 +1,25 @@
 # Armaxcoin Release Notes
 
+## Armaxcoin v1.0.9
+
+**Target Release:** Armaxcoin v1.0.9 — Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR), Zero-Allocation CPU Miner Optimization & Linux GUI Daemon Auto-Start  
+**Status:** OFFICIAL RELEASE  
+**Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
+**Activation Height:** **Testnet Block `#13,293`** (Anti-Stall TEDR Consensus Hard Fork)  
+**Detailed Technical Specification:** [docs/releases/v1.0.9.md](docs/releases/v1.0.9.md)
+
+---
+
+### 1. Release Overview & Objective
+
+Armaxcoin v1.0.9 is a consensus resilience, miner performance, and desktop GUI usability release that immediately unsticks the public testnet from **Block `#13,292`**, accelerates `armminer` CPU hashing by up to **5.45x**, and enables automatic embedded node startup in the Linux/Unix GUI (`armgui`).
+
+1. **Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR at Block `#13,293`):** Activates at **Block `#13,293`** on `ARMX-TESTNET-1` (`AntiStallActivationHeight = 13293`). When the elapsed time since the parent block exceeds **1,200 seconds (20 minutes)**, the candidate block qualifies for the emergency fallback target (`ArmaxHashPowLimitHex`, Difficulty 3). Model 3 Synthetic Target Normalization anchors the emergency block's LWMA weight to `720s` and the last normal target (`lastNormalTarget`), allowing the network to immediately break out of post-GPU difficulty stalls and smoothly step down to CPU difficulty without moving-average collapse. Permanently disabled on Mainnet (`AntiStallActivationHeight = -1`).
+2. **Zero-Allocation CPU Miner (`armminer`) Hot-Path Optimization (`5.45x` Speedup):** Eliminates all 13 per-nonce heap allocations (`888 B/op` $\to$ `0 B/op`, `0 allocs/op`) across both HTTP (`getblocktemplate`) and Stratum v1 mining loops via pre-built header prefix/suffix byte slices, `strconv.AppendInt`, in-place `ArmaxHash v2` BLAKE2b streaming, 32-byte big-endian target comparisons, and batched Stratum mutex checks (once per 256 hashes). Increases 8-thread CPU throughput from `1.13 MH/s` to `6.16 MH/s` (`5.45x` speedup) while maintaining 100% bit-for-bit hash identity. Also fixes `armminer -benchmark` to benchmark `ArmaxHash v2` (`Index = 13052`) instead of Genesis `SHA-256d` (`Index = 0`).
+3. **Linux/Unix Desktop GUI Embedded Daemon Auto-Start (`gui/main_unix.go`):** Launching `./armgui` on Linux or macOS now automatically starts an embedded background `armcoind` node when targeting a loopback RPC URL that is not yet running, matching the single-binary Windows desktop experience.
+
+---
+
 ## Armaxcoin v1.0.8
 
 **Target Release:** Armaxcoin v1.0.8 — Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening  

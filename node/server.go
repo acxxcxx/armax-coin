@@ -851,14 +851,14 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		maxAllowedSize := core.MaxBlockSize - 50000
 		candidateTxs, totalFees := bc.SelectCandidateTransactionsLocked(maxAllowedTxs, maxAllowedSize)
 
-		target := bc.CalculateLWMA1()
-		diff := core.TargetToDifficulty(target)
-		blockReward := bc.GetBlockReward(latest.Index + 1)
 		minTs := core.MinValidTimestamp(bc.Chain, &latest, latest.Index+1)
 		curTime := time.Now().Unix()
 		if curTime < minTs {
 			curTime = minTs
 		}
+		target := core.CalculateExpectedTargetForCandidate(bc.Chain, latest.Index+1, curTime)
+		diff := core.TargetToDifficulty(target)
+		blockReward := bc.GetBlockReward(latest.Index + 1)
 		bc.Lock.RUnlock()
 
 		if candidateTxs == nil {

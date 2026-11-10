@@ -1,20 +1,19 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.8` (Desktop GUI Security, First-Time Onboarding & Peer Privacy Hardening)<br>
+**Current Release:** `v1.0.9` (Testnet Anti-Stall TEDR Fork at Block #13,293, 5.45x Zero-Alloc CPU Miner & Linux GUI Auto-Start)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
 
 > [!IMPORTANT]
-> **SCHEDULED TESTNET CONSENSUS FORK AT BLOCK 20,000:**
-> Armaxcoin v1.0.7+ introduces a scheduled consensus hard fork on `ARMX-TESTNET-1` activating at **Block 20,000**:
-> - **Before Block 20,000:** Block timestamps may be up to 7,200 seconds (2 hours) ahead of the validating node's clock.
-> - **From Block 20,000:** Block timestamps must not exceed **600 seconds (10 minutes)** ahead of the validating node's local clock.
+> **ACTIVE & SCHEDULED TESTNET CONSENSUS FORKS (BLOCKS 13,293 & 20,000):**
+> - **Block 13,293 (v1.0.9 — Anti-Stall TEDR):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When the elapsed interval since the parent block exceeds **1,200 seconds (20 minutes)**, candidate blocks qualify for an emergency stall-breaker target (`Difficulty 3`) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`). Permanently disabled on Mainnet (`-1`).
+> - **Block 20,000 (v1.0.7+ — Proposal C6):** Tightens maximum allowed future block timestamp from 7,200 seconds (2 hours) down to **600 seconds (10 minutes)** ahead of the validating node's local clock.
 > 
-> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade to v1.0.8 (or at least v1.0.7) before height 20,000 and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Un-upgraded v1.0.6 nodes may accept forward-stamped blocks that v1.0.7+ nodes reject, creating an unrecoverable chain split.
+> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade immediately to **v1.0.9** so the network can mine Block `#13,293` and recover from post-GPU difficulty stalls, and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows).
 > 
-> Detailed release notes and upgrade instructions: **[v1.0.8 Release Notes](docs/releases/v1.0.8.md)** | **[v1.0.7 Release Notes](docs/releases/v1.0.7.md)** | **[RELEASE_NOTES.md](RELEASE_NOTES.md)**.
+> Detailed release notes and upgrade instructions: **[v1.0.9 Release Notes](docs/releases/v1.0.9.md)** | **[v1.0.8 Release Notes](docs/releases/v1.0.8.md)** | **[v1.0.7 Release Notes](docs/releases/v1.0.7.md)** | **[RELEASE_NOTES.md](RELEASE_NOTES.md)**.
 
 > [!NOTE]
 > **PUBLIC TESTNET ENVIRONMENT:**
@@ -27,7 +26,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 | Guide | Description |
 |---|---|
-| **[Release Notes (v1.0.8)](RELEASE_NOTES.md)** | Authoritative v1.0.8 release notes, desktop GUI security, onboarding flow, and peer privacy |
+| **[Release Notes (v1.0.9)](RELEASE_NOTES.md)** | Authoritative v1.0.9 release notes, Block 13,293 anti-stall TEDR fork, 5.45x CPU miner optimization, and Linux GUI auto-start |
 | **[Open Testnet Guide](docs/TESTNET_GUIDE.md)** | Step-by-step instructions for installing, syncing, and testing transactions |
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
 | **[Developer Early-Mining Plan](docs/architecture/tokenomics/mining-accumulation-plan.md)** | Operational parameters, block boundaries, and disclosure for the developer early-mining phase |
@@ -127,14 +126,14 @@ Download pre-compiled binary packages and `SHA256SUMS` from [GitHub Releases](ht
 #### On Linux / ARM64:
 ```bash
 # Download package and checksum
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/armax-v1.0.8-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.8/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.9/armax-v1.0.9-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.9/SHA256SUMS
 
 # Verify checksum integrity
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract and make executable
-tar -xzf armax-v1.0.8-linux-amd64.tar.gz
+tar -xzf armax-v1.0.9-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet armgui
 ```
 
@@ -143,10 +142,10 @@ Each archive contains: `armcoind` (node daemon), `armminer` (CPU miner), `armwal
 #### On Windows (PowerShell):
 ```powershell
 # Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.8-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.9-windows-amd64.zip
 
 # Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.8-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
 ```
 
 #### Verifying releases
@@ -303,7 +302,7 @@ Transfer testnet coins to another address (requires sufficient spendable balance
 
 ---
 
-## Command Reference (v1.0.8)
+## Command Reference (v1.0.9)
 
 Run any binary with `-h` for the full, current flag list. Defaults target testnet.
 
@@ -640,7 +639,24 @@ Armaxcoin is strategically architected across 7 core pillars:
 
 ## Release History & Changelog
 
-### v1.0.8 (Current -- Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening) -- 2026-11-07
+### v1.0.9 (Current -- Testnet Anti-Stall TEDR Fork at Block #13,293, Zero-Allocation CPU Miner & Linux GUI Auto-Start) -- 2026-11-10
+
+Target release: `v1.0.9` (Official Release). Testnet (`ARMX-TESTNET-1`). Mainnet remains locked (`core.MainnetLaunched = false`).
+
+#### 1. Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR - Block #13,293)
+- **Emergency Stall-Breaker Target (`Difficulty 3`):** Activates at **Block `#13,293`** on Testnet (`AntiStallActivationHeight = 13293`). When the elapsed time since the parent block exceeds **1,200 seconds (20 minutes)**, candidate blocks qualify for `ArmaxHashPowLimitHex` (`Difficulty 3`), immediately unsticking the chain from post-GPU difficulty shocks (`#13,292`).
+- **Model 3 Synthetic Target Normalization:** Inside the 60-block LWMA-1 window, emergency blocks are normalized to `maxSolveTime = 720s` and anchored to `lastNormalTarget`, preventing low-difficulty emergency targets from contaminating `sumTargets`. Permanently disabled on Mainnet (`AntiStallActivationHeight = -1`).
+
+#### 2. Zero-Allocation CPU Miner (`armminer`) Optimization (`5.45x` Speedup) & Benchmark Fix
+- **Zero-Allocation Nonce Hot Loop (`0 B/op`, `0 allocs/op`):** Replaces per-nonce `fmt.Sprintf`, `armaxhash.HashV2` buffer allocation, hex string encoding/decoding, and `big.Int` parsing with stack-buffered prefix/suffix assembly (`strconv.AppendInt`), in-place BLAKE2b streaming (`computeHeaderDigestBytes`), 32-byte big-endian target comparisons (`hashBytesMeetTarget32`), and batched Stratum mutex checks (once per 256 hashes). Increases 8-thread CPU hashing speed from `1.13 MH/s` to `6.16 MH/s` (`5.45x` speedup).
+- **Canonical Benchmark Fix:** Updates `armminer -benchmark` (`runMinerBenchmark`) and `armaxhash` benchmarks to measure canonical 284-byte `ArmaxHash v2` block headers (`Index = 13052`) instead of Genesis `SHA-256d` (`Index = 0`).
+
+#### 3. Linux/Unix Desktop GUI Embedded Daemon Auto-Start
+- **Single-Binary Startup (`gui/main_unix.go`):** Automatically launches an embedded background `armcoind` daemon when `./armgui` targets a local loopback RPC endpoint that is offline, matching Windows `armgui.exe` behavior.
+
+For full technical specifications, test evidence, and operational runbooks, see **[v1.0.9 Release Notes](docs/releases/v1.0.9.md)**.
+
+### v1.0.8 (Previous -- Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening) -- 2026-11-07
 
 Target release: `v1.0.8` (Official Release). Testnet (`ARMX-TESTNET-1`). Mainnet remains locked (`core.MainnetLaunched = false`).
 

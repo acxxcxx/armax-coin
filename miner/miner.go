@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	cryptoRand "crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -26,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/acxxcxx/armax-coin/armaxhash"
 	"github.com/acxxcxx/armax-coin/core"
 	"github.com/acxxcxx/armax-coin/node"
 	"github.com/acxxcxx/armax-coin/wallet"
@@ -614,6 +617,10 @@ func main() {
 		var logErrOnce sync.Once
 
 		// Spawn worker goroutines partitioned across CPU threads
+		targetBytes, targetValid := bigIntToTargetBytes32(targetInt)
+		powMode := resolveMinerPoWMode(candidateBlock.Index, algo)
+		netID := core.NetworkID()
+
 		for i := 0; i < numThreads; i++ {
 			wg.Add(1)
 			go func(workerID int) {
@@ -623,9 +630,13 @@ func main() {
 				stride := int64(numThreads)
 				var localBatch int64
 				batchLimit := int64(4096)
-				if algo == "armaxhash" { // ArmaxHash v1 memory-hard
+				if powMode == powModeArmaxHashV1 { // ArmaxHash v1 memory-hard
 					batchLimit = 1
 				}
+
+				prefixBytes := buildHeaderPrefixBytes(&b)
+				suffixBytes := buildHeaderSuffixBytes(&b)
+				buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
 
 				for {
 					if localBatch >= batchLimit {
@@ -640,10 +651,12 @@ func main() {
 						}
 						if curTime := time.Now().Unix() + clockOffset; curTime > b.Timestamp {
 							b.Timestamp = curTime
+							prefixBytes = buildHeaderPrefixBytes(&b)
 						}
 					}
-					var err error
-					b.Hash, err = b.CalculateHashWithError()
+
+					buf = appendCanonicalHeaderBytes(buf, prefixBytes, b.Nonce, suffixBytes)
+					hashBytes, err := computeHeaderDigestBytes(buf, netID, powMode)
 					if err != nil {
 						logErrOnce.Do(func() {
 							fmt.Printf("[%s] [!] Hash computation error on block #%d: %v (aborting round to prevent spinning)\n",
@@ -653,7 +666,8 @@ func main() {
 						return
 					}
 					localBatch++
-					if core.HashMeetsTarget(b.Hash, targetInt) {
+					if targetValid && hashBytesMeetTarget32(&hashBytes, &targetBytes) {
+						b.Hash = hex.EncodeToString(hashBytes[:])
 						atomic.AddInt64(&roundHashes, localBatch)
 						select {
 						case solutionChan <- b:
@@ -932,13 +946,21 @@ func runRemoteMiningLoop(stopChan chan os.Signal, parsedDaemons []string, minerA
 	}
 }
 
-// runMinerBenchmark measures CPU double-SHA256 mining throughput per thread and total [L1-6]
+// runMinerBenchmark measures production ArmaxHash v2 CPU mining throughput per thread and total
+// using the canonical serialized block header workload.
 func runMinerBenchmark() {
 	numCPU := runtime.NumCPU()
-	fmt.Printf("[*] Benchmarking Armaxcoin CPU mining across %d thread(s)...\n", numCPU)
+	netID := core.NetworkID()
+	fmt.Printf("[*] Benchmarking Armaxcoin CPU mining (armaxhash-v2, %s) across %d thread(s)...\n", netID, numCPU)
 
 	duration := 2 * time.Second
 	dummyBlock := core.GetGenesisBlock()
+	dummyBlock.Index = 13052
+	if act := core.GetArmaxHashV2ActivationHeight(); act > int64(dummyBlock.Index) {
+		dummyBlock.Index = int(act) + 100
+	}
+	dummyBlock.Timestamp = 1762668000
+	dummyBlock.Target = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 	var totalHashes int64
 	var wg sync.WaitGroup
@@ -949,13 +971,20 @@ func runMinerBenchmark() {
 		go func(threadID int) {
 			defer wg.Done()
 			b := dummyBlock
-			b.Nonce = int64(threadID) * 1000000000
+			b.Nonce = int64(threadID+1) * 1000000000
+			prefixBytes := buildHeaderPrefixBytes(&b)
+			suffixBytes := buildHeaderSuffixBytes(&b)
+			buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+
 			stop := time.Now().Add(duration)
 			var localCount int64
 			for time.Now().Before(stop) {
-				_ = b.CalculateHash()
-				b.Nonce++
-				localCount++
+				for batch := 0; batch < 256; batch++ {
+					buf = appendCanonicalHeaderBytes(buf, prefixBytes, b.Nonce, suffixBytes)
+					_, _ = armaxhash.HashV2(buf, netID)
+					b.Nonce++
+				}
+				localCount += 256
 			}
 			atomic.AddInt64(&totalHashes, localCount)
 			hps := float64(localCount) / duration.Seconds()
@@ -1157,6 +1186,97 @@ func parseStratumNotify(params []interface{}) (*StratumJob, error) {
 	}, nil
 }
 
+type minerPoWMode uint8
+
+const (
+	powModeSha256d minerPoWMode = iota
+	powModeArmaxHashV1
+	powModeArmaxHashV2
+)
+
+// resolveMinerPoWMode determines the active PoW hash mode from an explicit Stratum/template
+// algorithm identifier or, when empty/default, from consensus block height rules.
+func resolveMinerPoWMode(blockIndex int, powAlgo string) minerPoWMode {
+	switch strings.ToLower(strings.TrimSpace(powAlgo)) {
+	case "armaxhash-v2":
+		return powModeArmaxHashV2
+	case "armaxhash":
+		return powModeArmaxHashV1
+	case "sha256d":
+		return powModeSha256d
+	default:
+		if core.IsArmaxHashV2Active(blockIndex) {
+			return powModeArmaxHashV2
+		}
+		if core.IsArmaxHashActive(blockIndex) {
+			return powModeArmaxHashV1
+		}
+		return powModeSha256d
+	}
+}
+
+// buildHeaderPrefixBytes constructs the immutable pre-nonce slice ("Index:Timestamp:PrevHash:MerkleRoot:Miner:")
+// matching core.Block.HeaderBytes() and core/blockchain.go MineWithContext.
+func buildHeaderPrefixBytes(b *core.Block) []byte {
+	return []byte(fmt.Sprintf("%d:%d:%s:%s:%s:", b.Index, b.Timestamp, b.PrevHash, b.MerkleRoot, b.Miner))
+}
+
+// buildHeaderSuffixBytes constructs the immutable post-nonce slice (":Target")
+// matching core.Block.HeaderBytes() and core/blockchain.go MineWithContext.
+func buildHeaderSuffixBytes(b *core.Block) []byte {
+	targetStr := b.Target
+	if targetStr == "" {
+		targetStr = fmt.Sprintf("%064x", core.DifficultyToTarget(b.Difficulty))
+	}
+	return []byte(":" + targetStr)
+}
+
+// appendCanonicalHeaderBytes assembles the exact canonical serialized block header into dst[:0]
+// without heap allocations or fmt.Sprintf overhead.
+func appendCanonicalHeaderBytes(dst, prefixBytes []byte, nonce int64, suffixBytes []byte) []byte {
+	dst = dst[:0]
+	dst = append(dst, prefixBytes...)
+	dst = strconv.AppendInt(dst, nonce, 10)
+	dst = append(dst, suffixBytes...)
+	return dst
+}
+
+// computeHeaderDigestBytes evaluates the raw 32-byte PoW digest without hex-encoding overhead.
+func computeHeaderDigestBytes(header []byte, netID string, mode minerPoWMode) ([32]byte, error) {
+	switch mode {
+	case powModeArmaxHashV2:
+		return armaxhash.HashV2(header, netID)
+	case powModeArmaxHashV1:
+		return armaxhash.Hash(header, netID)
+	default:
+		h1 := sha256.Sum256(header)
+		return sha256.Sum256(h1[:]), nil
+	}
+}
+
+// bigIntToTargetBytes32 converts a *big.Int target ceiling into a big-endian [32]byte array
+// for zero-allocation unsigned 256-bit comparison. Returns (targetBytes, true) when target >= 0.
+func bigIntToTargetBytes32(target *big.Int) ([32]byte, bool) {
+	var out [32]byte
+	if target == nil || target.Sign() < 0 {
+		return out, false
+	}
+	b := target.Bytes()
+	if len(b) > 32 {
+		for i := range out {
+			out[i] = 0xff
+		}
+		return out, true
+	}
+	copy(out[32-len(b):], b)
+	return out, true
+}
+
+// hashBytesMeetTarget32 returns true if the 32-byte big-endian digest is <= the 32-byte big-endian target.
+func hashBytesMeetTarget32(hashBytes, targetBytes *[32]byte) bool {
+	return bytes.Compare(hashBytes[:], targetBytes[:]) <= 0
+}
+
 // calculateStratumBlockHash evaluates the canonical Armaxcoin block header digest for a Stratum work item.
 func calculateStratumBlockHash(b *core.Block, powAlgo string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(powAlgo)) {
@@ -1351,17 +1471,19 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 	}
 
 	var (
-		stateMu        sync.RWMutex
-		extraNonce1    string
-		activeJobID    string
-		jobSeq         int64
-		shareDiff      = 1.0
-		shareTarget    = floatDifficultyToTarget(1.0)
-		activeCancel   context.CancelFunc
-		workerWG       sync.WaitGroup
-		totalHashes    int64
-		acceptedShares int64
-		rejectedShares int64
+		stateMu          sync.RWMutex
+		extraNonce1      string
+		activeJobID      string
+		jobSeq           int64
+		shareDiff                    = 1.0
+		shareTarget                  = floatDifficultyToTarget(1.0)
+		shareTargetBytes, targetInit = bigIntToTargetBytes32(shareTarget)
+		shareTargetValid             = targetInit
+		activeCancel     context.CancelFunc
+		workerWG         sync.WaitGroup
+		totalHashes      int64
+		acceptedShares   int64
+		rejectedShares   int64
 	)
 
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
@@ -1444,6 +1566,9 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 			time.Now().Format("15:04:05"), job.Height, job.PoWAlgo, job.JobID, curDiff)
 
 		var roundNonceCounter uint64
+		powMode := resolveMinerPoWMode(job.Height, job.PoWAlgo)
+		netID := core.NetworkID()
+
 		for i := 0; i < numThreads; i++ {
 			workerWG.Add(1)
 			go func(workerID int) {
@@ -1459,11 +1584,20 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 				}
 				stride := int64(numThreads)
 				batchLimit := int64(256)
-				if strings.EqualFold(job.PoWAlgo, "armaxhash") {
+				if powMode == powModeArmaxHashV1 {
 					batchLimit = 1
 				}
 				var localBatch int64
 				var lastSubmit time.Time
+
+				prefixBytes := buildHeaderPrefixBytes(&b)
+				suffixBytes := buildHeaderSuffixBytes(&b)
+				buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+
+				stateMu.RLock()
+				localTargetBytes := shareTargetBytes
+				localTargetValid := shareTargetValid
+				stateMu.RUnlock()
 
 				for {
 					if localBatch >= batchLimit {
@@ -1474,50 +1608,60 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 							return
 						default:
 						}
+						stateMu.RLock()
+						localTargetBytes = shareTargetBytes
+						localTargetValid = shareTargetValid
+						stateMu.RUnlock()
 					}
 
-					hashHex, err := calculateStratumBlockHash(&b, job.PoWAlgo)
+					buf = appendCanonicalHeaderBytes(buf, prefixBytes, b.Nonce, suffixBytes)
+					hashBytes, err := computeHeaderDigestBytes(buf, netID, powMode)
 					if err != nil {
 						return
 					}
 					localBatch++
 
-					stateMu.RLock()
-					target := shareTarget
-					stateMu.RUnlock()
+					if localTargetValid && hashBytesMeetTarget32(&hashBytes, &localTargetBytes) {
+						stateMu.RLock()
+						latestTargetBytes := shareTargetBytes
+						latestTargetValid := shareTargetValid
+						stateMu.RUnlock()
+						localTargetBytes = latestTargetBytes
+						localTargetValid = latestTargetValid
 
-					if core.HashMeetsTarget(hashHex, target) {
-						atomic.AddInt64(&totalHashes, localBatch)
-						localBatch = 0
-						if jobCtx.Err() != nil {
-							return
-						}
+						if latestTargetValid && hashBytesMeetTarget32(&hashBytes, &latestTargetBytes) {
+							atomic.AddInt64(&totalHashes, localBatch)
+							localBatch = 0
+							if jobCtx.Err() != nil {
+								return
+							}
 
-						// Guard against rapid socket flood during initial sub-diff synchronization
-						nowSubmit := time.Now()
-						if !lastSubmit.IsZero() && nowSubmit.Sub(lastSubmit) < 40*time.Millisecond {
-							time.Sleep(15 * time.Millisecond)
-						}
-						lastSubmit = time.Now()
+							// Guard against rapid socket flood during initial sub-diff synchronization
+							nowSubmit := time.Now()
+							if !lastSubmit.IsZero() && nowSubmit.Sub(lastSubmit) < 40*time.Millisecond {
+								time.Sleep(15 * time.Millisecond)
+							}
+							lastSubmit = time.Now()
 
-						en2Val := atomic.AddUint64(&roundNonceCounter, 1)
-						extraNonce2 := fmt.Sprintf("%08x", uint32(en2Val))
-						ntimeHex := fmt.Sprintf("%x", b.Timestamp)
-						nonceHex := fmt.Sprintf("0x%x", b.Nonce)
-						submitID := atomic.AddInt64(&reqIDCounter, 1)
+							en2Val := atomic.AddUint64(&roundNonceCounter, 1)
+							extraNonce2 := fmt.Sprintf("%08x", uint32(en2Val))
+							ntimeHex := fmt.Sprintf("%x", b.Timestamp)
+							nonceHex := fmt.Sprintf("0x%x", b.Nonce)
+							submitID := atomic.AddInt64(&reqIDCounter, 1)
 
-						if err := sendJSON(map[string]interface{}{
-							"id":     submitID,
-							"method": stratumRPCMethod("submit"),
-							"params": []interface{}{
-								fullWorker,
-								job.JobID,
-								extraNonce2,
-								ntimeHex,
-								nonceHex,
-							},
-						}); err != nil {
-							return
+							if err := sendJSON(map[string]interface{}{
+								"id":     submitID,
+								"method": stratumRPCMethod("submit"),
+								"params": []interface{}{
+									fullWorker,
+									job.JobID,
+									extraNonce2,
+									ntimeHex,
+									nonceHex,
+								},
+							}); err != nil {
+								return
+							}
 						}
 					}
 
@@ -1564,6 +1708,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 						stateMu.Lock()
 						shareDiff = newDiff
 						shareTarget = floatDifficultyToTarget(newDiff)
+						shareTargetBytes, shareTargetValid = bigIntToTargetBytes32(shareTarget)
 						stateMu.Unlock()
 					}
 				}

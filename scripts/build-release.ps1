@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "v1.0.8",
+    [string]$Version = "v1.0.9",
     [string]$OutputDir = "release_assets"
 )
 

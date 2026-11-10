@@ -5,6 +5,21 @@ All notable changes to the **Armaxcoin** (`armax-coin`) project will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.9] - 2026-11-10
+
+> **Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR at Block `#13,293`), Zero-Allocation CPU Miner Optimization (`5.45x` Speedup) & Linux GUI Daemon Auto-Start.** Unsticks the public testnet from Block `#13,292` via Model 3 Synthetic Target Normalization when block intervals exceed 20 minutes (1,200s), eliminates per-nonce heap allocations and mutex contention in `armminer` (`0 B/op`, `0 allocs/op`), fixes `armminer -benchmark` to measure realistic `ArmaxHash v2` block headers, and enables automatic embedded background node startup in the Linux/Unix desktop GUI (`armgui`).
+
+#### Added
+- **Testnet Anti-Stall Emergency Difficulty Adjustment (`core/network.go`, `core/target.go`, `core/consensus.go`, `node/p2p.go`, `node/server.go`, `core/anti_stall_test.go`):** Implemented `AntiStallActivationHeight = 13293` on `TestnetProfile` (`MainnetProfile = -1`, permanently disabled on Mainnet). When $\Delta t = \text{Timestamp}_i - \text{Timestamp}_{i-1} > 1,200\text{s}$ at height $\ge 13,293$, candidate blocks qualify for `ArmaxHashPowLimitHex` (`Difficulty 3`). Implements Model 3 Synthetic Target Normalization (`maxSolveTime = 720s` and `lastNormalTarget` anchoring) within the 60-block LWMA-1 window so emergency blocks do not contaminate `sumTargets`.
+- **Linux/Unix GUI Embedded Daemon Auto-Start (`gui/main_unix.go`, `gui/gui_unix_test.go`):** Added `isLoopbackRPC`, `waitForLocalNodeReady`, and automatic embedded daemon startup (`core.OpenBlockchain(3)` + `go node.StartServerWithConfig(bc, cfg)`) when launching `./armgui` against an offline local loopback RPC endpoint, matching Windows `armgui.exe` single-binary behavior.
+- **Canonical Production-Header Benchmarks & Differential Miner Tests (`armaxhash/armaxhash_test.go`, `miner/miner_test.go`):** Added `BenchmarkHashV2CanonicalSingleCore` and `BenchmarkHashV2CanonicalParallel` (284-byte canonical header, 312-byte Stage-1 BLAKE2b preimage), `TestDifferentialOptimizedMinerHashEquivalence`, and before/after `BenchmarkMinerHotLoop_*` benchmarks.
+
+#### Changed
+- **Zero-Allocation CPU Miner Hot-Path (`miner/miner.go`):** Replaced per-nonce `Block.HeaderBytes()` (`fmt.Sprintf`), `armaxhash.HashV2` slice allocations, hex string conversions, and `big.Int` parsing with stack-buffered prefix/suffix assembly (`strconv.AppendInt`), in-place BLAKE2b hashing (`computeHeaderDigestBytes`), and direct 32-byte big-endian target comparisons (`hashBytesMeetTarget32`). Reduced Stratum v1 `stateMu.RLock()` frequency from every nonce to once per 256 hashes. Achieves `0 B/op` and `0 allocs/op` per nonce and delivers a **5.45x parallel speedup** (8 threads: `1.13 MH/s` $\to$ `6.16 MH/s`).
+
+#### Fixed
+- **Standalone Miner `--benchmark` PoW Algorithm Selection (`miner/miner.go`):** Updated `runMinerBenchmark()` from `Index: 0` (which benchmarked Genesis `SHA-256d`) to a realistic post-fork block height (`Index: 13052`) with canonical 64-hex hashes and Bech32 miner address so `armminer -benchmark` accurately measures `ArmaxHash v2` throughput.
+
 ## [v1.0.8] - 2026-11-07
 
 > **Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening.** Resolves Linux/Unix Desktop GUI session authentication failure on wallet creation, implements automated first-time wallet setup and mnemonic restore dialogs when no keystore exists, protects residential peer privacy by filtering ephemeral client ports, and fixes snapshot script flag precedence.

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"golang.org/x/crypto/argon2"
@@ -336,8 +338,13 @@ func TestHashV2Deterministic(t *testing.T) {
 	}
 }
 
+// BenchmarkHashV2Parallel is a synthetic 80-byte microbenchmark (108-byte total Stage 1 preimage,
+// spanning 1 Stage-1 BLAKE2b block + 1 Stage-2 BLAKE2b block). For realistic production block-header
+// benchmarks (3 Stage-1 blocks + 1 Stage-2 block with ASCII nonce formatting), see
+// BenchmarkHashV2CanonicalSingleCore and BenchmarkHashV2CanonicalParallel below.
 func BenchmarkHashV2Parallel(b *testing.B) {
 	b.ReportAllocs()
+	b.SetBytes(80)
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		header := make([]byte, 80)
@@ -347,6 +354,93 @@ func BenchmarkHashV2Parallel(b *testing.B) {
 			counter++
 			binary.LittleEndian.PutUint64(header[72:], counter)
 			if _, err := HashV2(header, "ARMX-TESTNET-1"); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+const (
+	benchCanonicalIndex      = 13052
+	benchCanonicalTimestamp  = int64(1762668000)
+	benchCanonicalPrevHash   = "0000000dc84202e63a340a2439625fbf9cea5cb7b84119f93d52cff39f63a68b"
+	benchCanonicalMerkleRoot = "808a4007681dd123133bfe106b101d251ff0d2d023f600384394673bfc03768d"
+	benchCanonicalMiner      = "armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd"
+	benchCanonicalTarget     = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	benchCanonicalNetID      = "ARMX-TESTNET-1"
+)
+
+// BenchmarkHashV2CanonicalSingleCore measures single-threaded ArmaxHash v2 throughput
+// using the exact production canonical header serialization ("Index:Timestamp:PrevHash:MerkleRoot:Miner:Nonce:Target",
+// ~285 bytes header / ~313 bytes total Stage-1 input across 3 Stage-1 + 1 Stage-2 BLAKE2b compression blocks).
+func BenchmarkHashV2CanonicalSingleCore(b *testing.B) {
+	prefixBytes := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:",
+		benchCanonicalIndex, benchCanonicalTimestamp, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner))
+	suffixBytes := []byte(":" + benchCanonicalTarget)
+
+	const startNonce = int64(10000000)
+	refHeader := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:%d:%s",
+		benchCanonicalIndex, benchCanonicalTimestamp, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner, startNonce, benchCanonicalTarget))
+
+	buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+	buf = append(buf, prefixBytes...)
+	buf = strconv.AppendInt(buf, startNonce, 10)
+	buf = append(buf, suffixBytes...)
+	if !bytes.Equal(buf, refHeader) {
+		b.Fatalf("canonical header mismatch: got %q, want %q", string(buf), string(refHeader))
+	}
+	refDigest, err := HashV2(refHeader, benchCanonicalNetID)
+	if err != nil {
+		b.Fatalf("HashV2 reference failed: %v", err)
+	}
+	gotDigest, err := HashV2(buf, benchCanonicalNetID)
+	if err != nil || gotDigest != refDigest {
+		b.Fatalf("HashV2 digest mismatch on canonical header")
+	}
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(refHeader)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		nonce := startNonce + int64(i)
+		buf = buf[:0]
+		buf = append(buf, prefixBytes...)
+		buf = strconv.AppendInt(buf, nonce, 10)
+		buf = append(buf, suffixBytes...)
+		if _, err := HashV2(buf, benchCanonicalNetID); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkHashV2CanonicalParallel measures multi-threaded ArmaxHash v2 throughput
+// on the full production canonical block-header workload.
+func BenchmarkHashV2CanonicalParallel(b *testing.B) {
+	prefixBytes := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:",
+		benchCanonicalIndex, benchCanonicalTimestamp, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner))
+	suffixBytes := []byte(":" + benchCanonicalTarget)
+
+	const startNonce = int64(10000000)
+	refHeader := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:%d:%s",
+		benchCanonicalIndex, benchCanonicalTimestamp, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner, startNonce, benchCanonicalTarget))
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(refHeader)))
+	b.ResetTimer()
+
+	var workerSeq int64
+	b.RunParallel(func(pb *testing.PB) {
+		wid := atomic.AddInt64(&workerSeq, 1)
+		nonce := startNonce + wid*1_000_000_000
+		buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+		for pb.Next() {
+			nonce++
+			buf = buf[:0]
+			buf = append(buf, prefixBytes...)
+			buf = strconv.AppendInt(buf, nonce, 10)
+			buf = append(buf, suffixBytes...)
+			if _, err := HashV2(buf, benchCanonicalNetID); err != nil {
 				b.Fatal(err)
 			}
 		}

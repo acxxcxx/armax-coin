@@ -52,8 +52,11 @@ type NetworkProfile struct {
 	TimestampRulesActivationHeight int64 `json:"timestamp_rules_activation_height"`
 	// FutureTimestampLimitActivationHeight is the first block height whose timestamp may be at most
 	// FutureTimestampLimitSeconds ahead of the validator's clock (instead of 2 hours). Negative disables it.
-	FutureTimestampLimitActivationHeight int64          `json:"future_timestamp_limit_activation_height"`
-	Checkpoints                          map[int]string `json:"checkpoints,omitempty"`
+	FutureTimestampLimitActivationHeight int64 `json:"future_timestamp_limit_activation_height"`
+	// AntiStallActivationHeight is the first block height where Option A Anti-Stall Emergency
+	// Difficulty Adjustment (TEDR) activates on testnet. Negative disables it.
+	AntiStallActivationHeight int64          `json:"anti_stall_activation_height"`
+	Checkpoints               map[int]string `json:"checkpoints,omitempty"`
 }
 
 var (
@@ -76,6 +79,7 @@ var (
 		TimestampRulesActivationHeight: 0,
 		// Mainnet stays on the 2-hour rule until the limit is reviewed for launch.
 		FutureTimestampLimitActivationHeight: -1,
+		AntiStallActivationHeight:            -1, // Strictly disabled on Mainnet
 		Checkpoints: map[int]string{
 			0: GenesisHash,
 		},
@@ -104,6 +108,8 @@ var (
 		TimestampRulesActivationHeight: 8000,
 		// Hard fork: 10-minute future-timestamp limit from block #20000 on testnet.
 		FutureTimestampLimitActivationHeight: 20000,
+		// Hard fork: Anti-stall emergency difficulty adjustment (TEDR) from block #13293 on testnet.
+		AntiStallActivationHeight: 13293,
 		Checkpoints: map[int]string{
 			0: TestnetGenesisHash,
 		},
@@ -130,6 +136,7 @@ var (
 
 		TimestampRulesActivationHeight:       -1,
 		FutureTimestampLimitActivationHeight: -1,
+		AntiStallActivationHeight:            -1,
 	}
 
 	// RegtestProfile defines private local regression testing profile [L4-8]
@@ -150,6 +157,7 @@ var (
 
 		TimestampRulesActivationHeight:       -1,
 		FutureTimestampLimitActivationHeight: -1,
+		AntiStallActivationHeight:            -1,
 	}
 )
 
@@ -168,6 +176,7 @@ var (
 	armaxHashV2ActivationHeightOverride *int64 // nil means use network profile or env
 	timestampRulesHeightOverride        *int64 // nil means use network profile
 	futureLimitHeightOverride           *int64 // nil means use network profile
+	antiStallActivationHeightOverride   *int64 // nil means use network profile
 	testGlobalNetworkLock               sync.Mutex
 
 	localMainnetMu      sync.RWMutex
@@ -326,6 +335,58 @@ func ResetArmaxHashV2ActivationHeightOverride() {
 // ArmaxHash v2 is strictly disabled when activation height <= 0 (e.g. default -1).
 func IsArmaxHashV2Active(blockIndex int) bool {
 	act := GetArmaxHashV2ActivationHeight()
+	if act <= 0 {
+		return false
+	}
+	if blockIndex < 0 {
+		return false
+	}
+	return int64(blockIndex) >= act
+}
+
+// GetAntiStallActivationHeight returns the block height where Option A Anti-Stall Emergency
+// Difficulty Adjustment (TEDR) activates. A value <= 0 or -1 indicates it is disabled.
+func GetAntiStallActivationHeight() int64 {
+	netMu.RLock()
+	defer netMu.RUnlock()
+	if antiStallActivationHeightOverride != nil {
+		return *antiStallActivationHeightOverride
+	}
+	// Rehearsal hook: strictly regtest only to protect production consensus
+	if ActiveNetwork.Name == "regtest" {
+		if val := os.Getenv("ARMX_ANTI_STALL_HEIGHT"); val != "" {
+			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+				return h
+			}
+		}
+	}
+	return ActiveNetwork.AntiStallActivationHeight
+}
+
+// SetAntiStallActivationHeight dynamically overrides the anti-stall activation height (intended for tests).
+func SetAntiStallActivationHeight(height int64) {
+	netMu.Lock()
+	defer netMu.Unlock()
+	antiStallActivationHeightOverride = &height
+}
+
+// ResetAntiStallActivationHeightOverride restores the network profile default.
+func ResetAntiStallActivationHeightOverride() {
+	netMu.Lock()
+	defer netMu.Unlock()
+	antiStallActivationHeightOverride = nil
+}
+
+// IsAntiStallActive returns true if the block at the specified index is evaluated under
+// the anti-stall emergency rules. Mainnet is strictly guarded and permanently returns false.
+func IsAntiStallActive(blockIndex int) bool {
+	netMu.RLock()
+	isMain := ActiveNetwork.IsMainnet
+	netMu.RUnlock()
+	if isMain {
+		return false
+	}
+	act := GetAntiStallActivationHeight()
 	if act <= 0 {
 		return false
 	}

@@ -820,10 +820,22 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 	// 1. Purge stale/invalid transactions from mempool before assembly [C-20]
 	bc.CleanMempoolLocked()
 
-	target := bc.CalculateLWMA1()
 	prevBlock := bc.GetLatestBlockUnsafe()
 	currentBlockReward := bc.GetBlockReward(prevBlock.Index + 1)
 	bc.BlockReward = currentBlockReward
+
+	// [C-22, C1, C2] Miner sets timestamp = max(now, MinValidTimestamp) to ensure a valid block
+	minTs := MinValidTimestamp(bc.Chain, &prevBlock, prevBlock.Index+1)
+	now := minerNowUnix()
+	if now < minTs {
+		if minTs-now >= 10 {
+			fmt.Printf("[Mining] Block #%d timestamp forced to minimum valid %d (local clock %d is %ds behind); check NTP\n",
+				prevBlock.Index+1, minTs, now, minTs-now)
+		}
+		now = minTs
+	}
+
+	target := CalculateExpectedTargetForCandidate(bc.Chain, prevBlock.Index+1, now)
 
 	// 2. Simulate transactions against state overlay to discard invalid ones [C-20]
 	validTxsToMine, totalFees := bc.SelectCandidateTransactionsLocked(MaxBlockTransactions-1, MaxBlockSize-50000)
@@ -840,17 +852,6 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 
 	txsToMine := append([]Transaction{rewardTx}, validTxsToMine...)
 	newBlock := *NewBlock(txsToMine, prevBlock.Hash, prevBlock.Index+1, minerAddress, target)
-
-	// [C-22, C1, C2] Miner sets timestamp = max(now, MinValidTimestamp) to ensure a valid block
-	minTs := MinValidTimestamp(bc.Chain, &prevBlock, prevBlock.Index+1)
-	now := minerNowUnix()
-	if now < minTs {
-		if minTs-now >= 10 {
-			fmt.Printf("[Mining] Block #%d timestamp forced to minimum valid %d (local clock %d is %ds behind); check NTP\n",
-				newBlock.Index, minTs, now, minTs-now)
-		}
-		now = minTs
-	}
 	newBlock.Timestamp = now
 	// Randomize starting nonce (32-bit safe integer) so concurrent mining workers explore non-overlapping partitions
 	var startNonce int64
@@ -1141,7 +1142,7 @@ func (bc *Blockchain) IsChainValid() bool {
 			return false
 		}
 
-		expectedTarget := CalculateExpectedTarget(bc.Chain[:i], currentBlock.Index)
+		expectedTarget := CalculateExpectedTargetForCandidate(bc.Chain[:i], currentBlock.Index, currentBlock.Timestamp)
 		expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
 		if currentBlock.Target != "" && currentBlock.Target != expectedTargetHex {
 			return false

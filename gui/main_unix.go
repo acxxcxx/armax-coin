@@ -197,6 +197,15 @@ func main() {
 		return
 	}
 
+	rpcPort := cliNet.RPCPort
+	if effRPCPort != "" {
+		rpcPort = effRPCPort
+	}
+	p2pPort := cliNet.P2PPort
+	if effP2PPort != "" {
+		p2pPort = effP2PPort
+	}
+
 	listenPort = *portFlag
 	if *rpcFlag != "" {
 		rpcURL = strings.TrimRight(*rpcFlag, "/")
@@ -204,6 +213,62 @@ func main() {
 		rpcURL = "http://127.0.0.1:" + effRPCPort
 	} else {
 		rpcURL = "http://127.0.0.1:" + cliNet.RPCPort
+	}
+
+	// Verify if target node daemon is already running
+	nodeErr := verifyNodeNetwork(rpcURL, activeNet.NetworkID)
+	if nodeErr != nil && (strings.Contains(nodeErr.Error(), "network mismatch") || strings.Contains(nodeErr.Error(), "empty network_id")) {
+		fmt.Fprintf(os.Stderr, "[-] Error: Daemon on %s returned network mismatch: %v. Connection rejected to prevent cross-network contamination.\n", rpcURL, nodeErr)
+		os.Exit(1)
+	}
+
+	// If no daemon is running and targeting localhost, start the embedded node automatically
+	if nodeErr != nil && isLoopbackRPC(rpcURL) {
+		fmt.Printf("[*] No standalone daemon detected on %s. Starting embedded node...\n", rpcURL)
+		bc, openErr := core.OpenBlockchain(3)
+		if openErr != nil {
+			fmt.Printf("[-] Failed to open blockchain database: %v\n", openErr)
+			os.Exit(1)
+		}
+		bc.CoinbaseMaturity = activeNet.CoinbaseMaturity
+		cfg, err := node.LoadConfig("armax.conf")
+		if err != nil {
+			cfg = node.DefaultConfig()
+			cfg.RPCPort = rpcPort
+			cfg.P2PPort = p2pPort
+		} else if activeNet.Name == "testnet" || activeNet.Name == "regtest" || activeNet.Name == "soak" {
+			cfg.NetworkID = activeNet.NetworkID
+			if cfg.RPCPort == core.MainnetRPCPort || effRPCPort != "" {
+				cfg.RPCPort = rpcPort
+			}
+			if cfg.P2PPort == core.MainnetP2PPort || effP2PPort != "" {
+				cfg.P2PPort = p2pPort
+			}
+			if len(cfg.SeedPeers) == 0 || (len(core.MainnetProfile.DefaultSeeds) > 0 && len(cfg.SeedPeers) > 0 && cfg.SeedPeers[0] == core.MainnetProfile.DefaultSeeds[0]) {
+				cfg.SeedPeers = activeNet.DefaultSeeds
+			}
+		}
+		if cfg.NetworkID == "" {
+			cfg.NetworkID = activeNet.NetworkID
+		}
+		if cfg.StoreCompression {
+			core.SetStoreCompression(true)
+		}
+		if *dataDirPtr != "" {
+			cfg.DataDir = *dataDirPtr
+		}
+
+		go node.StartServerWithConfig(bc, cfg)
+
+		for i := 0; i < 50; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if err := verifyNodeNetwork(rpcURL, activeNet.NetworkID); err == nil {
+				fmt.Printf("[+] Embedded node daemon is online and ready on %s (P2P port: %s)\n", rpcURL, p2pPort)
+				break
+			}
+		}
+	} else if nodeErr == nil {
+		fmt.Printf("[+] Connected to running node daemon at %s\n", rpcURL)
 	}
 
 	benchmarkPerCore = calibrateBenchmark()
@@ -244,12 +309,6 @@ func main() {
 	fmt.Printf("[*] GUI Wallet Interface: %s\n", guiURL)
 	fmt.Printf("[*] Session Security Token: %s\n", sessionToken)
 	fmt.Println("=================================================================")
-
-	if err := verifyNodeNetwork(rpcURL, activeNet.NetworkID); err != nil {
-		if strings.Contains(err.Error(), "network mismatch") || strings.Contains(err.Error(), "empty network_id") {
-			fmt.Fprintf(os.Stderr, "[-] Error: Connected daemon on %s returned network mismatch: %v. Cross-network requests will be rejected.\n", rpcURL, err)
-		}
-	}
 
 	// Wait for port listener
 	listener, err := net.Listen("tcp", addr)
@@ -633,6 +692,20 @@ func handlePeers(w http.ResponseWriter, r *http.Request) {
 	filtered := filterSafePeersJSON(bodyBytes, core.GetActiveNetwork())
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(filtered)
+}
+
+// isLoopbackRPC returns true if the URL points to a loopback/localhost host.
+func isLoopbackRPC(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // isSafeP2PDisplayPeer checks if a peer is a DNS seed or a public node with an open listening P2P port.
@@ -1694,7 +1767,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
 </main>
 
 <footer class="statusbar">
-  <div>Armaxcoin Core Desktop Web GUI v1.0.8 | Post-Quantum ML-DSA-65</div>
+  <div>Armaxcoin Core Desktop Web GUI v1.0.9 | Post-Quantum ML-DSA-65</div>
   <div id="lblStatusbarSummary">Node: Connected | Ready</div>
 </footer>
 
