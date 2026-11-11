@@ -155,7 +155,18 @@ func (p *PeerServer) handlePushedBlocks(blocks []core.Block, remoteIP, remoteAdd
 		pushSessionsMu.Unlock()
 
 		for _, blk := range blocks {
-			if !p.Blockchain.ValidateAndAddBlock(blk) {
+			ok, addErr := p.Blockchain.ValidateAndAddBlockWithError(blk)
+			if !ok {
+				if core.IsFutureTimestampError(addErr) {
+					skew := core.GetFutureTimestampSkew(addErr)
+					if skew > 600 {
+						p.AddBanScore(remoteIP, 10)
+						p.markBlockNegative(blk.Hash)
+					} else if skew > 30 {
+						p.recordClockSkewViolation(remoteIP)
+					}
+					return
+				}
 				p.AddBanScore(remoteIP, 20)
 				p.markBlockNegative(blk.Hash)
 				return

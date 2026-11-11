@@ -119,7 +119,13 @@ type StatsResponse struct {
 	PeersCandidates   int     `json:"peers_candidates"`
 	PeersCount        int     `json:"peers_count"`
 	Peers             int     `json:"peers"`
-	Difficulty        int     `json:"difficulty"`
+	Difficulty          int     `json:"difficulty"`
+	DifficultyRatio     float64 `json:"difficulty_ratio"`
+	DifficultyHashes    string  `json:"difficulty_hashes"`
+	DifficultyFormatted string  `json:"difficulty_formatted"`
+	DAAEngine           string  `json:"daa_engine"`
+	ASERTScheduleDrift  int64   `json:"asert_drift_seconds"`
+	ASERTDriftFormatted string  `json:"asert_drift_formatted"`
 	LatestHash        string  `json:"latest_hash"`
 	MempoolSize       int     `json:"mempool_size"`
 	Mempool           int     `json:"mempool"`
@@ -2388,11 +2394,23 @@ func refreshNodeAndWallet(mw *walk.MainWindow, lblBal, lblArmoids, lblH, lblP, l
 				if lblP != nil {
 					lblP.SetText(fmt.Sprintf("%d active peers", peerCount))
 				}
+				diffDisp := stats.DifficultyFormatted
+				if diffDisp == "" {
+					diffDisp = fmt.Sprintf("Difficulty %d", stats.Difficulty)
+				}
+				engineName := stats.DAAEngine
+				if engineName == "" {
+					engineName = "LWMA-1"
+				}
+				diffText := fmt.Sprintf("%s (%s)", diffDisp, engineName)
+				if stats.DifficultyRatio > 0 {
+					diffText = fmt.Sprintf("%s [Diff %d | %.2fx] (%s)", diffDisp, stats.Difficulty, stats.DifficultyRatio, engineName)
+				}
 				if lblDiff != nil {
-					lblDiff.SetText(fmt.Sprintf("Difficulty %d (LWMA-1)", stats.Difficulty))
+					lblDiff.SetText(diffText)
 				}
 				if lblMinDiff != nil {
-					lblMinDiff.SetText(fmt.Sprintf("Difficulty %d (LWMA-1 N=60)", stats.Difficulty))
+					lblMinDiff.SetText(diffText)
 				}
 				if lblMem != nil {
 					lblMem.SetText(fmt.Sprintf("%d unconfirmed txs", mempoolCount))
@@ -2426,7 +2444,11 @@ func refreshNodeAndWallet(mw *walk.MainWindow, lblBal, lblArmoids, lblH, lblP, l
 					lblDiagPeers.SetText(fmt.Sprintf("%d active / %d known peers", stats.PeersActive, stats.PeersKnown))
 				}
 				if lblDiagDifficulty != nil {
-					lblDiagDifficulty.SetText(fmt.Sprintf("Target Difficulty %d (LWMA-1 N=60)", stats.Difficulty))
+					diagDiff := diffText
+					if stats.ASERTDriftFormatted != "" {
+						diagDiff += fmt.Sprintf(" • Drift: %s", stats.ASERTDriftFormatted)
+					}
+					lblDiagDifficulty.SetText(diagDiff)
 				}
 				if lblDiagMempool != nil {
 					lblDiagMempool.SetText(fmt.Sprintf("%d unconfirmed transactions", mempoolCount))

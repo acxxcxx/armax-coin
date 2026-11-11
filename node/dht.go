@@ -129,14 +129,21 @@ func (rt *RoutingTable) Update(address string) {
 	}
 }
 
-// FindClosestNodes returns the closest known nodes to a target ID by XOR metric
+// FindClosestNodes returns the closest known nodes to a target ID by XOR metric.
+// Nodes that have not been seen for >= 2 hours are excluded to avoid routing dead peers [v1.0.10].
 func (rt *RoutingTable) FindClosestNodes(targetID [32]byte, count int) []DHTNodeInfo {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 
+	now := time.Now()
 	var allNodes []DHTNode
 	for _, b := range rt.Buckets {
-		allNodes = append(allNodes, b...)
+		for _, n := range b {
+			if !n.LastSeen.IsZero() && now.Sub(n.LastSeen) >= 2*time.Hour {
+				continue
+			}
+			allNodes = append(allNodes, n)
+		}
 	}
 
 	// Sort nodes by XOR distance to targetID
@@ -166,6 +173,56 @@ func (rt *RoutingTable) FindClosestNodes(targetID [32]byte, count int) []DHTNode
 		}
 	}
 	return result
+}
+
+// Remove evicts a dead or unreachable peer address from the DHT routing table [v1.0.10]
+func (rt *RoutingTable) Remove(address string) {
+	if address == "" || rt == nil {
+		return
+	}
+	h := sha256.Sum256([]byte(address))
+	var nodeID [32]byte
+	copy(nodeID[:], h[:])
+
+	cpl := CommonPrefixLen(rt.LocalNode.ID, nodeID)
+	if cpl >= KademliaIDBits {
+		cpl = KademliaIDBits - 1
+	}
+
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	bucket := rt.Buckets[cpl]
+	for i, n := range bucket {
+		if n.Address == address {
+			rt.Buckets[cpl] = append(bucket[:i], bucket[i+1:]...)
+			return
+		}
+	}
+}
+
+// PruneStale removes all nodes that have not been seen for >= maxAge [v1.0.10]
+func (rt *RoutingTable) PruneStale(maxAge time.Duration) int {
+	if rt == nil || maxAge <= 0 {
+		return 0
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	now := time.Now()
+	pruned := 0
+	for cpl := 0; cpl < KademliaIDBits; cpl++ {
+		var active []DHTNode
+		for _, n := range rt.Buckets[cpl] {
+			if !n.LastSeen.IsZero() && now.Sub(n.LastSeen) >= maxAge {
+				pruned++
+				continue
+			}
+			active = append(active, n)
+		}
+		rt.Buckets[cpl] = active
+	}
+	return pruned
 }
 
 // GetAllAddresses returns all active peer addresses in the routing table

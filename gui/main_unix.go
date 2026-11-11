@@ -1517,7 +1517,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
         <div>
           <div class="info-row"><span class="info-label">Blockchain Height:</span><span class="info-val" id="lblStatHeight">-</span></div>
           <div class="info-row"><span class="info-label">Active P2P Peers:</span><span class="info-val" id="lblStatPeers">-</span></div>
-          <div class="info-row"><span class="info-label">LWMA-1 Target Difficulty:</span><span class="info-val" id="lblStatDiff">-</span></div>
+          <div class="info-row"><span class="info-label">Target Difficulty:</span><span class="info-val" id="lblStatDiff">-</span></div>
         </div>
         <div>
           <div class="info-row"><span class="info-label">Unconfirmed Mempool:</span><span class="info-val" id="lblStatMempool">-</span></div>
@@ -1737,7 +1737,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
         </div>
         <div>
           <div class="info-row"><span class="info-label">Mempool Pending Queue:</span><span class="info-val" id="lblDiagMempool">-</span></div>
-          <div class="info-row"><span class="info-label">LWMA-1 Target Difficulty:</span><span class="info-val" id="lblDiagDiff">-</span></div>
+          <div class="info-row"><span class="info-label">Target Difficulty:</span><span class="info-val" id="lblDiagDiff">-</span></div>
           <div class="info-row"><span class="info-label">Circulating Supply:</span><span class="info-val" id="lblDiagSupply">-</span></div>
           <div class="info-row"><span class="info-label">P2P Security:</span><span class="info-val" style="color:#38bdf8">TLS 1.3 TOFU Pinning Enforced</span></div>
           <div class="info-row"><span class="info-label">Sybil / Eclipse Defense:</span><span class="info-val" style="color:#10b981">Subnet Limiter Active</span></div>
@@ -1767,7 +1767,7 @@ footer.statusbar { background: #090d16; border-top: 1px solid var(--border); pad
 </main>
 
 <footer class="statusbar">
-  <div>Armaxcoin Core Desktop Web GUI v1.0.9 | Post-Quantum ML-DSA-65</div>
+  <div>Armaxcoin Core Desktop Web GUI v1.0.10 | Post-Quantum ML-DSA-65</div>
   <div id="lblStatusbarSummary">Node: Connected | Ready</div>
 </footer>
 
@@ -1975,8 +1975,14 @@ async function fetchStats() {
     const pCount = Number.isFinite(activePeers) ? Math.max(0, activePeers) : 0;
     document.getElementById('lblTopPeers').innerText = pCount;
     document.getElementById('lblStatPeers').innerText = pCount + " active (" + (s.peers_known || 0) + " known)";
-    document.getElementById('lblTopDiff').innerText = s.difficulty || 3;
-    document.getElementById('lblStatDiff').innerText = "Difficulty " + (s.difficulty || 3) + " (LWMA-1)";
+    const diffDisplay = s.difficulty_formatted || (s.difficulty || 3);
+    const daaEngine = s.daa_engine || "LWMA-1";
+    let diffDetail = diffDisplay + " (" + daaEngine + ")";
+    if (s.difficulty_ratio !== undefined) {
+      diffDetail = diffDisplay + " [Diff " + (s.difficulty || 3) + " | " + Number(s.difficulty_ratio).toFixed(2) + "x] (" + daaEngine + ")";
+    }
+    document.getElementById('lblTopDiff').innerText = diffDisplay;
+    document.getElementById('lblStatDiff').innerText = diffDetail;
     document.getElementById('lblStatMempool').innerText = (s.mempool_size || s.mempool || 0) + " pending txs";
     if (s.network_id) document.getElementById('lblNetworkBadge').innerText = s.network_id;
 
@@ -1993,7 +1999,13 @@ async function fetchStats() {
     const diagM = document.getElementById('lblDiagMempool');
     if (diagM) diagM.innerText = (s.mempool_size || s.mempool || 0) + " unconfirmed txs";
     const diagD = document.getElementById('lblDiagDiff');
-    if (diagD) diagD.innerText = "Difficulty " + (s.difficulty || 3) + " (LWMA-1 N=60)";
+    if (diagD) {
+      let diagText = diffDetail;
+      if (s.asert_drift_formatted) {
+        diagText += " • Drift: " + s.asert_drift_formatted;
+      }
+      diagD.innerText = diagText;
+    }
     const diagS = document.getElementById('lblDiagSupply');
     if (diagS && s.circulating_supply !== undefined) diagS.innerText = Number(s.circulating_supply).toFixed(8) + " {{TICKER}}";
   } catch(e) {

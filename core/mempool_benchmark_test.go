@@ -22,9 +22,11 @@ func BenchmarkCleanMempoolLocked_5000Tx(b *testing.B) {
 
 	SetNetworkForTesting(true)
 	defer SetNetworkForTesting(true)
+	b.Setenv("ARMX_DATA_DIR", b.TempDir())
 	_ = SetNetwork("regtest")
 
 	bc := MustNewBlockchain(1)
+	defer bc.Close()
 
 	// Create 100 senders with 50 txs each = 5,000 transactions
 	numSenders := 100
@@ -93,9 +95,11 @@ func TestF6_BenchmarkReport(t *testing.T) {
 
 	SetNetworkForTesting(true)
 	defer SetNetworkForTesting(true)
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	_ = SetNetwork("regtest")
 
 	bc := MustNewBlockchain(1)
+	defer bc.Close()
 	numSenders := 100
 	txsPerSender := 50
 

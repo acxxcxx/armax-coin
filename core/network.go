@@ -55,8 +55,11 @@ type NetworkProfile struct {
 	FutureTimestampLimitActivationHeight int64 `json:"future_timestamp_limit_activation_height"`
 	// AntiStallActivationHeight is the first block height where Option A Anti-Stall Emergency
 	// Difficulty Adjustment (TEDR) activates on testnet. Negative disables it.
-	AntiStallActivationHeight int64          `json:"anti_stall_activation_height"`
-	Checkpoints               map[int]string `json:"checkpoints,omitempty"`
+	AntiStallActivationHeight int64 `json:"anti_stall_activation_height"`
+	// ASERTActivationHeight is the first block height where Armax-ASERT-AW activates.
+	// Negative disables it.
+	ASERTActivationHeight int64          `json:"asert_activation_height"`
+	Checkpoints           map[int]string `json:"checkpoints,omitempty"`
 }
 
 var (
@@ -80,6 +83,7 @@ var (
 		// Mainnet stays on the 2-hour rule until the limit is reviewed for launch.
 		FutureTimestampLimitActivationHeight: -1,
 		AntiStallActivationHeight:            -1, // Strictly disabled on Mainnet
+		ASERTActivationHeight:                -1, // Strictly disabled on Mainnet
 		Checkpoints: map[int]string{
 			0: GenesisHash,
 		},
@@ -110,6 +114,8 @@ var (
 		FutureTimestampLimitActivationHeight: 20000,
 		// Hard fork: Anti-stall emergency difficulty adjustment (TEDR) from block #13293 on testnet.
 		AntiStallActivationHeight: 13293,
+		// Hard fork: Armax-ASERT-AW DAA engine from block #13335 on testnet.
+		ASERTActivationHeight: 13335,
 		Checkpoints: map[int]string{
 			0: TestnetGenesisHash,
 		},
@@ -137,6 +143,7 @@ var (
 		TimestampRulesActivationHeight:       -1,
 		FutureTimestampLimitActivationHeight: -1,
 		AntiStallActivationHeight:            -1,
+		ASERTActivationHeight:                -1,
 	}
 
 	// RegtestProfile defines private local regression testing profile [L4-8]
@@ -158,6 +165,7 @@ var (
 		TimestampRulesActivationHeight:       -1,
 		FutureTimestampLimitActivationHeight: -1,
 		AntiStallActivationHeight:            -1,
+		ASERTActivationHeight:                -1,
 	}
 )
 
@@ -177,6 +185,7 @@ var (
 	timestampRulesHeightOverride        *int64 // nil means use network profile
 	futureLimitHeightOverride           *int64 // nil means use network profile
 	antiStallActivationHeightOverride   *int64 // nil means use network profile
+	asertActivationHeightOverride       *int64 // nil means use network profile
 	testGlobalNetworkLock               sync.Mutex
 
 	localMainnetMu      sync.RWMutex
@@ -391,6 +400,55 @@ func IsAntiStallActive(blockIndex int) bool {
 		return false
 	}
 	if blockIndex < 0 {
+		return false
+	}
+	return int64(blockIndex) >= act
+}
+
+// GetASERTActivationHeight returns the block height where Armax-ASERT-AW DAA engine activates.
+// A value <= 0 or -1 indicates it is disabled.
+func GetASERTActivationHeight() int64 {
+	netMu.RLock()
+	defer netMu.RUnlock()
+	if asertActivationHeightOverride != nil {
+		return *asertActivationHeightOverride
+	}
+	// Rehearsal hook: strictly regtest only to protect production consensus
+	if ActiveNetwork.Name == "regtest" {
+		if val := os.Getenv("ARMX_ASERT_HEIGHT"); val != "" {
+			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+				return h
+			}
+		}
+	}
+	return ActiveNetwork.ASERTActivationHeight
+}
+
+// SetASERTActivationHeight dynamically overrides the ASERT activation height (intended for tests).
+func SetASERTActivationHeight(height int64) {
+	netMu.Lock()
+	defer netMu.Unlock()
+	asertActivationHeightOverride = &height
+}
+
+// ResetASERTActivationHeightOverride restores the network profile default.
+func ResetASERTActivationHeightOverride() {
+	netMu.Lock()
+	defer netMu.Unlock()
+	asertActivationHeightOverride = nil
+}
+
+// IsASERTActive returns true if the block at blockIndex is evaluated under the Armax-ASERT-AW DAA rules.
+// Mainnet is strictly guarded until official consensus activation.
+func IsASERTActive(blockIndex int) bool {
+	netMu.RLock()
+	isMain := ActiveNetwork.IsMainnet
+	netMu.RUnlock()
+	if isMain {
+		return false
+	}
+	act := GetASERTActivationHeight()
+	if act <= 0 || blockIndex < 0 {
 		return false
 	}
 	return int64(blockIndex) >= act

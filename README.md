@@ -1,19 +1,20 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)<br>
-**Current Release:** `v1.0.9` (Testnet Anti-Stall TEDR Fork at Block #13,293, 5.45x Zero-Alloc CPU Miner & Linux GUI Auto-Start)<br>
+**Current Release:** `v1.0.10` (Armax-ASERT-AW DAA Hard Fork at Block #13,335, 4-Hour Surge Cap & TEDR Boost, Immutable MiningJob & 3-Tier P2P Policy)<br>
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum security, accessibility, and high performance across personal computers and ARM-based single-board devices (Armbian, Raspberry Pi, Orange Pi).
 
 > [!IMPORTANT]
-> **ACTIVE & SCHEDULED TESTNET CONSENSUS FORKS (BLOCKS 13,293 & 20,000):**
+> **ACTIVE & SCHEDULED TESTNET CONSENSUS FORKS (BLOCKS 13,293, 13,335 & 20,000):**
 > - **Block 13,293 (v1.0.9 — Anti-Stall TEDR):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When the elapsed interval since the parent block exceeds **1,200 seconds (20 minutes)**, candidate blocks qualify for an emergency stall-breaker target (`Difficulty 3`) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`). Permanently disabled on Mainnet (`-1`).
+> - **Block 13,335 (v1.0.10 — Armax-ASERT-AW DAA):** Activates the canonical integer `aserti3-2d` difficulty adjustment algorithm (`ASERTActivationHeight = 13335`), anchored to Block `#13,334` with Anti-Poisoning fallback (DA-03), 4-hour surge cap (`14400s`), and TEDR Boost (`7200s`) for 200x hashrate crash recovery.
 > - **Block 20,000 (v1.0.7+ — Proposal C6):** Tightens maximum allowed future block timestamp from 7,200 seconds (2 hours) down to **600 seconds (10 minutes)** ahead of the validating node's local clock.
 > 
-> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade immediately to **v1.0.9** so the network can mine Block `#13,293` and recover from post-GPU difficulty stalls, and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows).
+> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade immediately to **v1.0.10** prior to Block `#13,335`, and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows).
 > 
-> Detailed release notes and upgrade instructions: **[v1.0.9 Release Notes](docs/releases/v1.0.9.md)** | **[v1.0.8 Release Notes](docs/releases/v1.0.8.md)** | **[v1.0.7 Release Notes](docs/releases/v1.0.7.md)** | **[RELEASE_NOTES.md](RELEASE_NOTES.md)**.
+> Detailed release notes and upgrade instructions: **[v1.0.10 Release Notes](docs/releases/v1.0.10.md)** | **[v1.0.9 Release Notes](docs/releases/v1.0.9.md)** | **[v1.0.8 Release Notes](docs/releases/v1.0.8.md)** | **[RELEASE_NOTES.md](RELEASE_NOTES.md)**.
 
 > [!NOTE]
 > **PUBLIC TESTNET ENVIRONMENT:**
@@ -26,7 +27,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 | Guide | Description |
 |---|---|
-| **[Release Notes (v1.0.9)](RELEASE_NOTES.md)** | Authoritative v1.0.9 release notes, Block 13,293 anti-stall TEDR fork, 5.45x CPU miner optimization, and Linux GUI auto-start |
+| **[Release Notes (v1.0.10)](RELEASE_NOTES.md)** | Authoritative v1.0.10 release notes, Block 13,335 Armax-ASERT-AW DAA fork, surge cap & TEDR boost, immutable MiningJob, and 3-tier P2P policy |
 | **[Open Testnet Guide](docs/TESTNET_GUIDE.md)** | Step-by-step instructions for installing, syncing, and testing transactions |
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Mining with `armminer`, thread tuning, memory footprints, and tokenomics |
 | **[Developer Early-Mining Plan](docs/architecture/tokenomics/mining-accumulation-plan.md)** | Operational parameters, block boundaries, and disclosure for the developer early-mining phase |

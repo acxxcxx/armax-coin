@@ -135,6 +135,7 @@ func TestCirculatingSupplyUnderclaimParityAcrossDiskReload(t *testing.T) {
 	}()
 
 	tempDir := t.TempDir()
+	t.Setenv("ARMX_DATA_DIR", tempDir)
 	dbPath := filepath.Join(tempDir, "blockchain.db")
 	SetDBPath(dbPath)
 	defer SetDBPath("")
@@ -249,6 +250,7 @@ func TestResolveForkUnderclaimSupplyParity(t *testing.T) {
 	}()
 
 	tempDir := t.TempDir()
+	t.Setenv("ARMX_DATA_DIR", tempDir)
 	dbPath := filepath.Join(tempDir, "blockchain.db")
 	SetDBPath(dbPath)
 	defer SetDBPath("")

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -77,12 +78,51 @@ func MaxFutureTimestampSeconds(blockIndex int) int64 {
 	return LegacyFutureTimestampLimitSeconds
 }
 
+// FutureTimestampError indicates that a block's timestamp leads the node's local clock
+// beyond the consensus future drift limit. This error is node-local and temporal:
+// as local time advances, the same block will naturally become valid without PoW re-mining.
+type FutureTimestampError struct {
+	BlockHeight    int
+	BlockTimestamp int64
+	MaxAllowed     int64
+	SkewSeconds    int64
+}
+
+func (e *FutureTimestampError) Error() string {
+	return fmt.Sprintf("timestamp %d too far in future (max: %d, skew: %ds)", e.BlockTimestamp, e.MaxAllowed, e.SkewSeconds)
+}
+
+// IsFutureTimestampError reports whether err is or wraps a *FutureTimestampError.
+func IsFutureTimestampError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var fte *FutureTimestampError
+	return errors.As(err, &fte)
+}
+
+// GetFutureTimestampSkew returns the positive clock skew in seconds if err is a *FutureTimestampError.
+func GetFutureTimestampSkew(err error) int64 {
+	var fte *FutureTimestampError
+	if errors.As(err, &fte) {
+		return fte.SkewSeconds
+	}
+	return 0
+}
+
 // validateFutureTimestamp rejects blocks whose timestamp is too far ahead of the wall clock.
 // The check is node-local (not replayable), so callers skip it for historical replay.
 func validateFutureTimestamp(b *Block) error {
-	maxFuture := time.Now().Unix() + MaxFutureTimestampSeconds(b.Index)
+	now := time.Now().Unix()
+	limit := MaxFutureTimestampSeconds(b.Index)
+	maxFuture := now + limit
 	if b.Timestamp > maxFuture {
-		return fmt.Errorf("timestamp %d too far in future (max: %d)", b.Timestamp, maxFuture)
+		return &FutureTimestampError{
+			BlockHeight:    b.Index,
+			BlockTimestamp: b.Timestamp,
+			MaxAllowed:     maxFuture,
+			SkewSeconds:    b.Timestamp - maxFuture,
+		}
 	}
 	return nil
 }

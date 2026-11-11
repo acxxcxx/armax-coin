@@ -85,6 +85,9 @@ testnet/
 regtest/
 soak/
 
-# Node.js dependencies
+# Node.js dependencies & Bridge staging (preserved in private archive)
 node_modules/
 contracts/node_modules/
+bridge/
+cmd/armx-bridge-relayer/
+contracts/

@@ -1,5 +1,33 @@
 # Armaxcoin Release Notes
 
+## Armaxcoin v1.0.10
+
+**Target Release:** Armaxcoin v1.0.10 — Hybrid ASERT-TEDR Difficulty Consensus Hard Fork, Surge Cap & TEDR Boost, Immutable Thread-Safe Mining Engine, and 3-Tier P2P Policy  
+**Status:** OFFICIAL RELEASE  
+**Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
+**Activation Height:** **Testnet Block `#13,335`** (Armax-ASERT-AW Consensus Hard Fork)  
+**Detailed Technical Specification:** [docs/releases/v1.0.10.md](docs/releases/v1.0.10.md)
+
+---
+
+### 1. Release Overview & Objective
+
+Armaxcoin v1.0.10 introduces the **Armax-ASERT-AW (Absolutely-Scheduled Exponentially-Rising Targets with Anti-Windup)** consensus hard fork scheduled for **Block `#13,335`** on Testnet, paired with comprehensive non-consensus hardening for multi-threaded miners and P2P gossip nodes:
+
+1. **Armax-ASERT-AW Consensus Hard Fork (Block `#13,335`):** Replaces LWMA-1 with canonical integer `aserti3-2d` starting at Block `#13,335` on Testnet (`ASERTActivationHeight = 13335`). Anchored to Block `#13,334` with Anti-Poisoning fallback (DA-03) that walks backward if `#13,334` was an emergency block, and Emergency Target Inversion Guard (DA-04).
+2. **Surge Protection & Hashrate Crash Recovery:** 
+   - **4-Hour Surge Cap (`MaxASERTBlockInterval = 14400s`):** Limits single-block drift injection to 14,280s (~15.63x target relaxation cap), preventing multi-day post-outage block stampedes.
+   - **TEDR Boost (`TEDRBoostDriftSeconds = 7200s`):** Emergency blocks solved under TEDR inject 2 hours of synthetic solve time into the ASERT drift accumulator, relaxing target by ~3.91x per emergency block and enabling full recovery from a 200x hashrate crash within 3 emergency blocks.
+3. **Immutable Thread-Safe `MiningJob` Engine & 4-Point Submission Gate:** Replaces shared goroutine state in `MineBlockContext` and `armminer` with immutable per-worker job snapshots. Atomic `JobVersion` increment synchronizes TEDR target rotations across the 1,200s boundary, enforced by a strict 4-point submission gate.
+4. **Typed Clock Skew Error & 3-Tier P2P Policy:** Distinguishes temporary clock skew from malformed blocks via `*core.FutureTimestampError`, bypassing negative cache. Implements a 3-tier P2P peer score policy (0 score for $\le 30\text{s}$, strike tracking for $31\text{s}-600\text{s}$, and ban penalty for $> 600\text{s}$).
+5. **True Parent-Context Target Validation for Orphans:** Fixes target verification for orphan blocks by evaluating expected targets along the true parent branch (`CalculateExpectedTargetWithParent`) rather than the active tip.
+6. **Dual-Model Difficulty Display & Telemetry:** Dual-metric display providing both absolute work (`hashes_per_block`) and relative ratio (`difficulty_ratio`) across RPC, GUI, and logs with dynamic DAA engine labels.
+7. **P2P Sync Hardening & Stale Peer Eviction (2-Hour Inactivity Rule):** Proactively evicts unresponsive public peers after 2 hours (`MaxPeerInactivityDuration = 2h`, `EvictedPeerCooldown = 2h`), purges them from `peers.json` and Kademlia DHT, filters out stale entries in `GET_PEERS`, and stops dialing dead addresses during periodic sync loops (`SyncBestPeer`).
+8. **Lightened Ban Duration (12 Hours):** Reduced default misbehavior ban duration from 24 hours to 12 hours (`DefaultBanDuration = 12 * time.Hour`).
+9. **Template Expiration Export:** Adds `"maxtime"` field to `/getblocktemplate` RPC response.
+
+---
+
 ## Armaxcoin v1.0.9
 
 **Target Release:** Armaxcoin v1.0.9 — Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR), Zero-Allocation CPU Miner Optimization & Linux GUI Daemon Auto-Start  

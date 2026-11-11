@@ -12,6 +12,7 @@ import (
 // Concurrent reads via GetBlockUndoRecord and writes to undoHistory
 // do not trigger a data race or "concurrent map read and map write" fatal error.
 func TestUndoHistoryConcurrentReadWriteRace(t *testing.T) {
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	bc := NewBlockchain(1)
 	defer bc.Close()
 

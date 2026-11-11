@@ -78,6 +78,112 @@ func TargetToDifficulty(target *big.Int) int {
 	return diff
 }
 
+// TargetToHashesPerBlock calculates the expected number of hash trials required to mine a block:
+// floor((2^256 - 1) / target). If target is nil or non-positive, returns MaxTarget256.
+func TargetToHashesPerBlock(target *big.Int) *big.Int {
+	if target == nil || target.Sign() <= 0 {
+		return new(big.Int).Set(MaxTarget256)
+	}
+	return new(big.Int).Div(MaxTarget256, target)
+}
+
+// FormatHashes formats a large hash count into standard SI metric notation (e.g. "15.48 M", "1.25 G").
+func FormatHashes(hashes *big.Int) string {
+	if hashes == nil || hashes.Sign() <= 0 {
+		return "1 H"
+	}
+	hFloat := new(big.Float).SetInt(hashes)
+	val, _ := hFloat.Float64()
+
+	switch {
+	case val >= 1e12:
+		return fmt.Sprintf("%.2f T", val/1e12)
+	case val >= 1e9:
+		return fmt.Sprintf("%.2f G", val/1e9)
+	case val >= 1e6:
+		return fmt.Sprintf("%.2f M", val/1e6)
+	case val >= 1e3:
+		return fmt.Sprintf("%.2f K", val/1e3)
+	default:
+		return fmt.Sprintf("%d H", hashes.Int64())
+	}
+}
+
+// TargetToDifficultyRatio calculates the continuous difficulty multiplier relative to the network's
+// baseline bootstrap limit (GetArmaxHashPowLimit for ArmaxHash era, or GetPowLimit for legacy era).
+func TargetToDifficultyRatio(target *big.Int, blockIndex int) float64 {
+	if target == nil || target.Sign() <= 0 {
+		return 1.0
+	}
+	baseTarget := GetPowLimit()
+	if IsArmaxHashActive(blockIndex) {
+		baseTarget = GetArmaxHashPowLimit()
+	}
+	if baseTarget == nil || baseTarget.Sign() <= 0 {
+		baseTarget = DifficultyToTarget(1)
+	}
+
+	ratio := new(big.Float).Quo(new(big.Float).SetInt(baseTarget), new(big.Float).SetInt(target))
+	res, _ := ratio.Float64()
+	if res < 0.0001 {
+		return 0.0001
+	}
+	return res
+}
+
+// TargetToEstimatedNetworkHashrate calculates estimated global network hashrate in H/s:
+// hashrate = ExpectedHashes / 120s.
+func TargetToEstimatedNetworkHashrate(target *big.Int) *big.Int {
+	hashes := TargetToHashesPerBlock(target)
+	return new(big.Int).Div(hashes, big.NewInt(TargetBlockTimeSeconds))
+}
+
+// FormatHashrate formats a hash-per-second value into standard SI metric rate notation (e.g. "128.50 kH/s", "1.05 MH/s").
+func FormatHashrate(hps *big.Int) string {
+	if hps == nil || hps.Sign() <= 0 {
+		return "0.00 H/s"
+	}
+	hFloat := new(big.Float).SetInt(hps)
+	val, _ := hFloat.Float64()
+
+	switch {
+	case val >= 1e12:
+		return fmt.Sprintf("%.2f TH/s", val/1e12)
+	case val >= 1e9:
+		return fmt.Sprintf("%.2f GH/s", val/1e9)
+	case val >= 1e6:
+		return fmt.Sprintf("%.2f MH/s", val/1e6)
+	case val >= 1e3:
+		return fmt.Sprintf("%.2f kH/s", val/1e3)
+	default:
+		return fmt.Sprintf("%.2f H/s", val)
+	}
+}
+
+// GetCurrentDAAEngineName returns the formal name of the difficulty adjustment algorithm active at blockIndex.
+func GetCurrentDAAEngineName(blockIndex int) string {
+	if IsASERTActive(blockIndex) {
+		return "Armax-ASERT-AW"
+	}
+	return "LWMA-1 (N=60)"
+}
+
+// GetASERTScheduleDrift calculates the active ASERT schedule drift in seconds relative to the anchor block.
+// Returns driftSeconds, isActive.
+func GetASERTScheduleDrift(chain []Block, tipIndex int) (int64, bool) {
+	if !IsASERTActive(tipIndex) || len(chain) == 0 {
+		return 0, false
+	}
+	actHeight := int(GetASERTActivationHeight())
+	anchorBlock, _, err := ResolveASERTAnchor(chain, actHeight)
+	if err != nil {
+		return 0, false
+	}
+	tip := chain[len(chain)-1]
+	drift := (tip.Timestamp - anchorBlock.Timestamp) - TargetBlockTimeSeconds*int64(tip.Index-anchorBlock.Index)
+	return drift, true
+}
+
 // HashMeetsTarget verifies whether a double-SHA256 hash value numerically satisfies the target ceiling (hashNum <= target)
 func HashMeetsTarget(hashHex string, target *big.Int) bool {
 	hashBytes, err := hex.DecodeString(hashHex)
@@ -298,19 +404,46 @@ func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 	return nextTarget
 }
 
-// CalculateExpectedTargetForCandidate computes the expected 256-bit target for a candidate block,
-// taking into account candidate solve interval for TEDR anti-stall emergency fallback.
-func CalculateExpectedTargetForCandidate(chain []Block, nextIndex int, candidateTimestamp int64) *big.Int {
-	if len(chain) > 0 {
-		prevBlock := chain[len(chain)-1]
-		if nextIndex == prevBlock.Index+1 && IsEmergencyBlockCandidate(prevBlock.Timestamp, candidateTimestamp, nextIndex) {
-			return GetArmaxHashPowLimit()
+// CalculateExpectedTargetWithParent computes the expected 256-bit target for a candidate block
+// given its explicit parent block context, supporting both branch evaluation and active tip evaluation.
+func CalculateExpectedTargetWithParent(chain []Block, parent *Block, nextIndex int, candidateTimestamp int64) *big.Int {
+	if IsASERTActive(nextIndex) {
+		normalTarget := CalculateArmaxASERTTarget(chain, nextIndex, candidateTimestamp)
+		if parent != nil && IsEmergencyBlockCandidate(parent.Timestamp, candidateTimestamp, nextIndex) {
+			emLimit := GetArmaxHashPowLimit()
+			// Emergency Target Inversion Guard (DA-04): never tighten difficulty during emergency
+			if normalTarget.Cmp(emLimit) > 0 {
+				return normalTarget
+			}
+			return emLimit
 		}
+		return normalTarget
+	}
+
+	if parent != nil && IsEmergencyBlockCandidate(parent.Timestamp, candidateTimestamp, nextIndex) {
+		return GetArmaxHashPowLimit()
 	}
 	return CalculateExpectedTarget(chain, nextIndex)
 }
 
-// CalculateLWMA1 computes the next PoW 256-bit target for the current tip of the blockchain
+// CalculateExpectedTargetForCandidate computes the expected 256-bit target for a candidate block,
+// taking into account candidate solve interval for TEDR anti-stall emergency fallback.
+func CalculateExpectedTargetForCandidate(chain []Block, nextIndex int, candidateTimestamp int64) *big.Int {
+	var parent *Block
+	if len(chain) > 0 {
+		p := chain[len(chain)-1]
+		parent = &p
+	}
+	return CalculateExpectedTargetWithParent(chain, parent, nextIndex, candidateTimestamp)
+}
+
+// CalculateLWMA1 computes the next PoW 256-bit target for the current tip of the blockchain.
+// When Armax-ASERT-AW is active at current tip height, it calculates the nominal ASERT target
+// under the ideal block schedule (parent.Timestamp + 120s).
 func (bc *Blockchain) CalculateLWMA1() *big.Int {
+	if IsASERTActive(len(bc.Chain)) && len(bc.Chain) > 0 {
+		latest := bc.Chain[len(bc.Chain)-1]
+		return CalculateExpectedTargetWithParent(bc.Chain, &latest, len(bc.Chain), latest.Timestamp+TargetBlockTimeSeconds)
+	}
 	return CalculateExpectedTarget(bc.Chain, len(bc.Chain))
 }

@@ -144,10 +144,10 @@ func TestHeartbeatDropsFailedSession(t *testing.T) {
 	}
 }
 
-// TestVersionIdentifierV106 verifies canonical version constants [v1.0.6].
+// TestVersionIdentifier verifies canonical version constants.
 func TestVersionIdentifierV106(t *testing.T) {
-	if core.Version != "1.0.9" {
-		t.Fatalf("expected core.Version to be 1.0.9, got %s", core.Version)
+	if core.Version != "1.0.10" {
+		t.Fatalf("expected core.Version to be 1.0.10, got %s", core.Version)
 	}
 }
 

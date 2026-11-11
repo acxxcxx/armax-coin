@@ -37,11 +37,13 @@ const (
 	MaxBlockRangeResponseBytes = core.MaxBlockSize // >= MaxBlockSize (2,000,000 B), ensures always returning at least 1 block [P2-4]
 	SocketTimeoutDuration      = 20 * time.Second
 	PeersFile                  = "peers.json"
-	SyncChunkSize              = 250              // Maximum blocks per GET_BLOCK_RANGE request
-	MaxOrphanBlocks            = 100              // Maximum orphan blocks in buffer [N-17]
-	MaxOrphanBlocksPerPeer     = 10               // Maximum orphan blocks allowed per peer [N-17]
-	MaxOrphanTxs               = 500              // Maximum pending out-of-order transactions [N-17]
-	OrphanTxExpiry             = 10 * time.Minute // Out-of-order tx expiration window [N-17]
+	SyncChunkSize              = 250               // Maximum blocks per GET_BLOCK_RANGE request
+	MaxOrphanBlocks            = 100               // Maximum orphan blocks in buffer [N-17]
+	MaxOrphanBlocksPerPeer     = 10                // Maximum orphan blocks allowed per peer [N-17]
+	MaxOrphanTxs               = 500               // Maximum pending out-of-order transactions [N-17]
+	OrphanTxExpiry             = 10 * time.Minute  // Out-of-order tx expiration window [N-17]
+	DefaultBanDuration         = 12 * time.Hour    // Misbehavior ban duration (reduced from 24h to 12h) [v1.0.10]
+	MaxPeerInactivityDuration  = 2 * time.Hour     // Unresponsive non-seed peer eviction threshold [v1.0.10]
 )
 
 // extractSubnet derives the /24 IPv4 or /48 IPv6 subnet prefix for Sybil/Eclipse attack mitigation
@@ -347,6 +349,7 @@ type PeerServer struct {
 	banLock              sync.RWMutex                 // [N-15] Ban and rate limit mutex
 	banScores            map[string]int               // [N-15] Misbehavior ban scores per IP
 	bannedIPs            map[string]time.Time         // [N-15] Active IP bans and expiry
+	skewStrikes          map[string][]time.Time       // [F-04] Timestamp strikes for minor clock skew
 	banFileMu            sync.Mutex                   // serializes writes of bans.json
 	pushMu               sync.Mutex                   // serializes PUSH_BLOCKS application
 	pushCooldownMu       sync.Mutex
@@ -418,8 +421,8 @@ const (
 	// InboundHandshakeTimeout bounds how long a new inbound connection may take (including the TLS
 	// handshake) to deliver its first message before it is dropped, freeing the slot for honest peers.
 	InboundHandshakeTimeout = 5 * time.Second
-	UnreachablePeerCooldown = 30 * time.Minute
-	EvictedPeerCooldown     = 15 * time.Minute
+	UnreachablePeerCooldown = 2 * time.Hour // Inbound NAT/firewall unreachable port cooldown [v1.0.10]
+	EvictedPeerCooldown     = 2 * time.Hour // Dead/evicted peer dial cooldown (do not retry for >= 2h) [v1.0.10]
 	SelfAnnounceInterval    = 10 * time.Minute
 	InboundProbeTimeout     = 3 * time.Second
 )
@@ -622,6 +625,10 @@ func (p *PeerServer) markPeerUnreachable(addr string, ttl time.Duration) {
 		}
 	}
 	p.unreachablePeers[addr] = now.Add(ttl)
+	norm := normalizePeerEndpoint(addr)
+	if norm != "" && norm != addr {
+		p.unreachablePeers[norm] = now.Add(ttl)
+	}
 }
 
 func (p *PeerServer) clearPeerUnreachable(addr string) {
@@ -632,6 +639,10 @@ func (p *PeerServer) clearPeerUnreachable(addr string) {
 	defer p.reachabilityMu.Unlock()
 	if p.unreachablePeers != nil {
 		delete(p.unreachablePeers, addr)
+		norm := normalizePeerEndpoint(addr)
+		if norm != "" {
+			delete(p.unreachablePeers, norm)
+		}
 	}
 }
 
@@ -966,15 +977,50 @@ func (p *PeerServer) isPeerUnreachable(addr string) bool {
 	if p.unreachablePeers == nil {
 		return false
 	}
-	exp, ok := p.unreachablePeers[addr]
-	if !ok {
+	now := time.Now()
+	norm := normalizePeerEndpoint(addr)
+	for _, key := range []string{addr, norm} {
+		if key == "" {
+			continue
+		}
+		exp, ok := p.unreachablePeers[key]
+		if ok {
+			if now.After(exp) {
+				delete(p.unreachablePeers, key)
+			} else {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isPeerStale reports whether a peer has not responded for >= 2 hours and has failed dials [v1.0.10]
+func (p *PeerServer) isPeerStale(addr string) bool {
+	if addr == "" || p.isSeedPeer(addr) {
 		return false
 	}
-	if time.Now().After(exp) {
-		delete(p.unreachablePeers, addr)
+	p.Lock.RLock()
+	defer p.Lock.RUnlock()
+	var info *PeerInfo
+	if p.triedPeers != nil {
+		info = p.triedPeers[addr]
+	}
+	if info == nil && p.newPeers != nil {
+		info = p.newPeers[addr]
+	}
+	if info == nil {
 		return false
 	}
-	return true
+	if info.Failures > 0 {
+		if info.LastSeen.IsZero() {
+			return true // failed without ever being successfully verified
+		}
+		if time.Since(info.LastSeen) >= MaxPeerInactivityDuration {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *PeerServer) shouldSelfAnnounceTo(target string) bool {
@@ -2038,6 +2084,7 @@ func NewPeerServer(port string, bc *core.Blockchain, opts ...string) *PeerServer
 		orphanTxs:           make(map[string]*orphanTxEntry),
 		banScores:           make(map[string]int),
 		bannedIPs:           make(map[string]time.Time),
+		skewStrikes:         make(map[string][]time.Time),
 		rateTrackers:        make(map[string]*peerRateTracker),
 		pendingTOFU:         make(map[string]*pendingPin),
 		failedPins:          make(map[string]string),
@@ -2194,8 +2241,45 @@ func (p *PeerServer) AddBanScore(ip string, score int) {
 	}
 	p.banScores[ip] += score
 	if p.banScores[ip] >= 100 {
-		p.banIPLocked(ip, time.Now().Add(24*time.Hour))
-		fmt.Printf("[P2P] [!] Banned peer IP %s for 24h (ban score: %d)\n", ip, p.banScores[ip])
+		p.banIPLocked(ip, time.Now().Add(DefaultBanDuration))
+		fmt.Printf("[P2P] [!] Banned peer IP %s for 12h (ban score: %d)\n", ip, p.banScores[ip])
+	}
+}
+
+// recordClockSkewViolation records a Tier 2 clock skew infraction (31s - 600s) [F-04].
+// If a peer sends >= 3 blocks exceeding local clock by 31-600s within a 10-minute rolling window,
+// a small misbehavior score (+2) is assessed without placing the block in the negative cache.
+func (p *PeerServer) recordClockSkewViolation(ip string) {
+	if p.isRateLimitDisabled() {
+		return
+	}
+	p.banLock.Lock()
+	defer p.banLock.Unlock()
+	if p.skewStrikes == nil {
+		p.skewStrikes = make(map[string][]time.Time)
+	}
+	now := time.Now()
+	cutoff := now.Add(-10 * time.Minute)
+	var active []time.Time
+	for _, t := range p.skewStrikes[ip] {
+		if t.After(cutoff) {
+			active = append(active, t)
+		}
+	}
+	active = append(active, now)
+	p.skewStrikes[ip] = active
+	if len(active) >= 3 {
+		if p.banScores == nil {
+			p.banScores = make(map[string]int)
+		}
+		p.banScores[ip] += 2
+		if p.banScores[ip] >= 100 {
+			if p.bannedIPs == nil {
+				p.bannedIPs = make(map[string]time.Time)
+			}
+			p.banIPLocked(ip, now.Add(DefaultBanDuration))
+			fmt.Printf("[P2P] [!] Banned peer IP %s for 12h (ban score: %d)\n", ip, p.banScores[ip])
+		}
 	}
 }
 
@@ -2276,7 +2360,7 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 				if p.bannedIPs == nil {
 					p.bannedIPs = make(map[string]time.Time)
 				}
-				p.banIPLocked(ip, now.Add(24*time.Hour))
+				p.banIPLocked(ip, now.Add(DefaultBanDuration))
 			}
 			return false
 		}
@@ -2343,7 +2427,7 @@ func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
 			if p.bannedIPs == nil {
 				p.bannedIPs = make(map[string]time.Time)
 			}
-			p.banIPLocked(ip, now.Add(24*time.Hour))
+			p.banIPLocked(ip, now.Add(DefaultBanDuration))
 		}
 		return false
 	}
@@ -2554,13 +2638,18 @@ func (p *PeerServer) RecordPeerFailure(addr string) error {
 	}
 
 	info.Failures++
-	evicted := false
-	if info.Failures >= MaxPeerFailures && p.isSeedPeer(addr) {
+	isSeed := p.isSeedPeer(addr)
+	if info.Failures >= MaxPeerFailures && isSeed {
 		// Seeds are the node's only way back after an outage: keep them in the address book.
 		info.Failures = MaxPeerFailures - 1
 	}
-	if info.Failures >= MaxPeerFailures {
-		// Evict dead peer [N-16]
+
+	timeSinceLastSeen := time.Since(info.LastSeen)
+	isUnresponsive2h := !isSeed && !info.LastSeen.IsZero() && timeSinceLastSeen >= MaxPeerInactivityDuration
+
+	evicted := false
+	if !isSeed && (info.Failures >= MaxPeerFailures || isUnresponsive2h) {
+		// Evict dead or long-unresponsive peer [N-16, v1.0.10]
 		if inTried {
 			delete(p.triedPeers, addr)
 		} else {
@@ -2575,6 +2664,9 @@ func (p *PeerServer) RecordPeerFailure(addr string) error {
 		p.markPeerUnreachable(addr, EvictedPeerCooldown)
 		if sess := p.getExistingOutboundSession(addr); sess != nil {
 			p.dropOutboundSession(addr, sess)
+		}
+		if p.DHT != nil {
+			p.DHT.Remove(addr)
 		}
 		if err := p.savePeersLocked(); err != nil {
 			// Roll back eviction on persistence failure so memory matches disk
@@ -2596,6 +2688,68 @@ func (p *PeerServer) RecordPeerFailure(addr string) error {
 		}
 	}
 	return nil
+}
+
+// PruneStalePeers scans and removes non-seed public peers that have failed and remained unresponsive for >= 2 hours [v1.0.10]
+func (p *PeerServer) PruneStalePeers() (int, error) {
+	p.lifecycleLock.RLock()
+	defer p.lifecycleLock.RUnlock()
+
+	p.savePeersLock.Lock()
+	defer p.savePeersLock.Unlock()
+
+	p.Lock.Lock()
+	var toEvict []string
+	now := time.Now()
+
+	for addr, info := range p.triedPeers {
+		if p.isSeedPeer(addr) {
+			continue
+		}
+		if info != nil && info.Failures > 0 && !info.LastSeen.IsZero() && now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
+			toEvict = append(toEvict, addr)
+		}
+	}
+	for addr, info := range p.newPeers {
+		if p.isSeedPeer(addr) {
+			continue
+		}
+		if info != nil && info.Failures > 0 && !info.LastSeen.IsZero() && now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
+			toEvict = append(toEvict, addr)
+		}
+	}
+
+	if len(toEvict) == 0 {
+		p.Lock.Unlock()
+		return 0, nil
+	}
+
+	for _, addr := range toEvict {
+		delete(p.triedPeers, addr)
+		delete(p.newPeers, addr)
+	}
+	p.rebuildPeersListLocked()
+	p.Lock.Unlock()
+
+	for _, addr := range toEvict {
+		p.markPeerUnreachable(addr, EvictedPeerCooldown)
+		if sess := p.getExistingOutboundSession(addr); sess != nil {
+			p.dropOutboundSession(addr, sess)
+		}
+		if p.DHT != nil {
+			p.DHT.Remove(addr)
+		}
+	}
+
+	if p.DHT != nil {
+		p.DHT.PruneStale(MaxPeerInactivityDuration)
+	}
+
+	if err := p.savePeersLocked(); err != nil {
+		return len(toEvict), err
+	}
+	core.LogInfo(core.LogCategoryDiscovery, "Pruned %d stale public peer(s) unresponsive for >= %v", len(toEvict), MaxPeerInactivityDuration)
+	return len(toEvict), nil
 }
 
 // VersionedPeerStore represents the on-disk peer storage format [Phase 5]
@@ -2805,6 +2959,7 @@ func (p *PeerServer) loadPeers() {
 			}
 		}
 
+		now := time.Now()
 		for _, info := range store.Peers {
 			if info == nil || info.Address == "" || p.isSelfPeerAddress(info.Address) {
 				continue
@@ -2813,6 +2968,10 @@ func (p *PeerServer) loadPeers() {
 				if err := ValidateLoopbackAddress(info.Address); err != nil {
 					continue // Silently ignore non-loopback cached peers in local mainnet mode without mutating cache file
 				}
+			}
+			// Skip stale public peers that have failed and have not been seen for >= 2 hours [v1.0.10]
+			if !p.isSeedPeer(info.Address) && info.Failures > 0 && !info.LastSeen.IsZero() && now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
+				continue
 			}
 			if info.CertFingerprint != "" {
 				// Peer has pinned certificate fingerprint
@@ -3235,6 +3394,9 @@ func (p *PeerServer) startSyncWorker(cycle *serverCycle) {
 			if syncCycle%2 == 0 {
 				p.SyncMempool()
 				p.RebroadcastMempool()
+			}
+			if syncCycle%8 == 7 {
+				go func() { _, _ = p.PruneStalePeers() }()
 			}
 		case <-cycle.quitChan:
 			return
@@ -3913,6 +4075,9 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 				if remoteIP != "" && remoteIP != "127.0.0.1" && remoteIP != "::1" && extractHost(candidate) == remoteIP {
 					continue
 				}
+				if p.isPeerStale(candidate) {
+					continue
+				}
 				peers = append(peers, candidate)
 			}
 			if len(peers) > MaxPeersPerResponse {
@@ -4055,7 +4220,7 @@ func (p *PeerServer) AddPeer(peerAddress string) error {
 	p.lifecycleLock.RLock()
 	defer p.lifecycleLock.RUnlock()
 
-	if peerAddress == "" || p.isSelfPeerAddress(peerAddress) {
+	if peerAddress == "" || p.isSelfPeerAddress(peerAddress) || p.isPeerUnreachable(peerAddress) {
 		return nil
 	}
 	host, portStr, err := net.SplitHostPort(peerAddress)
@@ -4165,7 +4330,7 @@ func (p *PeerServer) AddPeer(peerAddress string) error {
 
 	p.newPeers[peerAddress] = &PeerInfo{
 		Address:   peerAddress,
-		LastSeen:  time.Now(),
+		LastSeen:  time.Time{}, // Not verified by local node yet [v1.0.10]
 		NetworkID: p.getNetworkIDLocked(),
 	}
 	p.rebuildPeersListLocked()
@@ -5320,6 +5485,9 @@ func (p *PeerServer) SyncBestPeer() {
 	var wg sync.WaitGroup
 
 	for _, peer := range peers {
+		if p.isPeerUnreachable(peer) || p.isPeerStale(peer) {
+			continue
+		}
 		sem <- struct{}{}
 		wg.Add(1)
 		go func(peerAddr string) {
@@ -5435,7 +5603,7 @@ func (p *PeerServer) GenerateBlockLocators() []string {
 // RequestChainSync synchronizes blocks from a peer using GET_FORKPOINT, bounded GET_BLOCK_RANGE chunks,
 // and atomic ResolveFork reorganization [N-14].
 func (p *PeerServer) RequestChainSync(peerAddress string) {
-	if p.Blockchain == nil || p.isShuttingDown() {
+	if p.Blockchain == nil || p.isShuttingDown() || p.isPeerUnreachable(peerAddress) {
 		return
 	}
 	host, _, _ := net.SplitHostPort(peerAddress)
@@ -5469,6 +5637,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 
 	if err != nil {
 		core.LogDebug(core.LogCategorySync, "GET_HEIGHT failed peer=%s err=%v", peerAddress, err)
+		_ = p.RecordPeerFailure(peerAddress)
 		return
 	}
 	if heightResp == nil || heightResp.Type != "HEIGHT_RESPONSE" {

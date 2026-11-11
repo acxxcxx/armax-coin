@@ -609,6 +609,7 @@ func TestConsensusRejectsArmaxHashFailureAndSentinel(t *testing.T) {
 func TestMineBlockContextConcurrentErrorRejectsBlock(t *testing.T) {
 	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	_ = SetNetwork("regtest")
 
 	bc := NewBlockchain(1)

@@ -39,9 +39,7 @@ func TestTickerDoesNotChangeConsensusIdentity(t *testing.T) {
 // Mainnet cannot be selected yet (SetNetwork rejects it), so mainnet mapping is
 // covered by TestTickerForNetworkID; this test checks the active-profile path.
 func TestActiveTickerFollowsSelectedNetwork(t *testing.T) {
-	defer func() { _ = SetNetwork("testnet") }()
-
-	if err := SetNetwork("testnet"); err != nil {
+	if err := SetNetwork("testnet"); err != nil && !strings.Contains(err.Error(), "already initialized") {
 		t.Fatal(err)
 	}
 	if got := ActiveTicker(); got != "tARMX" {

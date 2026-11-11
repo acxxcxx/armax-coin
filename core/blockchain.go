@@ -812,6 +812,23 @@ func (bc *Blockchain) SelectCandidateTransactionsLocked(maxTxs int, maxBytes int
 	return validTxs, totalFees
 }
 
+// MiningJob represents an immutable, thread-safe snapshot of a mining round candidate block [F-01, F-02].
+// Every worker receives an immutable pointer to the active MiningJob. When consensus
+// conditions or emergency targets transition (e.g. crossing the 1,200s TEDR boundary),
+// a new MiningJob is instantiated with an incremented JobVersion, preventing race conditions.
+type MiningJob struct {
+	JobVersion     uint64
+	Index          int
+	MinTimestamp   int64
+	MaxTimestamp   int64
+	PrevHash       string
+	TargetHex      string
+	ExpectedTarget *big.Int
+	TargetBytes    [32]byte
+	PrefixBytes    []byte
+	SuffixBytes    []byte
+}
+
 // MineBlockContext mines a new block including miner reward, transaction fees, and mempool transactions
 // with context cancellation and stale-block detection support.
 func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string, threadCount ...int) (Block, error) {
@@ -926,30 +943,73 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 		}
 	}()
 
-	var targetBytes [32]byte
-	tBytes := target.Bytes()
-	if len(tBytes) > 32 {
-		tBytes = tBytes[len(tBytes)-32:]
+	var activeJobVersion uint64 = 1
+	var jobMu sync.RWMutex
+
+	buildJobLocked := func(ver uint64, ts int64) *MiningJob {
+		tgt := CalculateExpectedTargetWithParent(bc.Chain, &prevBlock, prevBlock.Index+1, ts)
+		var tb [32]byte
+		bBytes := tgt.Bytes()
+		if len(bBytes) > 32 {
+			bBytes = bBytes[len(bBytes)-32:]
+		}
+		copy(tb[32-len(bBytes):], bBytes)
+		tgtHex := fmt.Sprintf("%064x", tgt)
+
+		maxTs := ts + MaxFutureTimestampSeconds(prevBlock.Index+1)
+		if IsASERTActive(prevBlock.Index + 1) {
+			asertLimit := ts + 15
+			if asertLimit < maxTs {
+				maxTs = asertLimit
+			}
+		}
+		if IsAntiStallActive(prevBlock.Index+1) && ts-prevBlock.Timestamp < 1200 {
+			tedrLimit := prevBlock.Timestamp + 1200
+			if tedrLimit < maxTs {
+				maxTs = tedrLimit
+			}
+		}
+
+		pfx := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:", newBlock.Index, ts, newBlock.PrevHash, newBlock.MerkleRoot, newBlock.Miner))
+		sfx := []byte(":" + tgtHex)
+
+		return &MiningJob{
+			JobVersion:     ver,
+			Index:          newBlock.Index,
+			MinTimestamp:   ts,
+			MaxTimestamp:   maxTs,
+			PrevHash:       prevBlock.Hash,
+			TargetHex:      tgtHex,
+			ExpectedTarget: tgt,
+			TargetBytes:    tb,
+			PrefixBytes:    pfx,
+			SuffixBytes:    sfx,
+		}
 	}
-	copy(targetBytes[32-len(tBytes):], tBytes)
+
+	currentJob := buildJobLocked(activeJobVersion, now)
 
 	stride := int64(threads)
 	for w := 0; w < threads; w++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
+
+			jobMu.RLock()
+			localJob := currentJob
+			jobMu.RUnlock()
+
 			b := newBlock
 			b.Nonce = startNonce + int64(workerID)
+			b.Timestamp = localJob.MinTimestamp
+			b.Target = localJob.TargetHex
+			b.Difficulty = TargetToDifficulty(localJob.ExpectedTarget)
 
-			targetStr := b.Target
-			if targetStr == "" {
-				targetStr = fmt.Sprintf("%064x", DifficultyToTarget(b.Difficulty))
-			}
-			suffix := ":" + targetStr
-			suffixBytes := []byte(suffix)
+			prefixBytes := make([]byte, len(localJob.PrefixBytes))
+			copy(prefixBytes, localJob.PrefixBytes)
+			suffixBytes := localJob.SuffixBytes
+			targetBytes := localJob.TargetBytes
 
-			prefix := fmt.Sprintf("%d:%d:%s:%s:%s:", b.Index, b.Timestamp, b.PrevHash, b.MerkleRoot, b.Miner)
-			prefixBytes := []byte(prefix)
 			buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
 
 			useArmaxHashV2 := IsArmaxHashV2Active(b.Index)
@@ -996,14 +1056,29 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 				localBatch++
 
 				if bytes.Compare(hashBytes[:], targetBytes[:]) <= 0 {
-					atomic.AddInt64(&totalHashes, localBatch)
-					b.Hash = hex.EncodeToString(hashBytes[:])
-					select {
-					case resultChan <- b:
-						cancelWorkers()
-					default:
+					// 4-Point Submission Gate [F-01, F-02]:
+					// 1. Job version matches current active version
+					// 2. Chain tip has not changed
+					// 3. Timestamp within valid job bounds [MinTimestamp, MaxTimestamp]
+					// 4. Target matches expected consensus target
+					curVer := atomic.LoadUint64(&activeJobVersion)
+					if localJob.JobVersion == curVer {
+						bc.Lock.RLock()
+						tip := bc.GetLatestBlockUnsafe()
+						bc.Lock.RUnlock()
+						if tip.Hash == prevBlock.Hash && b.Timestamp >= localJob.MinTimestamp && b.Timestamp <= localJob.MaxTimestamp {
+							atomic.AddInt64(&totalHashes, localBatch)
+							b.Hash = hex.EncodeToString(hashBytes[:])
+							b.Target = localJob.TargetHex
+							b.Difficulty = TargetToDifficulty(localJob.ExpectedTarget)
+							select {
+							case resultChan <- b:
+								cancelWorkers()
+							default:
+							}
+							return
+						}
 					}
-					return
 				}
 
 				b.Nonce += stride
@@ -1019,11 +1094,30 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 						recordError(fmt.Errorf("stale block: chain tip updated during mining"))
 						return
 					}
+
 					curTime := minerNowUnix()
-					if curTime > b.Timestamp {
+					// Check if current job expired (e.g. crossing TEDR 1,200s boundary or future limit)
+					if curTime > localJob.MaxTimestamp {
+						jobMu.Lock()
+						if atomic.LoadUint64(&activeJobVersion) == localJob.JobVersion {
+							atomic.AddUint64(&activeJobVersion, 1)
+							bc.Lock.RLock()
+							currentJob = buildJobLocked(activeJobVersion, curTime)
+							bc.Lock.RUnlock()
+						}
+						localJob = currentJob
+						jobMu.Unlock()
+
+						b.Timestamp = localJob.MinTimestamp
+						b.Target = localJob.TargetHex
+						b.Difficulty = TargetToDifficulty(localJob.ExpectedTarget)
+						prefixBytes = make([]byte, len(localJob.PrefixBytes))
+						copy(prefixBytes, localJob.PrefixBytes)
+						suffixBytes = localJob.SuffixBytes
+						targetBytes = localJob.TargetBytes
+					} else if !IsASERTActive(prevBlock.Index+1) && curTime > b.Timestamp {
 						b.Timestamp = curTime
-						prefix = fmt.Sprintf("%d:%d:%s:%s:%s:", b.Index, b.Timestamp, b.PrevHash, b.MerkleRoot, b.Miner)
-						prefixBytes = []byte(prefix)
+						prefixBytes = []byte(fmt.Sprintf("%d:%d:%s:%s:%s:", b.Index, b.Timestamp, b.PrevHash, b.MerkleRoot, b.Miner))
 					}
 				}
 			}

@@ -14,9 +14,11 @@ import (
 func TestF6_CleanMempoolPostReorgValidation(t *testing.T) {
 	SetNetworkForTesting(true)
 	defer SetNetworkForTesting(false)
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	_ = SetNetwork("regtest")
 
 	bc := MustNewBlockchain(1)
+	defer bc.Close()
 
 	// Generate sender wallet
 	var seed [32]byte

@@ -608,12 +608,31 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		if cfg != nil && cfg.NetworkID != "" {
 			netID = cfg.NetworkID
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+
+		tipTarget := latest.GetTarget()
+		if tipTarget.Sign() <= 0 {
+			tipTarget = core.DifficultyToTarget(difficulty)
+		}
+		tipDiff := core.TargetToDifficulty(tipTarget)
+		diffRatio := core.TargetToDifficultyRatio(tipTarget, height)
+		hashesPerBlock := core.TargetToHashesPerBlock(tipTarget)
+		diffFormatted := core.FormatHashes(hashesPerBlock)
+		daaEngine := core.GetCurrentDAAEngineName(height)
+		estNetHps := core.TargetToEstimatedNetworkHashrate(tipTarget)
+		estNetHpsFormatted := core.FormatHashrate(estNetHps)
+
+		statsPayload := map[string]interface{}{
 			"network_id":                    netID,
 			"height":                        height,
 			"blocks":                        blocks,
-			"difficulty":                    difficulty,
+			"difficulty":                    tipDiff,
+			"candidate_difficulty":          difficulty,
+			"difficulty_ratio":              diffRatio,
+			"difficulty_hashes":             hashesPerBlock.String(),
+			"difficulty_formatted":          diffFormatted,
+			"daa_engine":                    daaEngine,
+			"network_hashrate_estimated":    estNetHps.String(),
+			"network_hashrate_formatted":    estNetHpsFormatted,
 			"chainwork":                     chainwork,
 			"max_reorg_depth":               core.MaxReorganizationDepth,
 			"total_tx":                      totalTx,
@@ -632,7 +651,22 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			"peers_candidates":              peersCandidates,
 			"peers_count":                   peersActive,
 			"mining_hashrate":               bc.GetMiningHashrate(),
-		})
+		}
+		if driftSec, hasDrift := core.GetASERTScheduleDrift(bc.Chain, height); hasDrift {
+			statsPayload["asert_drift_seconds"] = driftSec
+			var driftFmt string
+			if driftSec == 0 {
+				driftFmt = "0s (On Schedule)"
+			} else if driftSec > 0 {
+				driftFmt = fmt.Sprintf("+%ds (Behind)", driftSec)
+			} else {
+				driftFmt = fmt.Sprintf("%ds (Ahead)", driftSec)
+			}
+			statsPayload["asert_drift_formatted"] = driftFmt
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(statsPayload)
 	})
 
 	// Standard CoinMarketCap & CoinGecko Plain-Text Supply Endpoints
@@ -856,9 +890,23 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		if curTime < minTs {
 			curTime = minTs
 		}
-		target := core.CalculateExpectedTargetForCandidate(bc.Chain, latest.Index+1, curTime)
+		target := core.CalculateExpectedTargetWithParent(bc.Chain, &latest, latest.Index+1, curTime)
 		diff := core.TargetToDifficulty(target)
 		blockReward := bc.GetBlockReward(latest.Index + 1)
+
+		maxTs := curTime + core.MaxFutureTimestampSeconds(latest.Index+1)
+		if core.IsASERTActive(latest.Index + 1) {
+			asertLimit := curTime + 15
+			if asertLimit < maxTs {
+				maxTs = asertLimit
+			}
+		}
+		if core.IsAntiStallActive(latest.Index+1) && curTime-latest.Timestamp < 1200 {
+			tedrThreshold := latest.Timestamp + 1200
+			if tedrThreshold < maxTs {
+				maxTs = tedrThreshold
+			}
+		}
 		bc.Lock.RUnlock()
 
 		if candidateTxs == nil {
@@ -874,19 +922,29 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			powAlgo = "armaxhash"
 		}
 
+		diffRatio := core.TargetToDifficultyRatio(target, latest.Index+1)
+		hashesPerBlock := core.TargetToHashesPerBlock(target)
+		diffFormatted := core.FormatHashes(hashesPerBlock)
+		daaEngine := core.GetCurrentDAAEngineName(latest.Index + 1)
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"version":           1,
-			"previousblockhash": latest.Hash,
-			"height":            latest.Index + 1,
-			"curtime":           curTime,
-			"mintime":           minTs,
-			"difficulty":        diff,
-			"target":            fmt.Sprintf("%064x", target),
-			"coinbasevalue":     coinbaseValue,
-			"transactions":      candidateTxs,
-			"merkleroot":        merkleRoot,
-			"pow_algo":          powAlgo,
+			"version":              1,
+			"previousblockhash":    latest.Hash,
+			"height":               latest.Index + 1,
+			"curtime":              curTime,
+			"mintime":              minTs,
+			"maxtime":              maxTs,
+			"difficulty":           diff,
+			"difficulty_ratio":     diffRatio,
+			"difficulty_hashes":    hashesPerBlock.String(),
+			"difficulty_formatted": diffFormatted,
+			"daa_engine":           daaEngine,
+			"target":               fmt.Sprintf("%064x", target),
+			"coinbasevalue":        coinbaseValue,
+			"transactions":         candidateTxs,
+			"merkleroot":           merkleRoot,
+			"pow_algo":             powAlgo,
 		})
 	})
 
@@ -915,20 +973,36 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			networkHashPS = new(big.Int).Div(hashesPerBlock, big.NewInt(core.TargetBlockTimeSeconds))
 		}
 
+		diffRatio := core.TargetToDifficultyRatio(target, latest.Index+1)
+		hashesPerBlock := core.TargetToHashesPerBlock(target)
+		diffFormatted := core.FormatHashes(hashesPerBlock)
+		daaEngine := core.GetCurrentDAAEngineName(latest.Index + 1)
+		netHpsFormatted := core.FormatHashrate(networkHashPS)
+
+		miningInfoPayload := map[string]interface{}{
+			"blocks":                  latest.Index + 1,
+			"currentblockweight":      1000,
+			"currentblocktx":          pooledTx + 1,
+			"difficulty":              diff,
+			"difficulty_ratio":        diffRatio,
+			"difficulty_hashes":       hashesPerBlock.String(),
+			"difficulty_formatted":    diffFormatted,
+			"networkhashps":           networkHashPS.Int64(),
+			"networkhashps_formatted": netHpsFormatted,
+			"daa_engine":              daaEngine,
+			"target":                  fmt.Sprintf("%064x", target),
+			"pooledtx":                pooledTx,
+			"chain":                   chainName,
+			"pow_algo":                powAlgo,
+			"generate":                isGenerating,
+			"warnings":                "",
+		}
+		if driftSec, hasDrift := core.GetASERTScheduleDrift(bc.Chain, latest.Index); hasDrift {
+			miningInfoPayload["asert_drift_seconds"] = driftSec
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"blocks":             latest.Index + 1,
-			"currentblockweight": 1000,
-			"currentblocktx":     pooledTx + 1,
-			"difficulty":         diff,
-			"target":             fmt.Sprintf("%064x", target),
-			"networkhashps":      networkHashPS.Int64(),
-			"pooledtx":           pooledTx,
-			"chain":              chainName,
-			"pow_algo":           powAlgo,
-			"generate":           isGenerating,
-			"warnings":           "",
-		})
+		_ = json.NewEncoder(w).Encode(miningInfoPayload)
 	})
 
 	// Endpoint: Standard network hashrate estimate (/getnetworkhashps)
@@ -977,8 +1051,9 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			if len(hashPrefix) > 16 {
 				hashPrefix = hashPrefix[:16] + "..."
 			}
-			core.LogInfo(core.LogCategoryMiner, "Mined block #%d accepted via submitblock | hash: %s | txs: %d | diff: %d | miner: %s",
-				submittedBlock.Index, hashPrefix, len(submittedBlock.Transactions), submittedBlock.Difficulty, submittedBlock.Miner)
+			diffFormatted := core.FormatHashes(core.TargetToHashesPerBlock(submittedBlock.GetTarget()))
+			core.LogInfo(core.LogCategoryMiner, "Mined block #%d accepted via submitblock | hash: %s | txs: %d | diff: %s [%d] | miner: %s",
+				submittedBlock.Index, hashPrefix, len(submittedBlock.Transactions), diffFormatted, submittedBlock.Difficulty, submittedBlock.Miner)
 			if peerServer != nil {
 				go peerServer.RelayBlock(submittedBlock, "EXTERNAL_MINING_POOL")
 			}

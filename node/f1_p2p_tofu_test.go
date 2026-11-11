@@ -18,6 +18,7 @@ import (
 
 // TestF1_P2PTOFUPinning tests the Trust-On-First-Use (TOFU) TLS certificate fingerprint pinning mechanism [F1].
 func TestF1_P2PTOFUPinning(t *testing.T) {
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	bc := core.MustNewBlockchain(1)
 	defer bc.Close()
 	p := NewPeerServer("9999", bc)

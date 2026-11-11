@@ -55,7 +55,11 @@ type BlockTemplate struct {
 	Height            int                `json:"height"`
 	CurTime           int64              `json:"curtime"`
 	MinTime           int64              `json:"mintime,omitempty"`
+	MaxTime           int64              `json:"maxtime,omitempty"`
 	Difficulty        float64            `json:"difficulty"`
+	DifficultyRatio   float64            `json:"difficulty_ratio,omitempty"`
+	DifficultyHashes  string             `json:"difficulty_hashes,omitempty"`
+	DAAEngine         string             `json:"daa_engine,omitempty"`
 	Target            string             `json:"target"`
 	CoinbaseValue     int64              `json:"coinbasevalue"`
 	Transactions      []core.Transaction `json:"transactions"`
@@ -607,8 +611,16 @@ func main() {
 		}
 
 		algo := candidateBlock.PoWAlgorithm()
-		fmt.Printf("[%s] [*] Mining Block #%d (%s) | Prev: %s... | Txs: %d | Diff: %.4f | Reward: %d %s\n",
-			time.Now().Format("15:04:05"), tmpl.Height, algo, tmpl.PreviousBlockHash[:12], len(txs), tmpl.Difficulty, tmpl.CoinbaseValue/core.CoinUnit, core.ActiveTicker())
+		diffFormatted := core.FormatHashes(core.TargetToHashesPerBlock(targetInt))
+		diffRatio := core.TargetToDifficultyRatio(targetInt, tmpl.Height)
+		estNetHps := core.FormatHashrate(core.TargetToEstimatedNetworkHashrate(targetInt))
+		daaEngine := core.GetCurrentDAAEngineName(tmpl.Height)
+		prevPrefix := tmpl.PreviousBlockHash
+		if len(prevPrefix) > 12 {
+			prevPrefix = prevPrefix[:12]
+		}
+		fmt.Printf("[%s] [*] Mining Block #%d (%s) | Target: %s [Diff %d | %.2fx] | Est Net: %s | DAA: %s | Prev: %s... | Txs: %d | Reward: %d %s\n",
+			time.Now().Format("15:04:05"), tmpl.Height, algo, diffFormatted, int(tmpl.Difficulty), diffRatio, estNetHps, daaEngine, prevPrefix, len(txs), tmpl.CoinbaseValue/core.CoinUnit, core.ActiveTicker())
 
 		roundCtx, cancelRound := context.WithCancel(context.Background())
 		solutionChan := make(chan core.Block, 1)
@@ -650,8 +662,16 @@ func main() {
 						default:
 						}
 						if curTime := time.Now().Unix() + clockOffset; curTime > b.Timestamp {
-							b.Timestamp = curTime
-							prefixBytes = buildHeaderPrefixBytes(&b)
+							if tmpl.MaxTime > 0 && curTime > tmpl.MaxTime {
+								// Round expired (e.g. crossing ASERT 15s window, TEDR 1,200s boundary, or future limit).
+								// Cancel current round so poller immediately refreshes template.
+								cancelRound()
+								return
+							}
+							if !core.IsASERTActive(b.Index) {
+								b.Timestamp = curTime
+								prefixBytes = buildHeaderPrefixBytes(&b)
+							}
 						}
 					}
 
@@ -727,9 +747,14 @@ func main() {
 				case <-pollTicker.C:
 					checkTmpl, err := fetchBlockTemplate(client, activeDaemon, *keyPtr, *userPtr, *passPtr)
 					if err == nil && checkTmpl != nil {
-						if checkTmpl.Height != tmpl.Height || checkTmpl.PreviousBlockHash != tmpl.PreviousBlockHash {
-							fmt.Printf("[%s] [INFO New Tip Detected] Block tip advanced to #%d! Updating template...\n",
-								time.Now().Format("15:04:05"), checkTmpl.Height)
+						if checkTmpl.Height != tmpl.Height || checkTmpl.PreviousBlockHash != tmpl.PreviousBlockHash || checkTmpl.Target != tmpl.Target || checkTmpl.Difficulty != tmpl.Difficulty {
+							if checkTmpl.Target != tmpl.Target || checkTmpl.Difficulty != tmpl.Difficulty {
+								fmt.Printf("[%s] [INFO Target/Difficulty Update] Network target changed for #%d (diff %.2f -> %.2f)! Updating template...\n",
+									time.Now().Format("15:04:05"), checkTmpl.Height, tmpl.Difficulty, checkTmpl.Difficulty)
+							} else {
+								fmt.Printf("[%s] [INFO New Tip Detected] Block tip advanced to #%d! Updating template...\n",
+									time.Now().Format("15:04:05"), checkTmpl.Height)
+							}
 							cancelRound()
 							return
 						}
@@ -748,8 +773,9 @@ func main() {
 			if len(hashPrefix) > 16 {
 				hashPrefix = hashPrefix[:16] + "..."
 			}
-			fmt.Printf("[%s] [OK BLOCK SOLVED!] Height #%d | Hash: %s | Nonce: %d | Diff: %d\n",
-				timestamp, solvedBlock.Index, hashPrefix, solvedBlock.Nonce, solvedBlock.Difficulty)
+			diffFormatted := core.FormatHashes(core.TargetToHashesPerBlock(solvedBlock.GetTarget()))
+			fmt.Printf("[%s] [OK BLOCK SOLVED!] Height #%d | Hash: %s | Nonce: %d | Diff: %s [%d]\n",
+				timestamp, solvedBlock.Index, hashPrefix, solvedBlock.Nonce, diffFormatted, solvedBlock.Difficulty)
 
 			res, err := submitSolvedBlock(client, activeDaemon, solvedBlock, *keyPtr, *userPtr, *passPtr)
 			if err != nil {

@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.9]
-	Version = "1.0.9"
+	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.10]
+	Version = "1.0.10"
 
 	// MaxReorganizationDepth defines the maximum depth of reorganization allowed (prevents deep 51% history overwrites, 720 blocks = ~1 day at 120s) [D-05]
 	MaxReorganizationDepth = 720
@@ -408,6 +408,14 @@ func (bc *Blockchain) PreCheckBlock(b *Block) error {
 
 // ValidateAndAddBlock validates an incoming block from the P2P network and appends it if valid
 func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
+	ok, _ := bc.ValidateAndAddBlockWithError(newBlock)
+	return ok
+}
+
+// ValidateAndAddBlockWithError validates an incoming block from the P2P network,
+// appends it to the active chain if valid, and returns the specific validation or persistence
+// error if rejected.
+func (bc *Blockchain) ValidateAndAddBlockWithError(newBlock Block) (bool, error) {
 	bc.Lock.Lock()
 	defer bc.Lock.Unlock()
 
@@ -479,7 +487,7 @@ func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
 			newBlock.Index,
 			err,
 		)
-		return false
+		return false, err
 	}
 
 	// Block is 100% valid! Append to chain
@@ -528,7 +536,7 @@ func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
 				newBlock.Index,
 				err,
 			)
-			return false
+			return false, err
 		}
 	} else {
 		bc.undoLock.Lock()
@@ -564,7 +572,7 @@ func (bc *Blockchain) ValidateAndAddBlock(newBlock Block) bool {
 		bc.CleanMempoolLocked()
 	}
 
-	return true
+	return true, nil
 }
 
 // ResolveChain resolves blockchain forks using the Satoshi Cumulative Proof-of-Work (Chainwork) rule,
