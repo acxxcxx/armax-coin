@@ -1489,6 +1489,11 @@ func InitServerFromConfig(bc *core.Blockchain, cfg *Config) (*PeerServer, *Serve
 	// SetSeedPeers resolves (and logs) the seeds once and adds them to the address book.
 	peerServer.SetSeedPeers(cfg.SeedPeers)
 
+	// Register any configured whitelist IPs
+	for _, ip := range cfg.Whitelist {
+		peerServer.AddWhitelistIP(ip)
+	}
+
 	serverCfg := &ServerConfig{
 		NetworkID:   targetNetID,
 		DataDir:     effectiveDataDir,

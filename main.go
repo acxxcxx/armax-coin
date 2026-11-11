@@ -64,6 +64,7 @@ func main() {
 	armaxHashHeightFlag := flag.Int64("armaxhash-height", -2, "Block height where PoW transitions to ArmaxHash (-1 = disabled)")
 	storeRewriteFlag := flag.String("store-rewrite", "", "Offline: rewrite stored block records as 'plain' (v1.0.6-compatible downgrade) or 'compressed'; stop the node first")
 	storeCompressionFlag := flag.Bool("store-compression", false, "Compress newly written block/undo/snapshot records (v1.0.6 cannot read them; use -store-rewrite plain to downgrade)")
+	whitelistFlag := flag.String("whitelist", "", "Comma-separated list of IP addresses immune to P2P ban scores and rate limits")
 	flag.Parse()
 
 	if *storeCompressionFlag {
@@ -630,6 +631,16 @@ func main() {
 		}
 		if *noSeedsFlag {
 			cfg.SeedPeers = nil
+		}
+
+		// Append CLI whitelist IPs if specified
+		if *whitelistFlag != "" {
+			for _, p := range strings.Split(*whitelistFlag, ",") {
+				trimmed := strings.TrimSpace(p)
+				if trimmed != "" {
+					cfg.Whitelist = append(cfg.Whitelist, trimmed)
+				}
+			}
 		}
 
 		// Launch background mining worker if enabled

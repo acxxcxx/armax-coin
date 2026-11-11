@@ -34,6 +34,8 @@ type Config struct {
 	AllowNonLoopbackRPC bool     `json:"allow_non_loopback_rpc"` // [F8] Explicit opt-in required to bind RPC to non-loopback addresses
 	// SeedFingerprints optionally pins seed certificates: "host:port" -> SHA-256 SPKI fingerprint (64 hex).
 	SeedFingerprints map[string]string `json:"seed_fingerprints,omitempty"`
+	// Whitelist holds IP addresses exempt from ban scoring and message rate limits
+	Whitelist []string `json:"whitelist,omitempty"`
 	// StoreCompression compresses newly written block records. Default off: v1.0.6 cannot read them.
 	StoreCompression bool `json:"store_compression,omitempty"`
 }

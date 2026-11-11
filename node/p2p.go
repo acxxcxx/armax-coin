@@ -351,6 +351,9 @@ type PeerServer struct {
 	bannedIPs            map[string]time.Time         // [N-15] Active IP bans and expiry
 	skewStrikes          map[string][]time.Time       // [F-04] Timestamp strikes for minor clock skew
 	banFileMu            sync.Mutex                   // serializes writes of bans.json
+	whitelistLock        sync.RWMutex                 // [P2P Whitelist] guards whitelistIPs
+	whitelistIPs         map[string]struct{}          // [P2P Whitelist] Operator-whitelisted IP addresses (exempt from bans/rate-limits)
+	whitelistModTime     time.Time                    // [P2P Whitelist] last modified time of whitelist.json
 	pushMu               sync.Mutex                   // serializes PUSH_BLOCKS application
 	pushCooldownMu       sync.Mutex
 	pushCooldowns        map[string]time.Time        // peer address -> last chain push
@@ -2085,6 +2088,7 @@ func NewPeerServer(port string, bc *core.Blockchain, opts ...string) *PeerServer
 		banScores:           make(map[string]int),
 		bannedIPs:           make(map[string]time.Time),
 		skewStrikes:         make(map[string][]time.Time),
+		whitelistIPs:        make(map[string]struct{}),
 		rateTrackers:        make(map[string]*peerRateTracker),
 		pendingTOFU:         make(map[string]*pendingPin),
 		failedPins:          make(map[string]string),
@@ -2100,6 +2104,7 @@ func NewPeerServer(port string, bc *core.Blockchain, opts ...string) *PeerServer
 	ps.netIDVal.Store(&canonicalNetID)
 	ps.loadPeers()
 	ps.loadBans()
+	ps.loadWhitelist()
 
 	// Seed DHT routing table with known peers
 	for _, p := range ps.Peers {
@@ -2228,7 +2233,7 @@ func (p *PeerServer) isRateLimitDisabled() bool {
 
 // AddBanScore increments the misbehavior score of an IP and bans it for 24h if threshold >= 100 [N-15]
 func (p *PeerServer) AddBanScore(ip string, score int) {
-	if p.isRateLimitDisabled() {
+	if p.isRateLimitDisabled() || p.isWhitelisted(ip) {
 		return
 	}
 	p.banLock.Lock()
@@ -2250,7 +2255,7 @@ func (p *PeerServer) AddBanScore(ip string, score int) {
 // If a peer sends >= 3 blocks exceeding local clock by 31-600s within a 10-minute rolling window,
 // a small misbehavior score (+2) is assessed without placing the block in the negative cache.
 func (p *PeerServer) recordClockSkewViolation(ip string) {
-	if p.isRateLimitDisabled() {
+	if p.isRateLimitDisabled() || p.isWhitelisted(ip) {
 		return
 	}
 	p.banLock.Lock()
@@ -2285,7 +2290,7 @@ func (p *PeerServer) recordClockSkewViolation(ip string) {
 
 // IsBanned checks if an IP is currently banned [N-15]
 func (p *PeerServer) IsBanned(ip string) bool {
-	if p.isRateLimitDisabled() {
+	if p.isRateLimitDisabled() || p.isWhitelisted(ip) {
 		return false
 	}
 	p.banLock.RLock()
@@ -2305,7 +2310,7 @@ func (p *PeerServer) IsBanned(ip string) bool {
 
 // AllowMessage checks token bucket (20 msgs/s) and specific endpoint limits (GET_BLOCK_RANGE 5/min, GET_FORKPOINT 5/min) [N-15]
 func (p *PeerServer) AllowMessage(ip string, msgType string) bool {
-	if p.isRateLimitDisabled() {
+	if p.isRateLimitDisabled() || p.isWhitelisted(ip) {
 		return true
 	}
 	p.banLock.Lock()
@@ -2837,6 +2842,7 @@ func (p *PeerServer) SetDataDir(dir string) error {
 	p.closeOutboundSessions(nil)
 	p.loadPeers()
 	p.loadBans()
+	p.loadWhitelist()
 	return nil
 }
 

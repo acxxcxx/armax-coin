@@ -23,6 +23,9 @@ func (p *PeerServer) banStorePath() string {
 // banIPLocked records a ban (caller holds banLock) and persists only when the IP was not already
 // banned, so a flood from one banned peer does not cause repeated disk writes.
 func (p *PeerServer) banIPLocked(ip string, expiry time.Time) {
+	if p.isWhitelisted(ip) {
+		return
+	}
 	if p.bannedIPs == nil {
 		p.bannedIPs = make(map[string]time.Time)
 	}
@@ -92,6 +95,9 @@ func (p *PeerServer) loadBans() {
 		p.bannedIPs = make(map[string]time.Time)
 	}
 	for ip, unix := range stored {
+		if p.isWhitelisted(ip) {
+			continue
+		}
 		exp := time.Unix(unix, 0)
 		if exp.After(now) && exp.After(p.bannedIPs[ip]) {
 			p.bannedIPs[ip] = exp
