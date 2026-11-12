@@ -117,6 +117,15 @@ Active from Block `#13,293` on Testnet (`core.TestnetProfile.AntiStallActivation
   - This prevents low-difficulty emergency targets from contaminating `sumTargets`, enabling the network to smoothly step down difficulty towards commodity CPU levels without crashing moving-average stability.
 - **Mainnet Isolation:** Permanently disabled on Mainnet (`MainnetLaunched = false`, `AntiStallActivationHeight = -1`).
 
+### 3.4 Armax-ASERT-AW Consensus Engine (Block 13,335+)
+Active from Testnet Block `#13,335` (`core.TestnetProfile.ASERTActivationHeight = 13335`), the **Armax-ASERT-AW (Absolutely-Scheduled Exponentially-Rising Targets with Anti-Windup)** consensus hard fork upgrades the testnet DAA from moving-average calculations to the canonical integer `aserti3-2d` algorithm:
+- **Anchor Block:** Anchored to Block `#13,334` (`ResolveASERTAnchor`). Anti-Poisoning fallback (DA-03) ensures that if Block `#13,334` was mined under emergency conditions (TEDR), the anchor resolver walks backward to find the last valid non-emergency target, preventing emergency target contamination from corrupting the anchor target.
+- **Half-Life ($\tau$):** `ASERT_TAU = 3600` seconds (30 blocks $\times 120\text{s}$). Difficulty doubles or halves every 30 blocks (1 hour) of accumulated schedule drift.
+- **4-Hour Surge Cap:** `MaxASERTBlockInterval = 14400` seconds (4 hours). Single-block drift injection is capped at $\le 14,280\text{s}$ (~15.63x target relaxation limit), preventing multi-day post-outage stampedes.
+- **TEDR Boost:** `TEDRBoostDriftSeconds = 7200` seconds (2 hours). Emergency blocks solved under TEDR inject 2 hours of synthetic solve time into the ASERT drift accumulator, relaxing difficulty by ~3.91x per emergency block and enabling recovery from a 200x hashrate crash within 3 emergency blocks.
+- **Emergency Inversion Guard (DA-04):** Guarantees that nominal ASERT targets never become more lenient than the emergency `powLimit` threshold.
+- **Mainnet Isolation:** Permanently disabled on Mainnet (`ASERTActivationHeight = -1`).
+
 ---
 
 ## 4. Cumulative Chainwork & Fork Resolution

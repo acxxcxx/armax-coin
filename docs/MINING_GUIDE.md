@@ -9,7 +9,7 @@ This guide details how to participate in Proof-of-Work (PoW) mining on the Armax
 Armaxcoin employs an evolutionary Proof-of-Work consensus timeline designed to transition from initial bootstrap hashing to accessible, high-performance CPU mining:
 
 | Block Range | Algorithm | Characteristics |
-|---|---|---|---|
+|---|---|---|
 | **Blocks 0 .. 519** | **SHA-256d** | Double SHA-256 block header hashing; legacy bootstrap phase |
 | **Blocks 520 .. 2499** | **ArmaxHash v1** | Network/header-derived BLAKE2b-512 prehash, Argon2id ($m=2048$ KiB, $t=2$, $p=1$), and BLAKE2b-256 finalization |
 | **Blocks 2500+ (Active)** | **ArmaxHash v2** | Stream-Fast chained **BLAKE2b-512 + BLAKE2b-256** PoW with domain separation; fixed-header hash benchmark reports 0 allocations/op, not end-to-end miner throughput |
@@ -33,7 +33,7 @@ ArmaxHash v2 is active from block #2500 on testnet. It uses chained BLAKE2b with
 - **Halving Interval:** Every `1,050,000` blocks (~4 years at 120-second target block time).
 - **Hard Supply Ceiling:** `126,000,000.00000000 tARMX` maximum testnet supply.
 - **Target Block Time:** `120` seconds (2 minutes).
-- **Difficulty Adjustment:** **LWMA-1** (Linear Weighted Moving Average, window $N=60$ blocks).
+- **Difficulty Adjustment:** **Armax-ASERT-AW** (Canonical integer `aserti3-2d`, active from Block #13,335; previously TEDR anti-stall at #13,293 and legacy LWMA-1 $N=60$).
 - **Coinbase Maturity:** 10 confirmations on Testnet (100 blocks on Mainnet) before mined rewards can be spent.
 
 ---
@@ -51,11 +51,11 @@ ArmaxHash v2 is active from block #2500 on testnet. It uses chained BLAKE2b with
 ### Step 1: Obtain a Miner Address
 
 ```bash
-# Generate a testnet wallet
-./armwallet -network testnet -create -wallet miner_wallet.json
+# Generate a testnet wallet (-file is primary; -wallet is an alias)
+./armwallet -network testnet -create -file miner_wallet.json
 
 # View the address
-./armwallet -network testnet -address -wallet miner_wallet.json
+./armwallet -network testnet -address -file miner_wallet.json
 ```
 Copy your public Bech32 address (`armx1...`).
 
@@ -87,7 +87,7 @@ On Windows (PowerShell):
 #### Miner Authentication Options
 When connecting to `armcoind`, `armminer` supports three authentication mechanisms:
 1. **RPC Cookie (Default):** Auto-detected from `<dataDir>/<network>/armax.cookie` (v1.0.6 isolated location), root `armax.cookie`, or `$ARMX_DATA_DIR`.
-2. **Pre-Shared Mine Key (`X-Mine-Key`):** If the node was launched with `-minekey <secret>`, pass `-key <secret>` to `armminer`. In v1.0.7, `X-Mine-Key` authentication is evaluated first before falling back to HTTP Basic Auth and records authentication success, preventing legitimate miners from being locked out by IP rate limiters.
+2. **Pre-Shared Mine Key (`X-Mine-Key`):** If the node daemon was configured with a pre-shared mine key (`mine_key` in `armax.conf` or `ARMX_MINE_KEY` environment variable; `armcoind` does not accept `-minekey` as a CLI flag), pass `-key <secret>` to `armminer` (or set `ARMX_MINER_KEY`). In v1.0.7, `X-Mine-Key` authentication is evaluated first before falling back to HTTP Basic Auth and records authentication success, preventing legitimate miners from being locked out by IP rate limiters.
 3. **HTTP Basic Auth:** If the node was configured with `-rpcuser <user> -rpcpassword <pass>`, pass `-user <user> -pass <pass>` to `armminer`.
 
 ---

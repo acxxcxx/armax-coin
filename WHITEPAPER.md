@@ -1,6 +1,6 @@
 # Armaxcoin (ARMX) Technical Whitepaper
 
-**Version:** 1.0.7 (Active Testnet Release)
+**Version:** 1.0.10 (Active Testnet Release)
 **Ticker:** `ARMX` (mainnet; testnet GUI and explorer display `tARMX`)
 **Network Profiles:** `ARMX-TESTNET-1` (active default) and `ARMX-MAINNET-1` (locked; not launched)
 **Consensus:** Proof-of-Work (PoW) with LWMA-1 ($N=60$)
@@ -77,7 +77,7 @@ Every Armaxcoin address begins with **`armx1`** and is exactly 63 characters lon
 ### 3.3 BIP-39 Deterministic Mnemonic Recovery & Keystore
 Armaxcoin defaults to 256 bits of cryptographic entropy producing a **24-word BIP-39 mnemonic phrase** (12-word phrases are supported with warning).
 
-Keystores only store the 32-byte seed encrypted via **Argon2id** key derivation and **AES-256-GCM** (or XChaCha20-Poly1305) authenticated encryption with strict file permissions (`0600`). Passphrases are prompted securely from the terminal or environment variables and never logged or accepted via CLI command-line arguments.
+Keystores only store the 32-byte seed encrypted via **Argon2id** key derivation and **AES-256-GCM** authenticated encryption with strict file permissions (`0600`). Passphrases are prompted securely from the terminal or environment variables and never logged or accepted via CLI command-line arguments.
 
 ### 3.4 Transaction Verification & Anti-Replay Protection
 For a standard transaction, the implementation hashes the UTF-8 encoding of the following colon-delimited record with SHA-256d:

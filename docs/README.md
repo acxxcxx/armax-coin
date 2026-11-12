@@ -21,9 +21,8 @@ This documentation directory contains official user guides, operator manuals, sp
 
 - [Node Operations Guide](NODE_OPERATIONS.md): Daemon configuration flags, JSON-RPC endpoints, `armax.conf`, cookie authentication, and systemd units.
 - [Testnet Backup & Reset Runbook](operations/TESTNET_BACKUP_AND_RESET_RUNBOOK.md): Procedures for database backup, disaster recovery, and testing resets.
-- [Launch Checklist](LAUNCH_CHECKLIST.md): Pre-flight verification gates and consensus deployment checklist.
-- [Release Engineering Guide](RELEASE.md): Versioning standards, reproducible builds, and SHA-256 checksum verification.
-- [Release Checklist](RELEASE_CHECKLIST.md): Quality assurance criteria and release gate verification.
+- [Mainnet Readiness Gates](MAINNET_READINESS.md): Security evaluation, code freeze requirements, and mainnet unlock criteria.
+- [Release Engineering & QA Checklist](RELEASE.md): Versioning standards, reproducible builds, SHA-256 checksum verification, and pre-tagging QA checklist.
 
 ## 4. Release History
 

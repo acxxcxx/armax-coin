@@ -55,8 +55,8 @@ Every official release tag (`v*`) publishes pre-compiled archive packages accomp
 ### Verification on Linux / macOS
 ```bash
 # Download archive and checksum file
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.9/armax-v1.0.9-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.9/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.10/armax-v1.0.10-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.10/SHA256SUMS
 
 # Verify integrity using sha256sum
 sha256sum --check --ignore-missing SHA256SUMS
@@ -87,7 +87,17 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
 
 ## 5. Official Release Status
 
-- **Target Release (`v1.0.9`):** **Official Release**
+- **Target Release (`v1.0.10`):** **Official Release**
+  - **Release Notes:** [`docs/releases/v1.0.10.md`](releases/v1.0.10.md)
+  - **Status:** Armax-ASERT-AW DAA Consensus Hard Fork at Block #13,335, 4-Hour Surge Cap & TEDR Boost, Immutable MiningJob & 3-Tier P2P Policy
+  - **Target Architectures:**
+    - `armax-v1.0.10-linux-amd64.tar.gz` (Linux 64-bit x86; includes Linux Web GUI)
+    - `armax-v1.0.10-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC; includes Linux Web GUI)
+    - `armax-v1.0.10-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
+    - `armax-v1.0.10-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
+  - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; staticcheck and govulncheck 0 issues).
+
+- **Previous Emergency Fork Release (`v1.0.9`):**
   - **Release Notes:** [`docs/releases/v1.0.9.md`](releases/v1.0.9.md)
   - **Status:** Testnet Anti-Stall Emergency Difficulty Adjustment (TEDR at Block #13,293), Zero-Allocation CPU Miner Optimization (`5.45x` Speedup), Linux GUI Embedded Daemon Auto-Start
   - **Target Architectures:**
@@ -95,7 +105,6 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
     - `armax-v1.0.9-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC; includes Linux Web GUI)
     - `armax-v1.0.9-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
     - `armax-v1.0.9-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
-  - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; staticcheck and govulncheck 0 issues).
 
 - **Previous Maintenance Release (`v1.0.8`):**
   - **Release Notes:** [`docs/releases/v1.0.8.md`](releases/v1.0.8.md)
@@ -146,3 +155,49 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
 - **Initial Open Testnet Release (`v1.0.0`):**
   - **Release Tag:** [`v1.0.0`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.0)
   - **Status:** Initial Public Open Testnet Release
+
+---
+
+## 6. Pre-Tagging Quality & Release Checklist
+
+This checklist defines the formal verification gates required before tagging, packaging, and publishing an official release of `armax-coin`:
+
+### 6.1 Codebase & Toolchain Verification
+- [ ] **Go Toolchain:** Verified building with Go 1.27+ (`go version`).
+- [ ] **Deterministic Formatting:** `gofmt -l .` reports zero unformatted files.
+- [x] **Go Vet Analysis:** `go vet ./...` and `go vet -tags testhooks ./...` pass with 0 errors.
+- [x] **Static Analysis:** `staticcheck -tags testhooks ./...` passes repository-wide with 0 diagnostics.
+- [x] **Vulnerability Audit:** `govulncheck ./...` passes with 0 known vulnerabilities affecting code.
+- [x] **Repository Hygiene:** `go test -v -run TestNoPersonalDataInTree .` passes (zero personal directories, emails, or credentials in tracked tree).
+
+### 6.2 Test Suite & Concurrency Validation
+- [x] **Core Test Suites:** `go test -tags testhooks -count=1 ./core ./miner ./node ./cli/armwallet ./cli/armsend ./wallet ./gui` all pass cleanly.
+- [x] **Full Repository Suite:** `go test -tags testhooks ./...` passes 100% across all packages.
+- [ ] **Race Detection:** `go test -tags testhooks -race -count=1 ./...` passes with 0 data races.
+- [ ] **Multi-Node Soak Tests:** `go test -tags "soak testhooks" -v -timeout 30m -count=1 ./node -run "TestSoak"` passes.
+
+### 6.3 Cross-Platform Compilation
+- [x] **Linux amd64:** `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build .` compiles cleanly.
+- [x] **Linux arm64:** `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build .` compiles cleanly.
+- [x] **Windows amd64:** `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build .` compiles cleanly.
+- [x] **macOS arm64:** `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build .` compiles cleanly.
+- [ ] **Windows GUI Asset:** Verified `gui/rsrc_windows_amd64.syso` embeds manifest and icon without compilation warning.
+- [ ] **Release Packaging:** Verified `build-all.ps1` or `.github/workflows/release.yml` produces stripped binaries with SHA256 checksums.
+
+### 6.4 Documentation & Public Information Verification
+- [x] **Canonical Module & Naming:** `go.mod` declares `module github.com/acxxcxx/armax-coin` and documentation consistently refers to `armax-coin`.
+- [x] **Documentation Set Present & Synchronized:** `README.md`, `WHITEPAPER.md`, `SECURITY.md`, `CHANGELOG.md`, `RELEASE_NOTES.md`, `TREASURY_MIGRATION_PLAN.md`, `docs/TESTNET.md`, `docs/MINING_GUIDE.md`, `docs/NODE_OPERATIONS.md`, and `docs/CONSENSUS_AND_NETWORK.md`.
+- [x] **Experimental Disclaimers:** Visible notices that testnet coins (`tARMX`) have no economic value and mainnet remains locked.
+
+### 6.5 Seed Infrastructure & Live P2P Connectivity
+- [ ] **Seed Nodes Active:** `testnet-seed1.armax-coin.cloud:19335`, `testnet-seed2.armax-coin.cloud:19335`, `testnet-seed3.armax-coin.cloud:19335` responsive to inbound TLS P2P handshakes.
+- [ ] **RPC Isolation Enforced:** Verified RPC port 19333 strictly rejects external public connections on all seed nodes.
+- [ ] **DNS Records:** TTL set to 300s for testnet seed domains.
+
+### 6.6 Git & Release Publication Procedures
+- [ ] Ensure local working tree is clean (`git status`).
+- [ ] Tag the release commit using strict SemVer (`v1.0.10`).
+- [ ] Trigger `.github/workflows/release.yml` with version tag.
+- [ ] Binaries compiled and published for all 4 target platforms.
+- [ ] Master `SHA256SUMS` and detached PGP signature `SHA256SUMS.asc` generated and verified.
+- [ ] Mark release as **Pre-release** on GitHub until mainnet readiness gates are satisfied.

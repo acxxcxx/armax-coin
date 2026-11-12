@@ -1,16 +1,17 @@
 [center]
 [size=24pt][b]ARMAXCOIN TESTNET (tARMX)[/b][/size]
 [size=14pt][b]Proof-of-Work Layer-1 Blockchain with Post-Quantum Signatures (NIST FIPS 204, ML-DSA-65)[/b][/size]
-[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.9)[/b][/size]
+[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.10)[/b][/size]
 [/center]
 
 [hr]
 
-[b]Active & Scheduled Consensus Hard Fork Notice (v1.0.9 / v1.0.8 / v1.0.7):[/b]
+[b]Active & Scheduled Consensus Hard Fork Notice (v1.0.10 / v1.0.9 / v1.0.8 / v1.0.7):[/b]
 [list]
+[*] [b]Block 13,335 Activation (v1.0.10 — Armax-ASERT-AW DAA):[/b] Activates the canonical pure integer [tt]aserti3-2d[/tt] difficulty adjustment algorithm ([tt]ASERTActivationHeight = 13335[/tt]), anchored to Block #13,334 with Anti-Poisoning fallback (DA-03), 4-hour surge cap ([tt]14400s[/tt]), and TEDR Boost ([tt]7200s[/tt]) for rapid 200x hashrate crash recovery.
 [*] [b]Block 13,293 Activation (v1.0.9 — Anti-Stall TEDR):[/b] Activates Testnet Anti-Stall Emergency Difficulty Adjustment ([tt]AntiStallActivationHeight = 13293[/tt]). When the elapsed interval since the parent block exceeds [b]1,200 seconds (20 minutes)[/b], candidate blocks qualify for the emergency fallback target ([tt]Difficulty 3[/tt]) under Model 3 Synthetic Target Normalization. Also introduces a [b]5.45x zero-allocation CPU miner optimization[/b] in [tt]armminer[/tt] and embedded node auto-start in Linux/Unix [tt]armgui[/tt].
 [*] [b]Block 20,000 Activation (v1.0.7+ — Proposal C6):[/b] Maximum allowed future block timestamp is tightened from [b]7,200 seconds (2 hours)[/b] down to [b]600 seconds (10 minutes)[/b] ahead of the validating node's local clock. Historical blocks below height 20,000 preserve the legacy 2-hour window.
-[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools [b]MUST upgrade immediately to v1.0.9[/b] for Block 13,293 anti-stall consensus compatibility and maintain accurate NTP clock synchronization ([tt]timedatectl set-ntp true[/tt] / [tt]w32tm /resync[/tt]).
+[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools [b]MUST upgrade immediately to v1.0.10[/b] prior to Block 13,335 for consensus compatibility and maintain accurate NTP clock synchronization ([tt]timedatectl set-ntp true[/tt] / [tt]w32tm /resync[/tt]).
 [/list]
 
 [b]Official Links:[/b]
@@ -20,7 +21,8 @@
 [*] [b]Testnet Mining Pool:[/b] [url=https://pool.armax-coin.cloud]https://pool.armax-coin.cloud[/url]
 [*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
 [*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]
-[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.9]refs/tags/v1.0.9[/url]
+[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.10]refs/tags/v1.0.10[/url]
+[*] [b]v1.0.10 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.10.md]docs/releases/v1.0.10.md[/url]
 [*] [b]v1.0.9 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.9.md]docs/releases/v1.0.9.md[/url]
 [*] [b]v1.0.8 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.8.md]docs/releases/v1.0.8.md[/url]
 [*] [b]v1.0.7 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.7.md]docs/releases/v1.0.7.md[/url]
@@ -126,10 +128,10 @@ sha256sum --check --ignore-missing SHA256SUMS
 [*] [b]Verification Commands (Windows PowerShell):[/b]
 [code]
 # Compute SHA-256 hash of archive
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.9-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.10-windows-amd64.zip
 
 # Match against published SHA256SUMS manifest
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.10-windows-amd64.zip"
 [/code]
 [/list]
 

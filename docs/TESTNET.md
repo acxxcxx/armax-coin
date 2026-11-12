@@ -23,7 +23,7 @@ The Armaxcoin Public Testnet (`ARMX-TESTNET-1`) operates under isolated network 
 | Parameter | Testnet Value | Note |
 |---|---|---|
 | **Network ID** | `ARMX-TESTNET-1` | Enforces network isolation from Mainnet/Regtest |
-| **Target Block Time** | `120` seconds (2 minutes) | Controlled by LWMA-1 difficulty adjustment ($N=60$) |
+| **Target Block Time** | `120` seconds (2 minutes) | Controlled by Armax-ASERT-AW DAA (Block #13,335+; previously TEDR at #13,293 and LWMA-1 $N=60$) |
 | **Initial Block Reward** | `60.00000000 tARMX` | Halves every 1,050,000 blocks |
 | **PoW Algorithm** | ArmaxHash v2 (active from block #2500) | Chained BLAKE2b Stream-Fast (CPU & ARM optimized). Historical: SHA-256d (0-519), ArmaxHash v1 (520-2499) |
 | **Signature Scheme** | NIST FIPS 204 ML-DSA-65 | Post-quantum lattice-based digital signatures |
@@ -216,16 +216,18 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 - **Coinbase Maturity (10 Confirmations on Testnet, 100 on Mainnet):** Freshly mined block rewards enter an on-chain immature queue and cannot be spent until 10 blocks (testnet) or 100 blocks (mainnet) have been confirmed on top of them (consensus-enforced, storage schema v3).
 - **Daemon Internal Mining:** Alternatively, `armcoind` can mine in the background using standard flags:
   ```bash
-  ./armcoind -gen -genproclimit 4 -miner "${ADDR}"
+  # Canonical flags: -mine and -miningthreads (legacy aliases: -gen and -genproclimit)
+  ./armcoind -mine -miningthreads 4 -miner "${ADDR}"
   ```
 
 ### Hashrate and Difficulty Targets
 - **Legacy Target (H < 520):** `0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (SHA-256d baseline).
 - **ArmaxHash v1 PoW Limit (H = 520 bootstrap):** `000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (~4,096 ArmaxHash v1 evaluations).
-- **ArmaxHash v2 Target Adjustment (H >= 2500):** LWMA-1 applies the same per-block retargeting formula; actual block intervals depend on network hashrate, timestamps, and random solve times.
-- **Dynamic LWMA-1 Target Ceiling:** During ArmaxHash operation the target may rise to Difficulty 1 (`0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`). This does not guarantee that low-hashrate devices will produce blocks at the target interval.
+- **Historical LWMA-1 Era (H < 13293):** Linear Weighted Moving Average across a 60-block window (LWMA-1).
+- **Anti-Stall TEDR Era (13293 <= H < 13335):** Fallback to emergency target (`ArmaxHashPowLimitHex`, Difficulty 3) after 1,200s solve time, normalized in the LWMA window.
+- **Armax-ASERT-AW Era (H >= 13335):** Canonical pure integer `aserti3-2d` difficulty adjustment with $\tau = 3600\text{s}$, 4-hour surge cap (`14400s`), and TEDR Boost (`7200s`).
+- **Dynamic Target Bounds:** Target adjusts dynamically to maintain the 120-second target block time. During ArmaxHash operation, the easiest allowable target is capped by the profile ceiling.
 - **Target Block Time:** 120 seconds (2 minutes).
-- **Dynamic Difficulty:** Linear Weighted Moving Average across a 60-block window (LWMA-1). The 120-second block interval is a target, not a guarantee for individual blocks or short observation periods.
 
 ### Local Multi-Node Testing (29000-series Ports)
 For running multiple local nodes on the same host, use ports in the 29000-range with separate `-datadir`:

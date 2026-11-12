@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Undefined Active Address State (`gui/main_unix.go`):** Handled missing keystore state in `/api/wallet/info` (`"address": "", "initialized": false`), preventing DOM elements from evaluating to `undefined`.
 - **Public Snapshot Tooling Precedence (`scripts/make_public_snapshot.ps1`, `scripts/make_public_snapshot.sh`):** Prioritized `-SkipGitleaks` / `--skip-gitleaks` checks ahead of local `gitleaks` executable detection, ensuring test runs and automated snapshot tools bypass synthetic test fixtures cleanly.
 
-### [v1.0.7] - 2026-11-05
+## [v1.0.7] - 2026-11-05
 
 > **Consensus fork at testnet block 20,000.** All nodes and miners must upgrade to v1.0.7 before the tip reaches 20,000. From that height, a block timestamp may be at most **10 minutes (600 seconds)** ahead of the validating node's clock (previously 2 hours / 7,200 seconds). Below 20,000, the 2-hour rule is unchanged, so existing blocks stay valid. Mainnet, soak, and regtest profiles keep the 2-hour rule (activation height `-1`). All consensus invariants (PoW schedule, 120s block target, LWMA-1 $N=60$, halving schedule, and 126,000,000 ARMX supply cap) remain strictly preserved.
 
@@ -95,9 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Storage Downgrade Warning:** Compressed BoltDB records are **not readable by v1.0.6**. Before downgrading a v1.0.7 node to v1.0.6, operators must stop the daemon, back up `blockchain.db`, and run `./armcoind -network testnet -store-rewrite plain`.
 - **Wire Compatibility:** Older v1.0.6 nodes ignore the new `PUSH_BLOCKS` message and `accept: ["deflate"]` field, answering with uncompressed block ranges. However, after block 20,000, un-upgraded v1.0.6 nodes will accept blocks that v1.0.7 nodes reject if timestamps exceed 10 minutes, causing a network fork. All testnet operators must upgrade before height 20,000.
 
-## [v1.0.6] - Stabilization in Progress
+## [v1.0.6] - 2026-10-31
 
-> **Release Status:** `v1.0.6` (Active Testnet Maintenance Release; Tagged: `v1.0.6`).
+> **Release Status:** Official Release (Tagged: `v1.0.6`).
 > Core node test suites, race detection, and binary compilations are validated under local CI pipelines. Maintenance release for active Testnet; no hard fork, no soft fork, no consensus alterations. Existing genesis, PoW, chainwork, and block timestamps remain unchanged.
 
 ### Added
@@ -144,7 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v1.0.5] - 2026-10-27
 
 > **Note:** `v1.0.2` was never released or tagged. The release sequence is `v1.0.0`, `v1.0.1`, `v1.0.3`, `v1.0.4`, `v1.0.5`.
-> See the [v1.0.5 release notes](docs/releases/v1.0.5.md), including the copied artifact checksums and their verification note.
+> Release v1.0.5 tagged with artifact checksums and verification notes.
 
 ### Version
 - Bumped the protocol/software version to `1.0.5` (`core/consensus.go`, GUI footer, Windows manifest, `scripts/build-release.ps1`). `scripts/verify-release.sh` now takes the expected version as an optional second argument (default `v1.0.5`) and strips the surrounding quotes from the printed recovery phrase, which previously made its mnemonic-restore step fail.
