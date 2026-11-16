@@ -55,24 +55,24 @@ Every official release tag (`v*`) publishes pre-compiled archive packages accomp
 ### Verification on Linux / macOS
 ```bash
 # Download archive and checksum file
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.10/armax-v1.0.10-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.10/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.11/armax-v1.0.11-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.11/SHA256SUMS
 
 # Verify integrity using sha256sum
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 Expected output:
 ```text
-armax-v1.0.9-linux-amd64.tar.gz: OK
+armax-v1.0.11-linux-amd64.tar.gz: OK
 ```
 
 ### Verification on Windows (PowerShell)
 ```powershell
 # 1. Compute SHA-256 hash of downloaded zip
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.9-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.11-windows-amd64.zip
 
 # 2. Compare against the published hash in SHA256SUMS
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.11-windows-amd64.zip"
 ```
 
 ---
@@ -87,15 +87,19 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.9-windows-amd64.zip"
 
 ## 5. Official Release Status
 
-- **Target Release (`v1.0.10`):** **Official Release**
+- **Target Release (`v1.0.11`):** **Official Release**
+  - **Release Notes:** [`docs/releases/v1.0.11.md`](releases/v1.0.11.md)
+  - **Status:** Backward-Compatible Consensus Transition, Unified Block `#20,000` Activation (`C6` + `TxBinaryV1`), Adaptive C2/C6 Miner Margin, and Bounded ASERT Drift Cache
+  - **Target Architectures:**
+    - `armax-v1.0.11-linux-amd64.tar.gz` (Linux 64-bit x86; includes Linux Web GUI)
+    - `armax-v1.0.11-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC; includes Linux Web GUI)
+    - `armax-v1.0.11-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
+    - `armax-v1.0.11-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
+  - **Verification:** Full automated test suite passes (`go test -tags testhooks -race -count=1 ./...` 100% green).
+
+- **Previous Release (`v1.0.10`):**
   - **Release Notes:** [`docs/releases/v1.0.10.md`](releases/v1.0.10.md)
   - **Status:** Armax-ASERT-AW DAA Consensus Hard Fork at Block #13,335, 4-Hour Surge Cap & TEDR Boost, Immutable MiningJob & 3-Tier P2P Policy
-  - **Target Architectures:**
-    - `armax-v1.0.10-linux-amd64.tar.gz` (Linux 64-bit x86; includes Linux Web GUI)
-    - `armax-v1.0.10-linux-arm64.tar.gz` (Linux 64-bit ARM / Raspberry Pi / SBC; includes Linux Web GUI)
-    - `armax-v1.0.10-windows-amd64.zip` (Windows 64-bit x86; includes `armgui.exe`)
-    - `armax-v1.0.10-darwin-arm64.tar.gz` (macOS Apple Silicon ARM64)
-  - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; staticcheck and govulncheck 0 issues).
 
 - **Previous Emergency Fork Release (`v1.0.9`):**
   - **Release Notes:** [`docs/releases/v1.0.9.md`](releases/v1.0.9.md)
@@ -196,7 +200,7 @@ This checklist defines the formal verification gates required before tagging, pa
 
 ### 6.6 Git & Release Publication Procedures
 - [ ] Ensure local working tree is clean (`git status`).
-- [ ] Tag the release commit using strict SemVer (`v1.0.10`).
+- [ ] Tag the release commit using strict SemVer (`v1.0.11`).
 - [ ] Trigger `.github/workflows/release.yml` with version tag.
 - [ ] Binaries compiled and published for all 4 target platforms.
 - [ ] Master `SHA256SUMS` and detached PGP signature `SHA256SUMS.asc` generated and verified.

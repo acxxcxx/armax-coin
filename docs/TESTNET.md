@@ -320,13 +320,14 @@ sudo systemctl start armcoind-testnet
 
 ---
 
-## 9. Node Upgrade and Rollback Runbook (v1.0.9 / v1.0.8 / v1.0.7)
+## 9. Node Upgrade and Rollback Runbook (v1.0.11 / v1.0.10)
 
 > [!IMPORTANT]
-> **ACTIVE & SCHEDULED CONSENSUS FORKS (TESTNET BLOCKS 13,293 & 20,000):**
-> - **Block 13,293 (v1.0.9 — Anti-Stall TEDR):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When a candidate block's timestamp exceeds the parent block's timestamp by more than **1,200 seconds (20 minutes)**, the candidate block qualifies for the emergency fallback target (`ArmaxHashPowLimitHex`, Difficulty 3) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`).
-> - **Block 20,000 (v1.0.7+ — Proposal C6):** Block timestamps may be at most **600 seconds (10 minutes)** ahead of the validator's local clock (narrowed from 2 hours).
-> - All node operators and miners **MUST** upgrade immediately to **v1.0.9** and ensure server clocks are synchronized with NTP.
+> **ACTIVE & SCHEDULED CONSENSUS FORKS (TESTNET BLOCKS 13,293, 13,335 & 20,000):**
+> - **Block 13,293 (`v1.0.9` — Anti-Stall TEDR):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When a candidate block's timestamp exceeds the parent block's timestamp by more than **1,200 seconds (20 minutes)**, the candidate block qualifies for the emergency fallback target (`ArmaxHashPowLimitHex`, Difficulty 3) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`).
+> - **Block 13,335 (`v1.0.10` — Armax-ASERT-AW):** Transitions the Testnet DAA from LWMA-1 ($N=60$) to **Armax-ASERT-AW (`aserti3-2d`)** (`ASERTActivationHeight = 13335`, anchored to Block `#13,334`, $T = 120\text{s}$, $\tau = 3600\text{s}$, per-block surge cap `14,400s`, TEDR boost `7,200s`).
+> - **Block 20,000 (`v1.0.11` — Unified Proposal C6 + `TxBinaryV1` Activation):** Simultaneously activates `FutureTimestampLimitActivationHeight = 20000` (narrowing forward timestamp tolerance from `7,200s` to **`+600s`** with `v1.0.11` adaptive `5s`/`30s` miner inherited-tip safety margins) and `BlockBinarySizeActivationHeight = 20000` (switching canonical block size validation to `TxBinaryV1` binary accounting, increasing 2 MB block capacity from **185** to **375 user ML-DSA-65 transactions**). Across Testnet Blocks `#15,967–#19,999`, `v1.0.11` preserves 100% P2P and JSON `Size()` backward compatibility with `v1.0.10`.
+> - All node operators and miners **MUST** upgrade to **v1.0.11** before Block `#20,000` and ensure server clocks are synchronized with NTP.
 
 > [!CAUTION]
 > **STORAGE COMPATIBILITY & ROLLBACK WARNING:**
@@ -337,7 +338,7 @@ sudo systemctl start armcoind-testnet
 > ```
 > Always back up `blockchain.db` before executing store conversion.
 
-### Seamless Upgrade Procedure to v1.0.9
+### Seamless Upgrade Procedure to v1.0.11
 1. Verify the current tip height and peer connectivity:
    ```bash
    curl -s http://127.0.0.1:19333/status | jq .
@@ -356,10 +357,10 @@ sudo systemctl start armcoind-testnet
    ```
 4. Back up the database and working binary:
    ```bash
-   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.v108.bak
-   sudo tar -czvf /var/backups/armax_db_pre_v109_$(date +%F).tar.gz -C /var/armax testnet/blockchain.db
+   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.v1010.bak
+   sudo tar -czvf /var/backups/armax_db_pre_v1011_$(date +%F).tar.gz -C /var/armax testnet/blockchain.db
    ```
-5. Install the new v1.0.9 binary:
+5. Install the new v1.0.11 binary:
    ```bash
    sudo cp armcoind /usr/local/bin/armcoind
    sudo chmod 755 /usr/local/bin/armcoind
@@ -369,28 +370,28 @@ sudo systemctl start armcoind-testnet
    sudo systemctl start armcoind-testnet
    sudo journalctl -u armcoind-testnet -n 50 --no-pager
    ```
-7. Verify running software version is `"1.0.9"`:
+7. Verify running software version is `"1.0.11"`:
    ```bash
    curl -s http://127.0.0.1:19333/status | jq .version
-   # Expected output: "1.0.9"
+   # Expected output: "1.0.11"
    ```
 
-### Emergency Rollback Procedure (to v1.0.6)
-If unrecoverable issues occur prior to block 20,000:
+### Emergency Rollback Procedure (to v1.0.10 prior to Block 20,000)
+If unrecoverable operational issues occur on Blocks `#15,967–#19,999` prior to the unified Block `#20,000` fork:
 1. Stop the daemon:
    ```bash
    sudo systemctl stop armcoind-testnet
    ```
-2. **If compression was enabled in v1.0.7**, convert the database to uncompressed plain format first:
+2. **If compression was enabled and rolling back below v1.0.7**, convert the database to uncompressed plain format first (not needed when rolling back between `v1.0.10` and `v1.0.11`):
    ```bash
    armcoind -network testnet -datadir /var/armax -store-rewrite plain
    ```
-3. Restore the v1.0.6 binary:
+3. Restore the `v1.0.10` binary (note: `v1.0.9` and earlier cannot validate post-`#13,335` Armax-ASERT-AW blocks):
    ```bash
-   sudo cp /usr/local/bin/armcoind.v106.bak /usr/local/bin/armcoind
+   sudo cp /usr/local/bin/armcoind.v1010.bak /usr/local/bin/armcoind
    sudo systemctl start armcoind-testnet
    ```
-4. Note: After block 20,000, rolling back to v1.0.6 carries a high risk of following a split branch if any miner produces a forward-stamped block. Upgrade to v1.0.7 is strongly recommended.
+4. Note: Starting at Block **20,000**, rolling back to `v1.0.10` risks rejecting valid blocks with `>185` ML-DSA-65 transactions (whose JSON `Size()` exceeds 2 MB while `TxBinaryV1` `BinarySize()` is within 2 MB) or following a forward-stamped split branch. Remaining on **v1.0.11** (see [`releases/v1.0.11.md`](releases/v1.0.11.md)) is strongly recommended.
 
 ---
 

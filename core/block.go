@@ -2,8 +2,10 @@ package core
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync/atomic"
@@ -12,18 +14,27 @@ import (
 	"github.com/acxxcxx/armax-coin/armaxhash"
 )
 
+const (
+	// BlockBinaryVersionV1 identifies version 1 of the binary block serialization format.
+	BlockBinaryVersionV1 byte = 0x01
+
+	blkFlagCanonicalFixed byte = 1 << 0
+	blkFlagHasHash        byte = 1 << 1
+)
+
 type Block struct {
-	Index        int           `json:"index"`
-	Timestamp    int64         `json:"timestamp"`
-	Transactions []Transaction `json:"transactions"`
-	PrevHash     string        `json:"prev_hash"`
-	MerkleRoot   string        `json:"merkle_root"` // 32-byte Binary Merkle Tree Root (BIP Standard)
-	Hash         string        `json:"hash"`
-	Nonce        int64         `json:"nonce"`
-	Miner        string        `json:"miner"`
-	Difficulty   int           `json:"difficulty"` // Human-readable difficulty integer
-	Target       string        `json:"target"`     // Exact 256-bit Proof of Work target ceiling (64 hex characters)
-	cachedSize   int32         `json:"-"`          // Cached serialized byte size [C-28, C-34, v1.0.6]
+	Index            int           `json:"index"`
+	Timestamp        int64         `json:"timestamp"`
+	Transactions     []Transaction `json:"transactions"`
+	PrevHash         string        `json:"prev_hash"`
+	MerkleRoot       string        `json:"merkle_root"` // 32-byte Binary Merkle Tree Root (BIP Standard)
+	Hash             string        `json:"hash"`
+	Nonce            int64         `json:"nonce"`
+	Miner            string        `json:"miner"`
+	Difficulty       int           `json:"difficulty"` // Human-readable difficulty integer
+	Target           string        `json:"target"`     // Exact 256-bit Proof of Work target ceiling (64 hex characters)
+	cachedSize       int32         `json:"-"`          // Cached JSON serialized byte size [C-28, C-34, v1.0.6]
+	cachedBinarySize int32         `json:"-"`          // Cached binary serialized byte size
 }
 
 // CalculateMerkleRoot returns the binary Merkle root of the block's transactions
@@ -141,9 +152,287 @@ func (b *Block) Size() int {
 	return int(sz)
 }
 
-// InvalidateCache resets the cached serialized byte size of the block [v1.0.6]
+// InvalidateCache resets the cached serialized byte sizes of the block [v1.0.6]
 func (b *Block) InvalidateCache() {
 	atomic.StoreInt32(&b.cachedSize, 0)
+	atomic.StoreInt32(&b.cachedBinarySize, 0)
+}
+
+// EffectiveBlockSize returns the consensus-effective serialized byte size of b at b.Index.
+// Before BlockBinarySizeActivationHeight it returns legacy JSON b.Size(); from activation onward
+// it returns b.BinarySize() (falling back to b.Size() if any transaction is malformed).
+func EffectiveBlockSize(b *Block) int {
+	if b == nil {
+		return 0
+	}
+	if IsBlockBinarySizeActive(b.Index) {
+		if binSz := b.BinarySize(); binSz > 0 {
+			return binSz
+		}
+	}
+	return b.Size()
+}
+
+func decodeCanonicalHex32(s string) ([]byte, bool) {
+	if len(s) != 64 {
+		return nil, false
+	}
+	raw, err := hex.DecodeString(s)
+	if err != nil || len(raw) != 32 || hex.EncodeToString(raw) != s {
+		return nil, false
+	}
+	return raw, true
+}
+
+func appendBlockBinaryHeader(buf []byte, b *Block) ([]byte, error) {
+	prevRaw, prevOK := decodeCanonicalHex32(b.PrevHash)
+	merkleRaw, merkleOK := decodeCanonicalHex32(b.MerkleRoot)
+	targetRaw, targetOK := decodeCanonicalHex32(b.Target)
+	hrp, minerRaw, minerErr := Bech32Decode(b.Miner)
+	minerOK := minerErr == nil && hrp == Bech32HRP && len(minerRaw) == AddressPayloadLen
+
+	var hashRaw []byte
+	hasHash := b.Hash != ""
+	hashOK := true
+	if hasHash {
+		hashRaw, hashOK = decodeCanonicalHex32(b.Hash)
+	}
+
+	var flags byte
+	if hasHash {
+		flags |= blkFlagHasHash
+	}
+	canonical := prevOK && merkleOK && targetOK && minerOK && hashOK
+	if canonical {
+		flags |= blkFlagCanonicalFixed
+	}
+
+	buf = append(buf, BlockBinaryVersionV1, flags)
+
+	var u64 [8]byte
+	var u32 [4]byte
+
+	binary.LittleEndian.PutUint64(u64[:], uint64(b.Index))
+	buf = append(buf, u64[:]...)
+	binary.LittleEndian.PutUint64(u64[:], uint64(b.Timestamp))
+	buf = append(buf, u64[:]...)
+
+	if canonical {
+		buf = append(buf, prevRaw...)
+		buf = append(buf, merkleRaw...)
+		if hasHash {
+			buf = append(buf, hashRaw...)
+		}
+		binary.LittleEndian.PutUint64(u64[:], uint64(b.Nonce))
+		buf = append(buf, u64[:]...)
+		buf = append(buf, minerRaw...)
+		binary.LittleEndian.PutUint32(u32[:], uint32(b.Difficulty))
+		buf = append(buf, u32[:]...)
+		buf = append(buf, targetRaw...)
+	} else {
+		var err error
+		if buf, err = appendU16Bytes(buf, []byte(b.PrevHash)); err != nil {
+			return nil, err
+		}
+		if buf, err = appendU16Bytes(buf, []byte(b.MerkleRoot)); err != nil {
+			return nil, err
+		}
+		if hasHash {
+			if buf, err = appendU16Bytes(buf, []byte(b.Hash)); err != nil {
+				return nil, err
+			}
+		}
+		binary.LittleEndian.PutUint64(u64[:], uint64(b.Nonce))
+		buf = append(buf, u64[:]...)
+		if buf, err = appendU16Bytes(buf, []byte(b.Miner)); err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint32(u32[:], uint32(b.Difficulty))
+		buf = append(buf, u32[:]...)
+		if buf, err = appendU16Bytes(buf, []byte(b.Target)); err != nil {
+			return nil, err
+		}
+	}
+
+	binary.LittleEndian.PutUint32(u32[:], uint32(len(b.Transactions)))
+	buf = append(buf, u32[:]...)
+	return buf, nil
+}
+
+// BinarySize computes and caches the exact binary serialized byte size of the block
+// (194-byte canonical header + length-prefixed TxBinaryV1 Coinbase & regular transactions).
+func (b *Block) BinarySize() int {
+	if cached := atomic.LoadInt32(&b.cachedBinarySize); cached > 0 {
+		return int(cached)
+	}
+	hdrBuf, err := appendBlockBinaryHeader(make([]byte, 0, 200), b)
+	if err != nil {
+		return 0
+	}
+	total := len(hdrBuf)
+	for i := range b.Transactions {
+		txSize := b.Transactions[i].BinarySize()
+		if txSize <= 0 {
+			return 0
+		}
+		total += 4 + txSize
+	}
+	atomic.StoreInt32(&b.cachedBinarySize, int32(total))
+	return total
+}
+
+// MarshalBinary encodes the block header and all transactions into compact binary format.
+func (b *Block) MarshalBinary() ([]byte, error) {
+	if b == nil {
+		return nil, errors.New("cannot marshal nil block")
+	}
+	hdrBuf, err := appendBlockBinaryHeader(make([]byte, 0, 200+len(b.Transactions)*5324), b)
+	if err != nil {
+		return nil, err
+	}
+	buf := hdrBuf
+	var u32 [4]byte
+	for i := range b.Transactions {
+		txBytes, err := b.Transactions[i].MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("tx #%d MarshalBinary failed: %w", i, err)
+		}
+		binary.LittleEndian.PutUint32(u32[:], uint32(len(txBytes)))
+		buf = append(buf, u32[:]...)
+		buf = append(buf, txBytes...)
+	}
+	atomic.StoreInt32(&b.cachedBinarySize, int32(len(buf)))
+	return buf, nil
+}
+
+// UnmarshalBinary decodes a compact binary block buffer back into Block.
+func (b *Block) UnmarshalBinary(data []byte) error {
+	if b == nil {
+		return errors.New("cannot unmarshal into nil block")
+	}
+	if len(data) < 22 {
+		return errors.New("block binary buffer too short")
+	}
+	if data[0] != BlockBinaryVersionV1 {
+		return fmt.Errorf("unsupported block binary version: 0x%02x", data[0])
+	}
+	flags := data[1]
+	canonical := (flags & blkFlagCanonicalFixed) != 0
+	hasHash := (flags & blkFlagHasHash) != 0
+	off := 2
+
+	var decoded Block
+	decoded.Index = int(binary.LittleEndian.Uint64(data[off : off+8]))
+	off += 8
+	decoded.Timestamp = int64(binary.LittleEndian.Uint64(data[off : off+8]))
+	off += 8
+
+	if canonical {
+		need := 32 + 32 + 8 + 32 + 4 + 32 + 4
+		if hasHash {
+			need += 32
+		}
+		if off+need > len(data) {
+			return errors.New("unexpected EOF reading canonical binary block header")
+		}
+		decoded.PrevHash = hex.EncodeToString(data[off : off+32])
+		off += 32
+		decoded.MerkleRoot = hex.EncodeToString(data[off : off+32])
+		off += 32
+		if hasHash {
+			decoded.Hash = hex.EncodeToString(data[off : off+32])
+			off += 32
+		}
+		decoded.Nonce = int64(binary.LittleEndian.Uint64(data[off : off+8]))
+		off += 8
+		minerAddr, err := Bech32Encode(Bech32HRP, data[off:off+AddressPayloadLen])
+		if err != nil {
+			return fmt.Errorf("failed encoding block miner address: %w", err)
+		}
+		decoded.Miner = minerAddr
+		off += AddressPayloadLen
+		decoded.Difficulty = int(binary.LittleEndian.Uint32(data[off : off+4]))
+		off += 4
+		decoded.Target = hex.EncodeToString(data[off : off+32])
+		off += 32
+	} else {
+		pBytes, err := readU16Bytes(data, &off)
+		if err != nil {
+			return fmt.Errorf("failed reading prev_hash: %w", err)
+		}
+		decoded.PrevHash = string(pBytes)
+
+		mBytes, err := readU16Bytes(data, &off)
+		if err != nil {
+			return fmt.Errorf("failed reading merkle_root: %w", err)
+		}
+		decoded.MerkleRoot = string(mBytes)
+
+		if hasHash {
+			hBytes, err := readU16Bytes(data, &off)
+			if err != nil {
+				return fmt.Errorf("failed reading block hash: %w", err)
+			}
+			decoded.Hash = string(hBytes)
+		}
+
+		if off+8 > len(data) {
+			return errors.New("unexpected EOF reading nonce")
+		}
+		decoded.Nonce = int64(binary.LittleEndian.Uint64(data[off : off+8]))
+		off += 8
+
+		minerBytes, err := readU16Bytes(data, &off)
+		if err != nil {
+			return fmt.Errorf("failed reading miner: %w", err)
+		}
+		decoded.Miner = string(minerBytes)
+
+		if off+4 > len(data) {
+			return errors.New("unexpected EOF reading difficulty")
+		}
+		decoded.Difficulty = int(binary.LittleEndian.Uint32(data[off : off+4]))
+		off += 4
+
+		tBytes, err := readU16Bytes(data, &off)
+		if err != nil {
+			return fmt.Errorf("failed reading target: %w", err)
+		}
+		decoded.Target = string(tBytes)
+	}
+
+	if off+4 > len(data) {
+		return errors.New("unexpected EOF reading tx count")
+	}
+	txCount := int(binary.LittleEndian.Uint32(data[off : off+4]))
+	off += 4
+
+	if txCount < 0 || txCount > MaxBlockTransactions || off+txCount*4 > len(data) {
+		return fmt.Errorf("invalid tx count in binary block: %d", txCount)
+	}
+	decoded.Transactions = make([]Transaction, txCount)
+	for i := 0; i < txCount; i++ {
+		if off+4 > len(data) {
+			return fmt.Errorf("unexpected EOF reading tx #%d length", i)
+		}
+		txLen := int(binary.LittleEndian.Uint32(data[off : off+4]))
+		off += 4
+		if txLen <= 0 || off+txLen > len(data) {
+			return fmt.Errorf("invalid tx #%d length %d at offset %d", i, txLen, off)
+		}
+		if err := decoded.Transactions[i].UnmarshalBinary(data[off : off+txLen]); err != nil {
+			return fmt.Errorf("tx #%d UnmarshalBinary failed: %w", i, err)
+		}
+		off += txLen
+	}
+
+	if off != len(data) {
+		return fmt.Errorf("trailing bytes in block binary payload: consumed %d of %d", off, len(data))
+	}
+
+	atomic.StoreInt32(&decoded.cachedBinarySize, int32(len(data)))
+	*b = decoded
+	return nil
 }
 
 // NewBlock constructs a new Block instance with Merkle root computation

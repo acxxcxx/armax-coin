@@ -1,9 +1,9 @@
 # Armaxcoin (ARMX) Technical Whitepaper
 
-**Version:** 1.0.10 (Active Testnet Release)
+**Version:** 1.0.11 (Active Testnet Release)
 **Ticker:** `ARMX` (mainnet; testnet GUI and explorer display `tARMX`)
 **Network Profiles:** `ARMX-TESTNET-1` (active default) and `ARMX-MAINNET-1` (locked; not launched)
-**Consensus:** Proof-of-Work (PoW) with LWMA-1 ($N=60$)
+**Consensus:** Proof-of-Work (PoW) with Armax-ASERT-AW (`aserti3-2d`, `#13,335+`) & historical LWMA-1 ($N=60$)
 **Genesis Date:** 2024-03-09 (genesis timestamp date)
 **Seed Nodes:** Operated by core developers; community operators sought
 **DNS Seed Peers (Testnet):** `testnet-seed1.armax-coin.cloud:19335`, `testnet-seed2.armax-coin.cloud:19335`, `testnet-seed3.armax-coin.cloud:19335`
@@ -13,7 +13,7 @@
 ## 1. Abstract
 Armaxcoin (ARMX) is an open-source Proof-of-Work Layer-1 protocol under public-testnet development. It is experimental software, not a production mainnet system or an investment product.
 
-ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, and cumulative chainwork with BIP-173 Bech32 addresses, 24-word BIP-39 recovery phrases (12-word import is legacy-only), LWMA-1 difficulty adjustment across a 60-block window, Merkle proofs, and bbolt-backed state persistence. Claims about production security remain subject to the mainnet readiness verification gates.
+ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, and cumulative chainwork with BIP-173 Bech32 addresses, 24-word BIP-39 recovery phrases (12-word import is legacy-only), Armax-ASERT-AW (`aserti3-2d`) exponential difficulty adjustment (historical LWMA-1 across a 60-block window for early testnet blocks), `TxBinaryV1` binary block size accounting, Merkle proofs, and bbolt-backed state persistence. Claims about production security remain subject to the mainnet readiness verification gates.
 
 > Mainnet is locked and has not launched. Source code preserves the 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and existing genesis (60 ARMX genesis coinbase burned to the canonical zero-payload address). Before public mainnet opening, the developers will mine blocks 1 through 16,667. Stop rule: Stop at block 16,667 or when total developer mining rewards reach 1,000,000 ARMX, whichever comes first. Developers will mine all blocks in this range. At 60 ARMX per block, 16,667 blocks yield up to 1,000,020 ARMX (16,666 blocks = 999,960 ARMX; block 16,667 yields 1,000,020 ARMX due to discrete block subsidies). Estimated duration is approximately 23.15 days at 120-second target block time; actual duration depends on hashrate and difficulty. Public mainnet opening: TBA. Treasury address will be published before mainnet launch. Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch. Risks / Criticism: Early developer mining represents an initial point of centralization and grants the developer team a material fraction (~0.79% of the total 126,000,000 ARMX supply) before the public opening.
 
@@ -23,17 +23,17 @@ ARMX combines a 126,000,000 supply cap, a roughly four-year halving schedule, an
 
 | Parameter | Specification | Details & Consensus Rules |
 |---|---|---|
-| **Consensus Mechanism** | Proof-of-Work (PoW) | Dynamic per-block numerical target adjustment via LWMA-1 ($N=60$) |
+| **Consensus Mechanism** | Proof-of-Work (PoW) | Dynamic per-block numerical target adjustment via Armax-ASERT-AW (`aserti3-2d`, active `#13,335+`; historical LWMA-1 $N=60$) |
 | **Fork Choice Rule** | Heaviest Chain (Cumulative Chainwork) | Among eligible branches, the node prefers greater cumulative work, subject to its reorganization-depth limit |
 | **Max Reorganization Depth** | 720 Blocks (~24 hours at target cadence) | Local reorganization-depth policy limit; not protocol finality or a guarantee that transactions cannot be reorganized |
 | **Max Block Transactions** | 1,000 Txs / Block | Consensus transaction-count limit; block-size and packet-size limits also apply |
-| **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; verified block capacity: up to 185 user transactions (186 total with coinbase; 10,761 B/tx in JSON wire format, see docs/PERF.md) |
+| **Block Size Limits** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB | MaxIncomingPacketSize = 4 MB; pre-#20,000 Testnet JSON capacity: 185 user txs (~10,761 B/tx); from `BlockBinarySizeActivationHeight` (`#20,000` Testnet unified with C6 / `#0` Mainnet) `TxBinaryV1` binary accounting (~5,320 B/tx) expands capacity to **375 user transactions** (376 total with coinbase; see `docs/PERF.md`) |
 | **Block Structure** | Binary Merkle Tree | Canonical 32-byte Merkle root in header enabling SPV light proofs |
 | **Hashing Algorithm** | ArmaxHash v2 (Stream-Fast Chained BLAKE2b) for $H \ge 2500$ / ArmaxHash v1 for $520 \le H < 2500$ / SHA-256d for $H < 520$ | The v2 hash-function benchmark reports 0 allocations/op for a fixed header; this does not establish zero allocations for the full block/miner path. See docs/CONSENSUS_AND_NETWORK.md |
 | **Digital Signatures** | NIST FIPS 204 (ML-DSA-65) | Quantum-resistant signatures (NIST FIPS 204, ML-DSA-65): Public key 1,952 bytes, Signature 3,309 bytes |
 | **Address Encoding** | BIP-173 Bech32 (`armx1...`) | Canonical lowercase prefix `armx` + 32-byte SHA-256(SigAlg \|\| PubKey) payload (63 chars total) |
 | **Wallet Recovery** | BIP-39 Deterministic Mnemonic | Standard 24-word mnemonic (12-word accepted with warning), HKDF-SHA256, Argon2id encrypted keystore |
-| **Difficulty Algorithm** | LWMA-1 ($N=60$) | Linear Weighted Moving Average across 60-block window with continuous 256-bit target |
+| **Difficulty Algorithm** | Armax-ASERT-AW / LWMA-1 | Anchor-Weighted ASERT (`aserti3-2d`, $\tau = 3600\text{s}$, 14,400s per-block surge cap, 7,200s TEDR boost at `#13,335+`; LWMA-1 $N=60$ below `#13,335`) |
 | **Target Block Time** | 120 seconds (~2 minutes) | Difficulty-adjustment target; observed block intervals vary with network hashrate and randomness |
 | **Initial Block Reward** | 60 ARMX (6,000,000,000 Armoids) | Awarded to miner via single coinbase transaction at index 0 |
 | **Halving Interval** | Every 1,050,000 blocks (~4 years) | Reward cuts in half ($60 \to 30 \to 15 \to \dots$ ARMX) |
@@ -106,10 +106,11 @@ $$\text{MerkleRoot} = \text{TreeRoot}(\text{Tx}_0, \text{Tx}_1, \dots, \text{Tx}
 
 This Merkle structure can support **Simplified Payment Verification (SPV)**: a client can verify transaction inclusion with an $O(\log n)$ Merkle path and a trusted block header. This describes a protocol capability; it does not claim that an SPV client is included in this repository.
 
-### 4.2 LWMA-60 Difficulty Adjustment Algorithm
+### 4.2 Difficulty Adjustment Evolution: LWMA-60 to Armax-ASERT-AW
 Traditional PoW cryptocurrencies that adjust difficulty over multi-week windows (such as Bitcoin's 2,016-block cycle) suffer from vulnerability to "flash-mining" and "hashrate hopping", where large external mining operations briefly inflate difficulty and abandon the network, stranding honest miners with frozen block intervals.
 
-Armaxcoin solves this through **LWMA-60 (Linear Weighted Moving Average across 60 blocks)**:
+**Era 1 — LWMA-60 (Historical Testnet Blocks $0 \dots 13,334$):**
+Armaxcoin bootstrapped with **LWMA-60 (Linear Weighted Moving Average across 60 blocks)**:
 - **Evaluation Window:** $N = 60$ blocks.
 - **Target Block Time:** $T_{\text{target}} = 120\text{ seconds}$ (~2 minutes).
 - **Solve Time Clamping:** $\text{SolveTime}_i = \max(-6T, \min(6T, \text{Timestamp}_i - \text{Timestamp}_{i-1}))$ to neutralize timewarp attacks.
@@ -118,7 +119,14 @@ Armaxcoin solves this through **LWMA-60 (Linear Weighted Moving Average across 6
   $$E = \frac{N(N+1)}{2} \times T_{\text{target}}$$
   $$\text{NextTarget} = \frac{\sum_{k=1}^N \text{Target}_k}{N} \times \frac{L}{E}$$
 
-Because recent blocks carry linearly higher weights ($k = 1 \dots N$), the target responds to recent solve times on each retarget. The 120-second value is a target interval, not a guarantee of stable timing or low variance.
+At Testnet Block `#13,293` (`v1.0.9`), Anti-Stall TEDR added emergency fallback (`ArmaxHashPowLimitHex`) when block intervals exceeded 1,200 seconds.
+
+**Era 2 — Armax-ASERT-AW (`aserti3-2d`, Testnet Blocks $H \ge 13,335$ / Mainnet Ready):**
+Starting at Testnet Block `#13,335` (`v1.0.10`, anchored to Block `#13,334`), Armaxcoin upgrades to pure-integer **Armax-ASERT-AW (Anchor-Weighted Absolutely-Scheduled Exponentially-Rising Targets with Anti-Windup)** using a Q48.16 cubic polynomial approximation ($2^{16}$ fixed-point factor):
+- **Half-Life ($\tau$):** $3,600\text{ seconds}$ (30 blocks at $T = 120\text{s}$), halving or doubling difficulty smoothly for every hour of cumulative schedule drift.
+- **Per-Block Surge Cap:** `MaxASERTBlockInterval = 14400` seconds (4 hours) caps single-block time injection during recovery without limiting lifetime difficulty growth relative to the anchor.
+- **TEDR Boost:** Emergency blocks ($\Delta t > 1,200\text{s}$ on Testnet) contribute $7,200\text{s}$ of effective drift to recover from severe hashrate drops.
+- **Bounded Drift Cache (`v1.0.11`):** `globalASERTDriftCache` bounds memory to `10,000` entries and prunes to the latest `2,048` blocks (`> MaxReorganizationDepth = 720`). For `ARMX-MAINNET-1` (locked pre-launch), ASERT supports Genesis (`#0`) activation with pure per-block 14,400s capping and TEDR permanently disabled (`AntiStallActivationHeight = -1`). The 120-second value remains a target interval, not a guarantee of stable timing or low variance.
 
 ### 4.3 Heaviest Chain Rule (Satoshi Cumulative Chainwork)
 Armaxcoin does not rely on naive block count for fork resolution. Instead, each block contributes cumulative work based on Satoshi's work formula:
@@ -164,7 +172,7 @@ To accommodate consumer hardware, commodity desktop CPUs, and cache-constrained 
 To maintain accurate difficulty retargeting and prevent artificial difficulty manipulation via timewarp attacks, Armaxcoin enforces progressive timestamp validation rules across historical testnet milestones:
 1. **Median Time Past 11 (Blocks $0 \le H < 8000$):** Block timestamps must exceed the median of the previous 11 blocks ($\text{Timestamp} > \text{MTP-11}$).
 2. **Median Time Past 55 & Monotonicity (Blocks $H \ge 8000$):** Under hard fork proposals C1 and C2, block timestamps must strictly exceed the median of the previous 55 blocks ($\text{Timestamp} > \text{MTP-55}$) and must not be earlier than the immediate parent block ($\text{Timestamp}_H \ge \text{Timestamp}_{H-1}$).
-3. **Scheduled Future-Timestamp Tightening (Blocks $H \ge 20000$):** Under proposal C6 (v1.0.7), the maximum allowed forward drift against the validating node's local wall clock is narrowed from **7,200 seconds (2 hours)** to **600 seconds (10 minutes)**. Historical re-indexing skips the wall-clock check, ensuring stored blocks remain permanently valid.
+3. **Scheduled Future-Timestamp Tightening & Binary Block Sizing (Blocks $H \ge 20000$):** Under Proposal C6 (`v1.0.7+` / `v1.0.11`), the maximum allowed forward drift against the validating node's local wall clock is narrowed from **7,200 seconds (2 hours)** to **600 seconds (10 minutes)** (paired with an adaptive `5s`/`30s` miner inherited-tip safety margin in `v1.0.11`), while canonical `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`, raising 2 MB block capacity from `185` to **375 user ML-DSA-65 transactions**) activates simultaneously at Block `#20,000`. Historical re-indexing skips the wall-clock check, ensuring stored blocks remain permanently valid.
 
 ---
 
@@ -246,7 +254,7 @@ Conventional cryptocurrencies rely on elliptic curves (ECDSA, Schnorr, Ed25519) 
 - **Signature Scheme:** NIST FIPS 204 ML-DSA-65 (Module-Lattice-Based Digital Signature Algorithm).
 - **Cryptographic Sizes:** Public Key: 1,952 bytes; Signature: 3,309 bytes; Entropy Seed: 32 bytes derived via HKDF-SHA256 from standard 24-word BIP-39 recovery mnemonics (`ikm` = 64-byte BIP-39 seed, `salt` = `"armax-pqc-v1"`, `info` = `"ml-dsa-65/account/<index>"`).
 - **Address Format:** Standard Bech32 with human-readable prefix `armx` encoding a full 32-byte cryptographic payload generated via $\text{SHA-256}(\text{SigAlg} \parallel \text{PublicKey})$ (`AddressPayloadLen = 32`).
-- **Throughput & Capacity:** Max block size of 2,000,000 bytes (2 MB) and max transaction size of 20,000 bytes, supporting up to 185 user transactions per block (186 total including coinbase, ~10.51 KB per wire JSON transaction; empirical throughput of ~1.54 TPS) with dynamic size-based mempool relay fees (documented in `docs/PERF.md`).
+- **Throughput & Capacity:** Max block size of 2,000,000 bytes (2 MB) and max transaction size of 20,000 bytes. Prior to Testnet Block `#20,000`, legacy JSON size accounting fits up to 185 user transactions per block (186 total including coinbase, ~`10,761` B/tx; ~1.54 TPS). From Testnet Block `#20,000` (unified with Rule C6, and Mainnet Block `#0` via `BlockBinarySizeActivationHeight`), canonical `TxBinaryV1` size accounting (`~5,320 B` per signed ML-DSA-65 tx, `60 B` coinbase) expands capacity to **375 user transactions per block** (376 total; `1,996,758` binary bytes; ~3.13 TPS) with dynamic size-based mempool relay fees (documented in `docs/PERF.md`).
 - **PoW & Grover's Algorithm:** Proof-of-Work SHA-256 hashing is subject only to quadratic speedup under Grover's algorithm ($\mathcal{O}(\sqrt{N})$), maintaining an effective post-quantum security margin of 128 bits against quantum miners.
 
 ---
@@ -290,7 +298,7 @@ graph TD
 ### 5. Lightweight Smart Contracts & WebAssembly VM (Future Research)
 - Exploratory design for a sandboxed WebAssembly (WASM) runtime executing expressive UTXO-based contracts (similar to ErgoScript) without EVM state bloat.
 
-### 6. Small-Hardware PoW Optimization (LWMA-1 & ArmaxHash v2 Stream-Fast)
+### 6. Small-Hardware PoW Optimization (Armax-ASERT-AW, LWMA-1 & ArmaxHash v2 Stream-Fast)
 - ArmaxHash v2 (chained BLAKE2b) is active from block #2500 on testnet. Its fixed-header hash benchmark reports 0 allocations/op; this does not imply zero allocations across the full node or miner. Historical blocks (0..519 SHA-256d and 520..2499 ArmaxHash v1) remain part of the validation history.
 
 ### 7. Democratic On-Chain Governance & Signaling
@@ -304,7 +312,7 @@ Armaxcoin is compiled into standalone, zero-dependency static binaries:
 
 | Binary | Role | Description |
 |---|---|---|
-| `armcoind` | Daemon Node | PoW engine, LWMA-60 consensus, TLS P2P mesh, bounded REST API, `/getblocktemplate`. |
+| `armcoind` | Daemon Node | PoW engine, Armax-ASERT-AW / LWMA-60 consensus, `TxBinaryV1` block sizing, TLS P2P mesh, bounded REST API, `/getblocktemplate`. |
 | `armminer` | CPU Miner | Continuous multi-threaded CPU mining client with POST requests and auto-failover. |
 | `armsend` | CLI Sender | Transaction constructor, ML-DSA-65 signer, and broadcast utility with fee and nonce validation. |
 | `armwallet` | CLI Wallet | BIP-39 24-word mnemonic generation, Argon2id encrypted keystore, recovery, and balance viewer. |

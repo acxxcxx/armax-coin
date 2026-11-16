@@ -6,15 +6,16 @@ This documentation directory contains official user guides, operator manuals, sp
 
 - [Project Overview & Quickstart](../README.md): High-level introduction, key features, and architecture.
 - [Public Testnet Guide](TESTNET.md): Comprehensive node setup, building from source, wallet management, transactions, and mining.
-- [Mining Guide](MINING_GUIDE.md): Solo mining, multi-threaded CPU miner configuration, Stratum pool setup, and LWMA-1 difficulty details.
+- [Mining Guide](MINING_GUIDE.md): Solo mining, multi-threaded CPU miner configuration, Stratum pool setup, Block #20,000 miner margins, and Armax-ASERT-AW / LWMA-1 difficulty details.
 - [Build and Compilation Guide](BUILD.md): Step-by-step toolchain and cross-compilation instructions.
 - [Development Support](../SUPPORT.md): Official developer contact and voluntary contribution channels.
 
 ## 2. Technical Specifications & Architecture
 
-- [Consensus, Cryptography & Network Specification](CONSENSUS_AND_NETWORK.md): LWMA-1 difficulty adjustment, NIST FIPS 204 ML-DSA-65 signatures, and ArmaxHash v2 PoW specification.
+- [Consensus, Cryptography & Network Specification](CONSENSUS_AND_NETWORK.md): Armax-ASERT-AW & LWMA-1 difficulty adjustment, NIST FIPS 204 ML-DSA-65 signatures, `TxBinaryV1` binary block sizing, and ArmaxHash v2 PoW specification.
+- [Consensus Improvement Proposals (C1–C6)](security/consensus-proposals.md): Design history, implementation status, and Block `#20,000` Proposal C6 specification.
 - [Architecture Overview](architecture/README.md): Engineering boundaries, consensus invariants, and repository taxonomy.
-- [Performance & Wire Size Benchmarks](PERF.md): Wire size metrics, post-quantum signature size analysis, and mempool throughput.
+- [Performance & Wire Size Benchmarks](PERF.md): Wire size metrics, `TxBinaryV1` binary block accounting (`375` user ML-DSA-65 txs / 2 MB block at `#20,000`), post-quantum signature size analysis, and mempool throughput.
 - [Security Disclosure Policy](../SECURITY.md): Vulnerability reporting channels, threat boundaries, and audit process.
 
 ## 3. Operations & Maintenance
@@ -26,7 +27,8 @@ This documentation directory contains official user guides, operator manuals, sp
 
 ## 4. Release History
 
-- [Release Notes Overview (v1.0.10)](../RELEASE_NOTES.md): Top-level summary of the active release and upgrade requirements.
+- [Release Notes Overview (v1.0.11)](../RELEASE_NOTES.md): Top-level summary of the active release, `v1.0.10` compatibility, and unified Block #20,000 (`C6` + `TxBinaryV1`) upgrade requirements.
+- [v1.0.11 Release Notes](releases/v1.0.11.md): Unified Block #20,000 Activation (`C6` + `TxBinaryV1` Block Size Accounting), Adaptive C2/C6 Miner Margin, and Bounded ASERT Drift Cache.
 - [v1.0.10 Release Notes](releases/v1.0.10.md): Armax-ASERT-AW DAA Consensus Fork at Block #13,335, Surge Cap & TEDR Boost, Immutable MiningJob & 3-Tier P2P Policy.
 - [v1.0.9 Release Notes](releases/v1.0.9.md): Testnet Anti-Stall TEDR Fork at Block #13,293, 5.45x Zero-Alloc CPU Miner & Linux GUI Auto-Start.
 - [v1.0.8 Release Notes](releases/v1.0.8.md): Desktop GUI Security, First-Time Onboarding Flow & Peer Privacy Hardening.

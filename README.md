@@ -1,7 +1,7 @@
 # Armaxcoin (`armax-coin`)
 
 **Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)  
-**Current Release:** `v1.0.10` (Armax-ASERT-AW DAA Hard Fork at Block #13,335, Surge Cap & TEDR Boost, Immutable MiningJob & 3-Tier P2P Policy)  
+**Current Release:** `v1.0.11` (Rolling Compatible with `v1.0.10` at `#15,967–#19,999`, Unified Block `#20,000` Fork: C6 + `TxBinaryV1`, Adaptive C2/C6 Miner Margin, Bounded ASERT Drift Cache)  
 **Go Module:** `github.com/acxxcxx/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum transaction security (NIST FIPS 204, ML-DSA-65), accessibility, and high performance across commodity personal computers and ARM-based devices (Armbian, Raspberry Pi 4/5, Orange Pi).
@@ -9,10 +9,10 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 > [!IMPORTANT]
 > **ACTIVE & SCHEDULED TESTNET CONSENSUS FORKS (BLOCKS 13,293, 13,335 & 20,000):**
 > - **Block 13,293 (v1.0.9 — Anti-Stall TEDR):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When the elapsed interval since the parent block exceeds **1,200 seconds (20 minutes)**, candidate blocks qualify for an emergency stall-breaker target (`Difficulty 3`) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`). Permanently disabled on Mainnet (`-1`).
-> - **Block 13,335 (v1.0.10 — Armax-ASERT-AW DAA):** Activates the canonical integer `aserti3-2d` difficulty adjustment algorithm (`ASERTActivationHeight = 13335`), anchored to Block `#13,334` with Anti-Poisoning fallback (DA-03), 4-hour surge cap (`14400s`), and TEDR Boost (`7200s`) for rapid 200x hashrate crash recovery.
-> - **Block 20,000 (v1.0.7+ — Proposal C6):** Tightens maximum allowed future block timestamp from 7,200 seconds (2 hours) down to **600 seconds (10 minutes)** ahead of the validating node's local clock.
+> - **Block 13,335 (v1.0.10 — Armax-ASERT-AW DAA):** Activates the canonical integer `aserti3-2d` difficulty adjustment algorithm (`ASERTActivationHeight = 13335`), anchored to Block `#13,334` with Anti-Poisoning fallback (DA-03), 4-hour surge cap (`14400s`), TEDR Boost (`7200s`), and bounded drift cache pruning (`10,000 -> 2,048` entries in `v1.0.11`).
+> - **Block 20,000 (v1.0.11 — Unified C6 + `TxBinaryV1` Activation):** Simultaneously tightens maximum allowed future block timestamp from 7,200s down to **600 seconds (10 minutes)** (`FutureTimestampLimitActivationHeight = 20000`, paired with `v1.0.11` adaptive `5s` inherited-tip / `30s` local-clock miner safety margins) **and** switches consensus block/transaction size accounting from JSON to canonical `TxBinaryV1` (`BlockBinarySizeActivationHeight = 20000` on Testnet, `0` on Mainnet), expanding 2 MB capacity from 185 to **375 user ML-DSA-65 transactions**. P2P wire transport and legacy JSON size checks remain 100% backward-compatible with `v1.0.10` across `#15,967`–`#19,999`.
 > 
-> **Operator Action Required:** All testnet node operators, miners, and pool maintainers **MUST** upgrade immediately to **v1.0.10** prior to Block `#13,335`, and ensure server clocks are synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows).
+> **Operator Action Required:** Public nodes, miners, and pool operators can upgrade cleanly from **v1.0.10** to **v1.0.11** with zero chain split during `#15,967`–`#19,999`, and **MUST** complete the upgrade and ensure server clocks remain synchronized with NTP (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows) prior to **Block `#20,000`**.
 
 > [!NOTE]
 > **PUBLIC TESTNET ENVIRONMENT:**
@@ -31,7 +31,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 | Guide | Description |
 |---|---|
-| **[Release Notes (v1.0.10)](RELEASE_NOTES.md)** | Authoritative v1.0.10 release notes, Block 13,335 Armax-ASERT-AW DAA fork, surge cap & TEDR boost, immutable MiningJob, and 3-tier P2P policy |
+| **[Release Notes (v1.0.11)](RELEASE_NOTES.md)** | Authoritative v1.0.11 release notes, `v1.0.10` compatibility (`#15,967–#19,999`), unified Block `#20,000` (`C6` + `TxBinaryV1`), adaptive C2/C6 margin, and bounded ASERT cache |
 | **[Changelog](CHANGELOG.md)** | Complete version history adhering to Keep a Changelog |
 | **[Technical Whitepaper](WHITEPAPER.md)** | Core system architecture, post-quantum signatures, consensus rules, and tokenomics |
 | **[Treasury & Miner Migration Plan](TREASURY_MIGRATION_PLAN.md)** | Proposed Mainnet treasury governance, testnet miner compensation, liquidity reserves, and soak criteria |
@@ -66,7 +66,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **Maximum Supply Cap** | 126,000,000 tARMX | 126,000,000 ARMX |
 | **Coinbase Maturity** | **10 confirmations** | **100 confirmations** |
 | **Max Reorg Depth** | 720 blocks (`MaxReorganizationDepth`) | 720 blocks (`MaxReorganizationDepth`) |
-| **Block Size / Tx Limit** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB, 1,000 txs/block | MaxBlockSize = 2 MB, MaxTxSize = 20 KB, 1,000 txs/block |
+| **Block Size / Tx Limit** | MaxBlockSize = 2 MB, MaxTxSize = 20 KB, 1,000 txs/block (`TxBinaryV1` at #20,000 -> 375 user txs) | MaxBlockSize = 2 MB, MaxTxSize = 20 KB, 1,000 txs/block (`TxBinaryV1` from Genesis #0 -> 375 user txs) |
 | **P2P Gossip Port** | `19335` (TCP, TLS 1.3 with TOFU) | `19334` (TCP, TLS 1.3 with TOFU) |
 | **JSON-RPC Port** | `127.0.0.1:19333` (Strictly Loopback) | `127.0.0.1:19332` (Strictly Loopback) |
 | **Public Seed Nodes** | `testnet-seed1.armax-coin.cloud:19335`<br>`testnet-seed2.armax-coin.cloud:19335`<br>`testnet-seed3.armax-coin.cloud:19335` | TBA prior to mainnet launch |
@@ -79,13 +79,13 @@ All binaries default to the active testnet profile (`ARMX-TESTNET-1`).
 
 ### 1. Download & Verify Release Artifacts
 
-Pre-compiled binaries and signatures are published on [GitHub Releases](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.10):
+Pre-compiled binaries and signatures are published on [GitHub Releases](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.11):
 
 ```bash
 # On Linux / ARM64:
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.10/armax-v1.0.10-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.10/SHA256SUMS
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.10/SHA256SUMS.asc
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.11/armax-v1.0.11-linux-amd64.tar.gz
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.11/SHA256SUMS
+curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.11/SHA256SUMS.asc
 curl -LO https://raw.githubusercontent.com/acxxcxx/armax-coin/main/ARMAX-PGP-KEY.asc
 
 # 1. Import official release key & verify fingerprint (C857E67F3FC63BE35125C3D32ACE863ED4BF1460):
@@ -99,15 +99,15 @@ gpg --verify SHA256SUMS.asc SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 
 # Extract archive:
-tar -xzf armax-v1.0.10-linux-amd64.tar.gz
+tar -xzf armax-v1.0.11-linux-amd64.tar.gz
 chmod +x armcoind armminer armsend armwallet armgui
 ```
 
 On Windows (PowerShell):
 ```powershell
 # Verify SHA-256 checksum:
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.10-windows-amd64.zip
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.10-windows-amd64.zip"
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.11-windows-amd64.zip
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.11-windows-amd64.zip"
 ```
 
 ### 2. Launch the Full Node Daemon

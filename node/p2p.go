@@ -680,10 +680,24 @@ func (p *PeerServer) SetSeedPeers(seeds []string) {
 }
 
 func (p *PeerServer) isSeedPeer(addr string) bool {
+	if addr == "" {
+		return false
+	}
 	p.seedMu.RLock()
 	defer p.seedMu.RUnlock()
-	_, ok := p.seedAddrs[addr]
-	return ok
+	if _, ok := p.seedAddrs[addr]; ok {
+		return true
+	}
+	norm := normalizePeerEndpoint(addr)
+	if _, ok := p.seedAddrs[norm]; ok {
+		return true
+	}
+	for _, seed := range p.seedPeers {
+		if seed == addr || normalizePeerEndpoint(seed) == norm {
+			return true
+		}
+	}
+	return false
 }
 
 // ReseedPeers (re)resolves the configured seeds and puts them back in the address book,
@@ -1020,6 +1034,29 @@ func (p *PeerServer) isPeerStale(addr string) bool {
 			return true // failed without ever being successfully verified
 		}
 		if time.Since(info.LastSeen) >= MaxPeerInactivityDuration {
+			return true
+		}
+	}
+	return false
+}
+
+// isPeerVerified reports whether a peer is an authoritative seed or has been successfully verified (handshaked) by this node.
+func (p *PeerServer) isPeerVerified(addr string) bool {
+	if addr == "" {
+		return false
+	}
+	if p.isSeedPeer(addr) {
+		return true
+	}
+	p.Lock.RLock()
+	defer p.Lock.RUnlock()
+	if p.triedPeers != nil {
+		if pi, ok := p.triedPeers[addr]; ok && pi != nil && !pi.LastSeen.IsZero() {
+			return true
+		}
+	}
+	if p.newPeers != nil {
+		if pi, ok := p.newPeers[addr]; ok && pi != nil && !pi.LastSeen.IsZero() {
 			return true
 		}
 	}
@@ -2651,9 +2688,10 @@ func (p *PeerServer) RecordPeerFailure(addr string) error {
 
 	timeSinceLastSeen := time.Since(info.LastSeen)
 	isUnresponsive2h := !isSeed && !info.LastSeen.IsZero() && timeSinceLastSeen >= MaxPeerInactivityDuration
+	unverifiedFailed := !isSeed && info.LastSeen.IsZero() && info.Failures >= 2
 
 	evicted := false
-	if !isSeed && (info.Failures >= MaxPeerFailures || isUnresponsive2h) {
+	if !isSeed && (info.Failures >= MaxPeerFailures || isUnresponsive2h || unverifiedFailed) {
 		// Evict dead or long-unresponsive peer [N-16, v1.0.10]
 		if inTried {
 			delete(p.triedPeers, addr)
@@ -2711,16 +2749,20 @@ func (p *PeerServer) PruneStalePeers() (int, error) {
 		if p.isSeedPeer(addr) {
 			continue
 		}
-		if info != nil && info.Failures > 0 && !info.LastSeen.IsZero() && now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
-			toEvict = append(toEvict, addr)
+		if info != nil && info.Failures > 0 {
+			if info.LastSeen.IsZero() || now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
+				toEvict = append(toEvict, addr)
+			}
 		}
 	}
 	for addr, info := range p.newPeers {
 		if p.isSeedPeer(addr) {
 			continue
 		}
-		if info != nil && info.Failures > 0 && !info.LastSeen.IsZero() && now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
-			toEvict = append(toEvict, addr)
+		if info != nil && info.Failures > 0 {
+			if info.LastSeen.IsZero() || now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
+				toEvict = append(toEvict, addr)
+			}
 		}
 	}
 
@@ -2975,9 +3017,11 @@ func (p *PeerServer) loadPeers() {
 					continue // Silently ignore non-loopback cached peers in local mainnet mode without mutating cache file
 				}
 			}
-			// Skip stale public peers that have failed and have not been seen for >= 2 hours [v1.0.10]
-			if !p.isSeedPeer(info.Address) && info.Failures > 0 && !info.LastSeen.IsZero() && now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
-				continue
+			// Skip stale public peers that have failed without verification or have not been seen for >= 2 hours [v1.0.10]
+			if !p.isSeedPeer(info.Address) && info.Failures > 0 {
+				if info.LastSeen.IsZero() || now.Sub(info.LastSeen) >= MaxPeerInactivityDuration {
+					continue
+				}
 			}
 			if info.CertFingerprint != "" {
 				// Peer has pinned certificate fingerprint
@@ -4082,6 +4126,11 @@ func (p *PeerServer) HandleConnection(conn net.Conn, subnet string) {
 					continue
 				}
 				if p.isPeerStale(candidate) {
+					continue
+				}
+				// Do not gossip unverified non-seed peers: only advertise peers that the local node
+				// has actually verified (handshaked) and are not stale [P2P gossip hardening].
+				if !p.isSeedPeer(candidate) && !p.isPeerVerified(candidate) {
 					continue
 				}
 				peers = append(peers, candidate)

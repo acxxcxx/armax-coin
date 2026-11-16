@@ -58,8 +58,12 @@ type NetworkProfile struct {
 	AntiStallActivationHeight int64 `json:"anti_stall_activation_height"`
 	// ASERTActivationHeight is the first block height where Armax-ASERT-AW activates.
 	// Negative disables it.
-	ASERTActivationHeight int64          `json:"asert_activation_height"`
-	Checkpoints           map[int]string `json:"checkpoints,omitempty"`
+	ASERTActivationHeight int64 `json:"asert_activation_height"`
+	// BlockBinarySizeActivationHeight is the first block height where MaxBlockSize and MaxTxSize
+	// are evaluated using compact TxBinaryV1 binary size (BinarySize) instead of legacy JSON Size.
+	// Negative disables it.
+	BlockBinarySizeActivationHeight int64          `json:"block_binary_size_activation_height"`
+	Checkpoints                     map[int]string `json:"checkpoints,omitempty"`
 }
 
 var (
@@ -84,6 +88,7 @@ var (
 		FutureTimestampLimitActivationHeight: -1,
 		AntiStallActivationHeight:            -1, // Strictly disabled on Mainnet
 		ASERTActivationHeight:                -1, // Strictly disabled on Mainnet
+		BlockBinarySizeActivationHeight:      0,  // Ready from Genesis #0 on Mainnet (MainnetLaunched remains false)
 		Checkpoints: map[int]string{
 			0: GenesisHash,
 		},
@@ -116,6 +121,8 @@ var (
 		AntiStallActivationHeight: 13293,
 		// Hard fork: Armax-ASERT-AW DAA engine from block #13335 on testnet.
 		ASERTActivationHeight: 13335,
+		// Hard fork: TxBinaryV1 block/tx size evaluation from block #20000 on testnet.
+		BlockBinarySizeActivationHeight: 20000,
 		Checkpoints: map[int]string{
 			0: TestnetGenesisHash,
 		},
@@ -144,6 +151,7 @@ var (
 		FutureTimestampLimitActivationHeight: -1,
 		AntiStallActivationHeight:            -1,
 		ASERTActivationHeight:                -1,
+		BlockBinarySizeActivationHeight:      -1,
 	}
 
 	// RegtestProfile defines private local regression testing profile [L4-8]
@@ -166,6 +174,7 @@ var (
 		FutureTimestampLimitActivationHeight: -1,
 		AntiStallActivationHeight:            -1,
 		ASERTActivationHeight:                -1,
+		BlockBinarySizeActivationHeight:      -1,
 	}
 )
 
@@ -184,9 +193,10 @@ var (
 	armaxHashV2ActivationHeightOverride *int64 // nil means use network profile or env
 	timestampRulesHeightOverride        *int64 // nil means use network profile
 	futureLimitHeightOverride           *int64 // nil means use network profile
-	antiStallActivationHeightOverride   *int64 // nil means use network profile
-	asertActivationHeightOverride       *int64 // nil means use network profile
-	testGlobalNetworkLock               sync.Mutex
+	antiStallActivationHeightOverride       *int64 // nil means use network profile
+	asertActivationHeightOverride           *int64 // nil means use network profile
+	blockBinarySizeActivationHeightOverride *int64 // nil means use network profile
+	testGlobalNetworkLock                   sync.Mutex
 
 	localMainnetMu      sync.RWMutex
 	localMainnetEnabled bool
@@ -439,16 +449,60 @@ func ResetASERTActivationHeightOverride() {
 }
 
 // IsASERTActive returns true if the block at blockIndex is evaluated under the Armax-ASERT-AW DAA rules.
-// Mainnet is strictly guarded until official consensus activation.
+// Mainnet is strictly guarded until official consensus activation (ASERTActivationHeight >= 0).
 func IsASERTActive(blockIndex int) bool {
 	netMu.RLock()
 	isMain := ActiveNetwork.IsMainnet
+	mainAct := ActiveNetwork.ASERTActivationHeight
+	over := asertActivationHeightOverride
 	netMu.RUnlock()
-	if isMain {
+	if isMain && mainAct < 0 && over == nil {
 		return false
 	}
 	act := GetASERTActivationHeight()
-	if act <= 0 || blockIndex < 0 {
+	if act < 0 || blockIndex <= 0 {
+		return false
+	}
+	return int64(blockIndex) >= act
+}
+
+// GetBlockBinarySizeActivationHeight returns the block height where binary block/tx size rules activate.
+// A negative value indicates binary sizing is disabled.
+func GetBlockBinarySizeActivationHeight() int64 {
+	netMu.RLock()
+	defer netMu.RUnlock()
+	if blockBinarySizeActivationHeightOverride != nil {
+		return *blockBinarySizeActivationHeightOverride
+	}
+	if ActiveNetwork.Name == "regtest" {
+		if val := os.Getenv("ARMX_BINARY_SIZE_HEIGHT"); val != "" {
+			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+				return h
+			}
+		}
+	}
+	return ActiveNetwork.BlockBinarySizeActivationHeight
+}
+
+// SetBlockBinarySizeActivationHeight dynamically overrides the binary block size activation height (for tests).
+func SetBlockBinarySizeActivationHeight(height int64) {
+	netMu.Lock()
+	defer netMu.Unlock()
+	blockBinarySizeActivationHeightOverride = &height
+}
+
+// ResetBlockBinarySizeActivationHeightOverride restores the network profile default.
+func ResetBlockBinarySizeActivationHeightOverride() {
+	netMu.Lock()
+	defer netMu.Unlock()
+	blockBinarySizeActivationHeightOverride = nil
+}
+
+// IsBlockBinarySizeActive returns true if the block at blockIndex is evaluated using BinarySize() (TxBinaryV1)
+// rather than legacy JSON Size().
+func IsBlockBinarySizeActive(blockIndex int) bool {
+	act := GetBlockBinarySizeActivationHeight()
+	if act < 0 || blockIndex < 0 {
 		return false
 	}
 	return int64(blockIndex) >= act

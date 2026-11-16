@@ -1,14 +1,14 @@
 # Armaxcoin Treasury & Testnet Miner Migration Plan
 
-**Version:** 1.1  
-**Date:** November 12, 2026  
-**Status:** DRAFT FOR EVALUATION AND APPROVAL (Non-binding, Not Final)  
+**Version:** 1.2 (Preliminary Non-Final Plan)  
+**Date:** November 16, 2026  
+**Status:** PRELIMINARY PLAN — NOT FINAL (Non-binding Draft for Evaluation and Approval)  
 **Scope:** Mainnet Treasury Planning, Testnet Miner Migration, Liquidity Allocation, and Ecosystem Development  
-**Document Type:** Strategic Policy Proposal (Not an implementation and not an authorization of execution)  
+**Document Type:** Preliminary Non-Final Strategic Policy Plan (Subject to Ongoing Evaluation; Not an Implementation and Not an Authorization of Execution)  
 
 > [!IMPORTANT]
-> **CRITICAL DISCLAIMER:**  
-> This document is a strategic draft subject to change. Testnet coins (`tARMX`) possess **zero monetary value**, no market price, and no promise or guarantee of conversion, trading, or monetary worth. This document is **not an investment offer, not a promise of financial return, and not financial advice**. All figures, conversion ratios, and execution schedules become effective only upon formal governance ratification and official public announcement.
+> **CRITICAL DISCLAIMER (PRELIMINARY NON-FINAL PLAN):**  
+> This document is a **preliminary, non-final strategic plan** subject to revision, ongoing evaluation, and formal governance ratification. The public testnet operational timeline is **open-ended (`TBA` / undetermined)** and depends on the completion of all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](docs/MAINNET_READINESS.md). Testnet coins (`tARMX`) possess **zero monetary value**, no market price, and no promise or guarantee of conversion, trading, or monetary worth. This document is **not an investment offer, not a promise of financial return, and not financial advice**. All figures, exclusion lists, conversion ratios, and execution schedules become effective only upon formal governance ratification and official public announcement.
 
 ---
 
@@ -83,39 +83,72 @@ The proposed ratio under evaluation is **10 tARMX : 1 ARMX**.
 
 *Note:* This ratio is a proposal subject to final data reconciliation and community governance approval.
 
-### 3.3 Testnet Baseline at Drafting
-- Total testnet coins generated at drafting date: `~868,260 tARMX`.
-- Testnet planned operational window: Approximately 3 additional months.
-- Candidate conversion ratio: `10:1`.
-- Maximum migration budget cap: `300,000 ARMX`.
-- *Simulation:* If the entire 868,260 tARMX were confirmed as eligible mining rewards, conversion would yield:
-  $$868,260 \div 10 = 86,826\text{ ARMX}$$
-  This is a mathematical simulation only. Total circulating supply on testnet does not automatically equal eligible mining rewards; full historical block reconciliation is required.
+### 3.3 Testnet Baseline & Preliminary Reference Metrics
+- Total testnet coins generated at original drafting date (`November 12, 2026`): `~868,260 tARMX` *(and `967,320.00 tARMX` at Block `#16,121` during preliminary `v1.0.11` review)*.
+- Testnet planned operational window: **TBA / Undetermined** (open-ended until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](docs/MAINNET_READINESS.md) are completed).
+- Primary developer testnet wallet *(Layer 1 Excluded — `0 ARMX` Zero Migration Entitlement)*: `armx1m0zc657c6an7zjtlqkd06qvlrkwzmh3c2vj302ge7u5dh2nuv59qyymq62` *(alongside internal test wallets and ordinary transfers; see Section 3.6)*.
+- Candidate conversion ratio: `10:1` *(preliminary, non-final)*.
+- Maximum migration budget cap: `300,000 ARMX` *(unchanged)*.
+- *Preliminary Simulation Note:* At Block `#16,121`, `678,308.06 tARMX` (`~70.1%` of the `967,320.00 tARMX` circulating supply) accrued to the three core developer-operated test addresses excluded under Layer 1 (`0 ARMX`). Excluding Layer 1 developer addresses, Layer 2 user-to-user ordinary transfers, and un-disbursed pool hot-wallet balances, verified external community miner events stood at approximately `~210,000 – 260,000 tARMX` (`~21,000 – 26,000 ARMX` equivalent at `10:1`, or `< 9%` of the `300,000 ARMX` migration cap). Gross circulating testnet supply does **not** represent eligible migration demand; full event-based historical reconciliation is required.
 
 ### 3.4 Budget Capacity
-At the candidate 10:1 ratio, the 300,000 ARMX budget mathematically accommodates up to **3,000,000 eligible tARMX**.
-The 300,000 ARMX allocation represents a strict maximum ceiling, not a mandatory spending quota. Unclaimed or surplus funds remain in the treasury under formal governance. If eligible claims exceed 300,000 ARMX, the ratio shall not be silently lowered nor funds seized from other sectors without formal public review.
+At the candidate `10:1` ratio, the `300,000 ARMX` budget mathematically accommodates up to **3,000,000 eligible tARMX** earned by verified external community miners.
+The `300,000 ARMX` allocation represents a strict maximum ceiling, not a mandatory spending quota. Unclaimed, unverified, or surplus funds remain in the treasury under formal governance. If eligible claims exceed `300,000 ARMX`, the ratio shall not be silently lowered nor funds seized from other sectors without formal public review.
 
-### 3.5 Three-Month Testnet Soak Window
-For approximately 3 months following the publication of this plan:
+### 3.5 Open-Ended Testnet Soak Window (Duration TBA — Non-Final Plan)
+Throughout the open-ended public testnet soak phase (duration **TBA / undetermined** until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](docs/MAINNET_READINESS.md) are satisfied):
 1. The testnet continues open operation for mining and consensus validation.
 2. Complete block history, coinbase records, pool payouts, and reorg history are immutably archived.
-3. No final conversion or snapshot occurs until the soak period and verification gates conclude.
-4. Final snapshot block height and timestamp will be announced publicly in advance.
+3. No final conversion or snapshot occurs until the soak period, verification gates, and formal governance approval conclude.
+4. Final snapshot block height, cutoff UTC timestamp, and ratified migration terms will be announced publicly in advance.
 
-### 3.6 Reward Eligibility Principles
-**Potentially Eligible (Subject to Verification):**
-- Valid solo mining coinbase rewards recorded on the canonical blockchain.
-- Mining pool rewards substantiated by pool payout logs reconciled against on-chain pool coinbase receipts.
-- Blocks that remain on the canonical heaviest chain after reorganization settlement.
+### 3.6 Reward Eligibility Principles & Dual-Lock Reconciliation Model (Preliminary Non-Final Plan)
 
-**Ineligible:**
-- Faucet distributions and non-mining faucet balances.
-- Secondary user-to-user transfers not traceable to verified mining coinbase outputs.
-- Orphaned blocks or invalid reorganizations.
-- Internal developer or operator allocations not meeting external mining criteria.
+To guarantee fairness, prevent double-counting, and eliminate any possibility of insider conversion, migration accounting under this preliminary plan uses the **Dual-Lock Model** with **Event-Based Reconciliation** *(acquisition-event accounting bound to the original verified beneficiary rather than post-transfer account balances)*:
 
-*Accounting Note:* Calculation is based on cumulative earned eligible coinbase/pool rewards, not static unspent wallet balances at snapshot time (since miners legitimately transfer or spend rewards). For mining pools, payouts are reconciled to eliminate double-counting between the pool address coinbase and subsequent distribution txs.
+1. **Layer 1 — Full Address Exclusion (`0 ARMX` Zero Migration Entitlement):** Every wallet proven to be controlled by the development team for testing, genesis validation, or diagnostics receives **`0 ARMX`** across all solo block rewards, pool payouts, and transfers.
+2. **Layer 2 — Event-Based Transfer Exclusion & Non-Transferability:** Migration entitlement attaches strictly to verified original mining acquisition events (`Solo block rewards` and ledger-reconciled `Pool payouts`) and their verified beneficiary addresses. **Migration entitlement is strictly non-transferable via Testnet transactions.** Ordinary transfers, faucet distributions, and 1-hop through N-hop downstream transfers create **`0 ARMX` additional entitlement** and neither diminish prior earned mining entitlement of an independent sender nor transfer entitlement to a recipient.
+3. **Mandatory Pool Reconciliation:** Pool block rewards arriving at the pool wallet (`armx1ujmgn00rrtqwqvrvmtj4q3qwen4jyv7d38qq7xg9rae0kvvql8hq6m64at`) are not claimed by the pool operator; payouts are reconciled strictly against internal pool share/payout ledgers so block subsidies are never counted twice.
+
+> [!IMPORTANT]
+> **Scope Boundary (`Zero Migration Entitlement` Only):**  
+> Address and event exclusions under this preliminary non-final treasury plan restrict **solely Mainnet `ARMX` migration entitlement** in the off-chain migration registry. This policy does **NOT** freeze Testnet `tARMX` balances, alter Layer-1 consensus rules (`core/`), affect transaction validity, modify Testnet mining rewards, or rewrite historical `ARMX-TESTNET-1` blockchain data.
+
+#### Acquisition Event Classification Matrix
+
+| Event Type | Identification Criteria | Migration Treatment |
+| :--- | :--- | :--- |
+| **Solo block reward** | Canonical coinbase transaction (`tx.sender == "SYSTEM"`) with a verified external miner beneficiary address *(excluding pool wallet and Layer 1 excluded addresses)* | **Eligible** |
+| **Pool block reward** | Canonical coinbase transaction (`tx.sender == "SYSTEM"`) credited to the mining pool wallet (`armx1ujmgn00rrtqwqvrvmtj4q3qwen4jyv7d38qq7xg9rae0kvvql8hq6m64at`) | **Not counted as a pool-operator claim (`0 ARMX` direct)** — serves as backing ceiling only |
+| **Pool payout** | On-chain payout transaction originating from the pool wallet that matches a verified entry in the mining pool's share/payout ledger | **Eligible for verified external miners** (`0 ARMX` if Layer 1 excluded) |
+| **Ordinary transfer** | Any non-coinbase wallet-to-wallet transfer not matched as a verified pool payout (1-hop through N-hop) | **`0 ARMX` additional entitlement** *(does not transfer prior mining entitlement)* |
+| **Faucet distribution** | Non-mining faucet or test distribution | **`0 ARMX`** |
+| **Developer-controlled mining / payout** | Any solo block reward or pool payout credited to a Layer 1 excluded developer address | **`0 ARMX` (`Zero Migration Entitlement`)** |
+| **Pool hot-wallet un-disbursed balance** | Retained `tARMX` balance or internal test deposits in `armx1ujmgn...` | **`0 ARMX`** |
+| **Designated burn / zero-payload address** | Any reward or transfer credited to `armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd` | **`0 ARMX`** *(Designated Burn / Zero-Payload Address — Zero Migration Entitlement)* |
+
+*Non-Transferability Worked Example (`10:1` Ratio):* If `Wallet A` mines `100 tARMX` and subsequently sends `50 tARMX` (`Ordinary transfer`) to `Wallet B` (which mined `0 tARMX`), `Wallet A` retains **`10 ARMX`** migration entitlement (`100 / 10`) while `Wallet B` receives **`0 ARMX`**, regardless of their post-transfer `50 tARMX` balances.
+
+#### Layer 1 Excluded Addresses & Pending Ownership Verification Policy
+
+| Address | Classification | Migration Status |
+| :--- | :--- | :--- |
+| `armx1m0zc657c6an7zjtlqkd06qvlrkwzmh3c2vj302ge7u5dh2nuv59qyymq62` | Primary Developer Testnet Wallet | **Layer 1 Excluded (`0 ARMX` — Zero Migration Entitlement)** |
+| `armx1cdj242tzwrp5uutzyktj0p4jsyl0s06ahxfk3xzv0vqgnn438e7s2ps308` | Internal Dev / Test Wallet #2 | **Layer 1 Excluded (`0 ARMX` — Zero Migration Entitlement)** |
+| `armx1fkdddt4td39t8c6mnepxk7hpdgpxk0e5p343pgzuujuhf55x7rjqyzrrsz` | Internal Dev / Test Wallet #3 | **Layer 1 Excluded (`0 ARMX` — Zero Migration Entitlement)** |
+| `armx1ujmgn00rrtqwqvrvmtj4q3qwen4jyv7d38qq7xg9rae0kvvql8hq6m64at` | Pool Operator Hot Wallet | **Hot-Wallet Balance & Internal Deposits Excluded (`0 ARMX`);** external payouts reconciled via pool ledger |
+| `armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd` | Designated Burn / Zero-Payload Address | **Designated Burn / Zero-Payload Address — Zero Migration Entitlement (`0 ARMX`)** |
+| `armx12xe8fjgn6kraehscqf5h02df9zhetea6y02f075fzxfa9uvdgsmqtpz4wy` | Mixed *(received ordinary transfer + solo block rewards)* | **Pending Ownership Verification** *(transfer `0 ARMX`; solo mining held pending verification)* |
+| `armx1kze889dsgju3yr2u4qlzk4a9w0zl7ph5pyec8g7u022l45449v0qzn3aad` | Mixed *(received ordinary transfers + solo block rewards)* | **Pending Ownership Verification** *(transfers `0 ARMX`; solo mining held pending verification)* |
+| `armx1s8rkdvspsax99pttpxy7375fsrc6m5vkcg2cnx4z7v5g2y04wk8qedk4v7` | Mixed *(received ordinary transfer + pool payouts)* | **Pending Ownership Verification** *(transfer `0 ARMX`; pool payouts held pending verification)* |
+
+**Verification & Snapshot Escrow Rules for Pending Addresses:**
+1. **Ownership Proof:** Verified via cryptographic ML-DSA-65 signature control over the address combined with matching mining pool account or solo-node operational records.
+2. **Resolution Outcomes:** Proven developer control moves the address to **Layer 1 Excluded (`0 ARMX`)**; proven external miner status makes only verified mining acquisition events eligible (ordinary transfers remain **`0 ARMX` additional**).
+3. **Pending at Snapshot:** Allocations associated with unverified mining events are **withheld in reserve (not distributed and not immediately forfeited)** at snapshot announcement.
+4. **Expiration of Claim & Objection Window:** Once the announced claim and objection window expires, any remaining unverified allocations revert under the formal Treasury surplus policy (Section `3.4`).
+
+*Accounting Invariant:* Reconciliation evaluates canonical mining acquisition events after maturity and reorganization finality — never raw static balances — protecting honest external miners from ordinary transfer/dust contamination while eliminating pool coinbase-to-payout double-counting.
 
 ### 3.7 Snapshot and Claim Execution Flow
 1. **Data Export:** Secure complete blockchain state and pool audit logs.
@@ -240,14 +273,14 @@ To ensure transparency and prevent cross-sector leakage, treasury funds will be 
 
 ```mermaid
 flowchart LR
-    P0["Phase 0: Testnet Soak (~3 mo)"] --> P1["Phase 1: Mainnet Prep"]
+    P0["Phase 0: Testnet Soak (Duration TBA)"] --> P1["Phase 1: Mainnet Prep"]
     P1 --> P2["Phase 2: Mainnet Launch"]
     P2 --> P3["Phase 3: Miner Migration"]
     P3 --> P4["Phase 4: Liquidity Launch"]
     P4 --> P5["Phase 5: Ecosystem Expansion"]
 ```
 
-- **Phase 0 — Testnet Soak (Current):** Continue public testnet operation for approximately 3 months. Maintain immutable block and pool logs. Finalize eligibility specifications. No mainnet distributions or consensus changes occur during this phase.
+- **Phase 0 — Testnet Soak (Current — Duration TBA):** Continue open-ended public testnet operation (duration **TBA / undetermined** until all Mainnet readiness gates and security audits conclude). Maintain immutable block and pool logs. Finalize Dual-Lock and event-based eligibility specifications under this preliminary plan. No mainnet distributions or consensus changes occur during this phase.
 - **Phase 1 — Mainnet Preparation:** Complete formal security audits of consensus, node, and wallet. Finalize treasury custody policies. Reconcile testnet mining records.
 - **Phase 2 — Mainnet Launch:** Mainnet launches under verified consensus rules. Treasury begins receiving legitimate mined rewards up to the policy cap.
 - **Phase 3 — Testnet Miner Migration:** Announce snapshot cutoff. Reconcile solo and pool rewards. Open Mainnet address registration. Disburse migration allocations from `treasury_migration`.
@@ -273,12 +306,13 @@ flowchart LR
 
 ## 13. Verification Checklist
 
-Before formal ratification and snapshot execution, the following data points must be verified:
-- [ ] Confirm exact testnet emission and circulating supply breakdown at snapshot.
-- [ ] Complete canonical block history export and reconciliation.
-- [ ] Secure verified pool operator payout databases for all active testnet pools.
-- [ ] Exclude all faucet, test transfer, and reorganized block balances.
-- [ ] Estimate final projected testnet block height and mining reward volume over the remaining 3-month window.
+Before formal governance ratification and snapshot execution, the following data points must be verified:
+- [ ] Confirm exact testnet emission, circulating supply, and acquisition-event breakdown at snapshot cutoff.
+- [ ] Complete canonical block history export and event-based reconciliation (distinguishing `Solo block rewards`, `Pool block rewards`, `Pool payouts`, `Ordinary transfers`, and `Faucet distributions`).
+- [ ] Secure verified pool operator share/payout databases for all active testnet pools to prevent coinbase-to-payout double-counting.
+- [ ] Apply **Layer 1 Full Address Exclusion (`0 ARMX`)** across all confirmed developer-operated test wallets (starting with `armx1m0zc657c6an7zjtlqkd06qvlrkwzmh3c2vj302ge7u5dh2nuv59qyymq62`, `armx1cdj242tzwrp5uutzyktj0p4jsyl0s06ahxfk3xzv0vqgnn438e7s2ps308`, `armx1fkdddt4td39t8c6mnepxk7hpdgpxk0e5p343pgzuujuhf55x7rjqyzrrsz`) and exclude all **Layer 2** ordinary transfers, un-disbursed pool hot-wallet balances, faucet distributions, `armx1qqqq...plwcdd`, and reorganized blocks.
+- [ ] Execute cryptographic ML-DSA-65 ownership verification and snapshot reserve escrow handling for any pending mixed wallets prior to post-window surplus settlement.
+- [ ] Verify final canonical testnet block height and eligible external miner acquisition volume through the announced snapshot block height cutoff (**duration TBA**).
 - [ ] Finalize secure custody infrastructure for the 1,000,000 ARMX Mainnet treasury.
 - [ ] Confirm pairing asset arrangements (e.g. USDT) for initial liquidity deployment.
 
@@ -286,25 +320,27 @@ Before formal ratification and snapshot execution, the following data points mus
 
 ## 14. Simulation Based on Current Figures
 
-| Metric | Current Estimate | Notes |
+| Metric | Reference Value (Block `#16,121` Snapshot) | Notes |
 |---|---:|---|
-| Current Testnet Coin Generation | ~868,260 tARMX | Subject to final reconciliation |
-| Proposed Ratio | 10 : 1 | 10 tARMX converts to 1 ARMX |
-| Theoretical Conversion (Current) | ~86,826 ARMX | Assuming 100% eligibility |
-| Maximum Program Allocation | 300,000 ARMX | Strict ceiling |
-| Program tARMX Capacity at 10:1 | 3,000,000 tARMX | Accommodates 3x current volume |
-| Remaining Testnet Duration | ~3 Months | Allows continued testing and hashrate soaking |
+| Current Testnet Gross Supply | `967,320.00 tARMX` | `~868,260 tARMX` at original Nov 12, 2026 draft |
+| Layer 1 Excluded Core Dev Wallets (`3` addresses) | `678,308.06 tARMX` (`~70.1%`) | `0 ARMX` Zero Migration Entitlement (`299,520.01` solo + `378,788.05` pool) |
+| Estimated Eligible External Community Mining Events | `~210,000 – 260,000 tARMX` | `< 9%` of the `3,000,000 tARMX` cap *(excludes pending mixed wallets)* |
+| Preliminary Candidate Ratio | `10 : 1` | `10 eligible tARMX` converts to `1 ARMX` *(non-final)* |
+| Equivalent Est. External Conversion (Current) | `~21,000 – 26,000 ARMX` | Purely external verified mining acquisition events |
+| Maximum Program Allocation | `300,000 ARMX` | Strict ceiling *(unchanged)* |
+| Program `tARMX` Capacity at `10:1` | `3,000,000 tARMX` | Accommodates `>11x` current external volume |
+| Remaining Testnet Duration | **TBA (Open-Ended)** | Undetermined until Mainnet readiness gates are completed |
 
-*Note:* Future production over the upcoming 3 months will vary depending on network hashrate, active miners, and difficulty dynamics. Accurate figures will be published prior to snapshot height.
+*Note:* Future production until the announced snapshot height (**duration TBA**) will vary depending on network hashrate, active external miners, and difficulty dynamics. All figures and parameters in this document represent a **preliminary, non-final plan**; final reconciled figures will be published prior to snapshot height.
 
 ---
 
 ## 15. Decision Boundaries & Scope Invariants
 
-This document is a strategic draft. **It does not authorize or execute:**
+This document is a **preliminary, non-final strategic plan**. **It does not authorize or execute:**
 - Any change to the 126,000,000 ARMX total supply cap.
 - Any alteration to Mainnet halving cadence (1,050,000 blocks) or initial reward (60 ARMX).
-- Any modification to genesis parameters, target block time (120s), or consensus rules.
+- Any modification to genesis parameters, target block time (120s), or consensus rules (nor any freezing of `tARMX` balances on `ARMX-TESTNET-1`).
 - Any unlock of Mainnet prior to formal readiness authorization (`core.MainnetLaunched = false`).
 - Any premature token sale, distribution, or speculative listing.
 
@@ -312,8 +348,8 @@ This document is a strategic draft. **It does not authorize or execute:**
 
 ## 16. Conclusion
 
-Armaxcoin proposes a structured 1,000,000 ARMX treasury plan designed to balance testnet miner recognition, market liquidity, developer tooling, operational stability, and long-term network reserves.
+Armaxcoin outlines this **preliminary, non-final** `1,000,000 ARMX` treasury plan to balance external testnet miner recognition, market liquidity, developer tooling, operational stability, and long-term network reserves.
 
-The 300,000 ARMX migration allocation accommodates up to 3,000,000 eligible tARMX at the proposed 10:1 ratio, providing ample capacity as the testnet continues its ~3-month soaking period.
+The `300,000 ARMX` migration allocation accommodates up to `3,000,000 eligible external miner tARMX` at the candidate `10:1` ratio — with developer-controlled test wallets permanently assigned **Zero Migration Entitlement (`0 ARMX`)** under the Dual-Lock Event-Based Model — providing ample capacity throughout the open-ended testnet soaking period (**duration TBA**).
 
-**Guiding Principles:** Honor community contributors, preserve consensus immutability, maintain transparent accounting, and protect mainnet integrity above market haste.
+**Guiding Principles:** Honor independent community contributors, exclude insider test activity, preserve consensus immutability, maintain transparent accounting, and protect mainnet integrity above market haste.

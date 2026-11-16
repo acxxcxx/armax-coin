@@ -1,5 +1,26 @@
 # Armaxcoin Release Notes
 
+## Armaxcoin v1.0.11
+
+**Target Release:** Armaxcoin v1.0.11 — Backward-Compatible Consensus Transition, Unified Block `#20,000` Activation (`C6` + `TxBinaryV1`), Adaptive C2/C6 Miner Margin, and Bounded ASERT Cache  
+**Status:** Active Testnet Release (100% rolling P2P & consensus backward compatible with `v1.0.10` on `ARMX-TESTNET-1` across `#15,967`–`#19,999`; `MainnetLaunched = false`)  
+**Detailed Technical Specification:** [docs/releases/v1.0.11.md](docs/releases/v1.0.11.md)
+
+### Highlights
+
+1. **Unified Block `#20,000` Testnet Activation (`TxBinaryV1` Binary Size Accounting + C6, Block `#0` Mainnet):**
+   - Introduces `BlockBinarySizeActivationHeight` (`20000` on `ARMX-TESTNET-1` aligned with `FutureTimestampLimitActivationHeight = 20000`, `0` on `ARMX-MAINNET-1`) via `EffectiveBlockSize` and `EffectiveTxSize`.
+   - Below `#20,000`, `v1.0.11` continues validating and building templates using legacy JSON block sizes so running `v1.0.10` nodes experience zero chain splits or disconnects during rolling upgrades (`#15,967`–`#19,999`, ~5.6 days upgrade window).
+   - From Block `#20,000` onward, `TxBinaryV1` (~`5,320 B` per signed ML-DSA-65 tx; `60 B` coinbase; `194 B` canonical block header) activates simultaneously with C6 and increases 2 MB block capacity from 185 to **375 user transactions + 1 coinbase = 376 total transactions** (`1,996,758` binary bytes vs `4,036,307` JSON bytes).
+2. **Adaptive C2/C6 Inherited-Tip Margin in `armminer` (`Block #20,000+`):**
+   - Adds `inheritedTipSafetyMargin = 5` seconds (`futureLimitWaitWithMinTime`) when a candidate block timestamp inherits `minTs` from a forward-stamped parent, eliminating 25–30s miner starvation under repeated C2 `dt = 0` near-`+600s` tips while keeping the `30s` `futureLimitSafetyMargin` for local clock skew.
+3. **Bounded `globalASERTDriftCache` Pruning (`core/asert.go`):**
+   - Caps cached ASERT drift entries at `maxASERTDriftCacheEntries = 10000`, pruning down to the newest `2048` blocks (`> MaxReorganizationDepth = 720`) to keep long-running full node memory bounded.
+4. **Mainnet Lock Preserved:**
+   - `core.MainnetLaunched` remains strictly `false`, while `ARMX-MAINNET-1` carries pre-configured readiness parameters (`BlockBinarySizeActivationHeight = 0`).
+
+---
+
 ## Armaxcoin v1.0.10
 
 **Target Release:** Armaxcoin v1.0.10 — Hybrid ASERT-TEDR Difficulty Consensus Hard Fork, Surge Cap & TEDR Boost, Immutable Thread-Safe Mining Engine, and 3-Tier P2P Policy  

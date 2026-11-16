@@ -30,4 +30,4 @@ Liquidity and bridge design are not finalized and will be announced, with full t
 
 - **Initial Centralization:** Early developer mining represents an initial point of centralization and grants the developer team a material fraction (~0.79% of the total 126,000,000 ARMX supply) before the public opening.
 - **Early Supply Distribution:** During this window, all block subsidies accrue to the developer treasury address rather than a distributed set of public participants.
-- **Transition Risk:** Once block 16,667 is reached, the network opens to the public. If external hashrate joins abruptly or difficulty adjusts slowly under LWMA-1, block intervals may fluctuate during early public transition.
+- **Transition Risk:** Once block 16,667 is reached, the network opens to the public. If external hashrate joins abruptly or difficulty lags under LWMA-1 (or `Armax-ASERT-AW` if enabled from Genesis), block intervals may fluctuate during early public transition.

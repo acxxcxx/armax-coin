@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.10]
-	Version = "1.0.10"
+	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.11]
+	Version = "1.0.11"
 
 	// MaxReorganizationDepth defines the maximum depth of reorganization allowed (prevents deep 51% history overwrites, 720 blocks = ~1 day at 120s) [D-05]
 	MaxReorganizationDepth = 720
@@ -161,12 +161,12 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 	}
 
 	// 0. Size constraints [C-04]
-	if b.Size() > MaxBlockSize {
-		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", b.Size(), MaxBlockSize)
+	if effBlkSize := EffectiveBlockSize(b); effBlkSize > MaxBlockSize {
+		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", effBlkSize, MaxBlockSize)
 	}
-	for idx, tx := range b.Transactions {
-		if tx.Size() > MaxTxSize {
-			return fmt.Errorf("tx #%d size %d exceeds MaxTxSize (%d)", idx, tx.Size(), MaxTxSize)
+	for idx := range b.Transactions {
+		if txSize := EffectiveTxSize(&b.Transactions[idx], b.Index); txSize > MaxTxSize {
+			return fmt.Errorf("tx #%d size %d exceeds MaxTxSize (%d)", idx, txSize, MaxTxSize)
 		}
 	}
 
@@ -320,12 +320,12 @@ func (bc *Blockchain) PreCheckBlock(b *Block) error {
 	}
 
 	// 0. Size constraints [C-04]
-	if b.Size() > MaxBlockSize {
-		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", b.Size(), MaxBlockSize)
+	if effBlkSize := EffectiveBlockSize(b); effBlkSize > MaxBlockSize {
+		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", effBlkSize, MaxBlockSize)
 	}
-	for idx, tx := range b.Transactions {
-		if tx.Size() > MaxTxSize {
-			return fmt.Errorf("tx #%d size %d exceeds MaxTxSize (%d)", idx, tx.Size(), MaxTxSize)
+	for idx := range b.Transactions {
+		if txSize := EffectiveTxSize(&b.Transactions[idx], b.Index); txSize > MaxTxSize {
+			return fmt.Errorf("tx #%d size %d exceeds MaxTxSize (%d)", idx, txSize, MaxTxSize)
 		}
 	}
 

@@ -10,16 +10,17 @@ To prevent conflation between speculative design iterations and production-ready
 
 ### Tier 1: Active Software Implementation
 - **Scope:** The Go codebase actively running on full nodes, miners, wallets, and tools in this repository.
-- **Source Version Metadata:** `v1.0.10` (Official Testnet Release, `core.Version = "1.0.10"`).
+- **Source Version Metadata:** `v1.0.11` (Official Testnet Release, `core.Version = "1.0.11"`).
 - **Core Principle:** Safety, reliability, memory bounds, clean shutdown, post-quantum cryptography, consensus fork coordination, and storage efficiency.
 
 ### Tier 2: Existing Testnet Compatibility Baseline
 - **Network ID:** `ARMX-TESTNET-1` (Display ticker: `tARMX`).
 - **Proof-of-Work:** Dual-pass SHA-256d (H < 520), ArmaxHash v1 (520 <= H < 2500), ArmaxHash v2 Stream-Fast (H >= 2500).
 - **Target Block Time:** 120 seconds.
-- **Difficulty Adjustment:** Armax-ASERT-AW (canonical pure integer `aserti3-2d` active from Block #13,335; previously TEDR anti-stall at #13,293 and legacy LWMA-1 $N=60$).
+- **Difficulty Adjustment:** Armax-ASERT-AW (canonical pure integer `aserti3-2d` active from Block #13,335; previously TEDR anti-stall at #13,293 and legacy LWMA-1 $N=60$) with bounded drift cache (`10,000 -> 2,048` entries).
 - **Block Reward Schedule:** Initial subsidy of 60 tARMX, halving every 1,050,000 blocks, total supply cap 126,000,000 ARMX, atomic base unit $10^8$ Armoids.
-- **Timestamp Rules:** MTP-11 below block 8,000; MTP-55 with non-decreasing parent timestamps from block 8,000 onward. From block 20,000, the maximum allowed future-timestamp limit narrows from 7,200 seconds (2 hours) to 600 seconds (10 minutes). Under v1.0.10, minor skew ($\le 30\text{s}$) incurs 0 peer score penalty, with ban scoring for $> 600\text{s}$.
+- **Binary Block Size Transition (`BlockBinarySizeActivationHeight`):** Scheduled at Testnet Block `#20,000` (`0` on `ARMX-MAINNET-1`) alongside Rule C6 via `EffectiveBlockSize` / `EffectiveTxSize`. Preserves legacy JSON block sizing and `v1.0.10` P2P wire compatibility across `#15,967`–`#19,999` while expanding 2 MB capacity from 185 to **375 user ML-DSA-65 transactions** (`TxBinaryV1`) from Block `#20,000` onward.
+- **Timestamp Rules:** MTP-11 below block 8,000; MTP-55 with non-decreasing parent timestamps from block 8,000 onward. From block 20,000, the maximum allowed future-timestamp limit narrows from 7,200 seconds (2 hours) to 600 seconds (10 minutes). Under `v1.0.11`, minor skew ($\le 30\text{s}$) incurs 0 peer score penalty, severe skew ($> 600\text{s}$) triggers immediate ban, and `armminer` enforces an adaptive `5s` inherited-tip margin (`inheritedTipSafetyMargin`) vs `30s` local-clock margin (`futureLimitSafetyMargin`).
 - **Persistent Storage:** Key-value storage in BoltDB (`bbolt`) with standard bucket hierarchy (`blocks`, `hashindex`, `txindex`, `chainwork`, `snapshots`, `undo`, `meta`). Optional record compression supported in v1.0.7+ (default off).
 - **Signatures:** NIST FIPS 204 post-quantum ML-DSA-65.
 - **Status:** **Immutable.** Any change to these rules forks or partitions running Testnet nodes and is strictly prohibited without explicit network coordination.
@@ -43,11 +44,13 @@ To prevent conflation between speculative design iterations and production-ready
 +-------------------------------------------------------------------------+
 |                  ARMAXCOIN ARCHITECTURAL BOUNDARY                       |
 +-------------------------------------------------------------------------+
-| [ACTIVE PROTOCOL IMPLEMENTATION - v1.0.10 CONSENSUS BASELINE]           |
+| [ACTIVE PROTOCOL IMPLEMENTATION - v1.0.11 CONSENSUS BASELINE]           |
 | - Armax-ASERT-AW pure integer DAA at block 13,335 (tau=3600s, anchor #13,334)|
+| - Bounded ASERT drift cache (max 10,000 entries -> prune latest 2,048)    |
 | - 4-Hour Surge Cap (14,400s) & TEDR Boost (7,200s drift injection)       |
 | - Testnet Anti-Stall TEDR emergency fallback at block 13,293             |
-| - Scheduled future timestamp 10-minute ceiling (Proposal C6 at #20,000)  |
+| - Unified Block #20,000 fork (C6 +600s & TxBinaryV1 size; Mainnet #0)    |
+| - Adaptive miner inherited-tip margin (5s inherited vs 30s local skew)   |
 | - Immutable thread-safe MiningJob engine & 4-point submission gate       |
 | - Dual-model difficulty telemetry (work units and difficulty ratio)      |
 | - 3-tier P2P clock skew policy (<=30s free, strike tracking, >600s ban)  |
@@ -63,7 +66,7 @@ To prevent conflation between speculative design iterations and production-ready
 | - Mainnet launch (remains locked: core.MainnetLaunched = false)         |
 | - Bridge activation (remains IN DEVELOPMENT - NOT PRODUCTION READY)     |
 | - Draft proposals C4 (Tx TTL) and C5 (Reorg depth limit)                |
-|   (Note: C3 was audited without fork; C6 activates at Block 20,000)     |
+|   (Note: C3 audited without fork; C6 + TxBinaryV1 activate at #20,000)   |
 +-------------------------------------------------------------------------+
 ```
 
@@ -76,6 +79,7 @@ To prevent conflation between speculative design iterations and production-ready
 - **[`consensus/mainnet-pow-activation.md`](consensus/mainnet-pow-activation.md):** Proposal and analysis for future Mainnet PoW activation.
 - **[`../CONSENSUS_AND_NETWORK.md`](../CONSENSUS_AND_NETWORK.md):** Canonical Layer-1 mathematical consensus specification.
 - **[`../NODE_OPERATIONS.md`](../NODE_OPERATIONS.md):** Operational guidance for running Testnet nodes.
+- **[`../releases/v1.0.11.md`](../releases/v1.0.11.md):** Release notes for Core v1.0.11 (Unified Block #20,000 C6 + `TxBinaryV1` activation, adaptive miner margin & `v1.0.10` compatibility).
 - **[`../releases/v1.0.10.md`](../releases/v1.0.10.md):** Release notes for Core v1.0.10.
 - **[`../releases/v1.0.9.md`](../releases/v1.0.9.md):** Release notes for Core v1.0.9.
 - **[`../releases/v1.0.8.md`](../releases/v1.0.8.md):** Release notes for Core v1.0.8.

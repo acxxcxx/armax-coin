@@ -34,7 +34,7 @@ func getMinerBinary(t *testing.T) string {
 			binName = "armminer_test"
 		}
 		builtBinary = filepath.Join(os.TempDir(), binName)
-		cmd := exec.Command("go", "build", "-o", builtBinary, "miner.go")
+		cmd := exec.Command("go", "build", "-o", builtBinary, ".")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			buildErr = fmt.Errorf("failed to build armminer binary: %v, output: %s", err, string(out))
 		}
@@ -462,4 +462,77 @@ func BenchmarkMinerHotLoop_OptimizedParallel(b *testing.B) {
 			_ = hashBytesMeetTarget32(&hashBytes, &localTargetBytes)
 		}
 	})
+}
+
+// TestMiner_FutureLimitWait explicitly verifies futureLimitWait behavior at height #20,000+
+// across all three boundary zones: < 570s (no wait), 571s..600s (linear buffer wait 1..30s), and > 600s (30s cap).
+func TestMiner_FutureLimitWait(t *testing.T) {
+	core.SetFutureTimestampLimitActivationHeight(20000)
+	defer core.ResetFutureTimestampLimitActivationHeightOverride()
+
+	const nodeNow = int64(1_700_000_000)
+	cases := []struct {
+		name    string
+		height  int
+		blockTs int64
+		want    int64
+	}{
+		{"skew 0s (< 570s)", 20000, nodeNow, 0},
+		{"skew 120s (< 570s)", 20001, nodeNow + 120, 0},
+		{"skew 569s (< 570s)", 20001, nodeNow + 569, 0},
+		{"skew exact 570s safety boundary", 20001, nodeNow + 570, 0},
+		{"skew 571s (inside 571..600)", 20001, nodeNow + 571, 1},
+		{"skew 585s (inside 571..600)", 20001, nodeNow + 585, 15},
+		{"skew 600s upper C6 limit (waits 30s)", 20001, nodeNow + 600, 30},
+		{"skew 601s (> 600s capped at 30s)", 20001, nodeNow + 601, 30},
+		{"skew 1200s (> 600s capped at 30s)", 20001, nodeNow + 1200, 30},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := futureLimitWait(c.height, c.blockTs, nodeNow); got != c.want {
+				t.Fatalf("futureLimitWait(%d, skew=%ds): got %ds, want %ds",
+					c.height, c.blockTs-nodeNow, got, c.want)
+			}
+		})
+	}
+}
+
+// TestMiner_AdaptiveInheritedTipWait verifies that inheriting a forward-stamped parent/template
+// timestamp (blockTs <= minTs) uses inheritedTipSafetyMargin (5s), while a locally advanced
+// miner clock (blockTs > minTs) preserves futureLimitSafetyMargin (30s).
+func TestMiner_AdaptiveInheritedTipWait(t *testing.T) {
+	core.SetFutureTimestampLimitActivationHeight(20000)
+	defer core.ResetFutureTimestampLimitActivationHeightOverride()
+
+	const nodeNow = int64(1_700_000_000)
+	cases := []struct {
+		name    string
+		blockTs int64
+		minTs   int64
+		want    int64
+	}{
+		// Inherited tip (blockTs == minTs): 5s margin => allowed skew up to 595s without pause, max pause 5s
+		{"inherited skew 570s -> wait 0s", nodeNow + 570, nodeNow + 570, 0},
+		{"inherited skew 595s (C6 5s margin) -> wait 0s", nodeNow + 595, nodeNow + 595, 0},
+		{"inherited skew 596s -> wait 1s", nodeNow + 596, nodeNow + 596, 1},
+		{"inherited skew 599s -> wait 4s", nodeNow + 599, nodeNow + 599, 4},
+		{"inherited skew 600s (+600s sliding tip) -> wait 5s", nodeNow + 600, nodeNow + 600, 5},
+		{"inherited skew 650s (capped at 5s)", nodeNow + 650, nodeNow + 650, 5},
+		// Locally advanced clock (blockTs > minTs): preserves strict 30s safety margin
+		{"local-clock skew 570s -> wait 0s", nodeNow + 570, nodeNow, 0},
+		{"local-clock skew 571s -> wait 1s", nodeNow + 571, nodeNow, 1},
+		{"local-clock skew 595s -> wait 25s", nodeNow + 595, nodeNow, 25},
+		{"local-clock skew 600s -> wait 30s", nodeNow + 600, nodeNow, 30},
+		{"local-clock skew 650s (capped at 30s)", nodeNow + 650, nodeNow, 30},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := futureLimitWaitWithMinTime(20001, c.blockTs, c.minTs, nodeNow); got != c.want {
+				t.Fatalf("futureLimitWaitWithMinTime(20001, blockTs=%d, minTs=%d, now=%d): got %ds, want %ds",
+					c.blockTs, c.minTs, nodeNow, got, c.want)
+			}
+		})
+	}
 }

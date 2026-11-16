@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,15 @@ import (
 
 const (
 	TxTypeStandard = "STANDARD"
+
+	// TxBinaryVersionV1 identifies version 1 of the compact TxBinaryV1 wire serialization format.
+	TxBinaryVersionV1 byte = 0x01
+
+	txFlagIsCoinbase           byte = 1 << 0
+	txFlagHasExtended          byte = 1 << 1
+	txFlagExplicitStandardType byte = 1 << 2
+	txFlagCustomSender         byte = 1 << 3
+	txFlagRawRecipient         byte = 1 << 4
 )
 
 type Transaction struct {
@@ -29,11 +39,12 @@ type Transaction struct {
 	SigAlg    byte   `json:"sig_alg"`    // Signature algorithm identifier (0x01 = ML-DSA-65 FIPS 204) [P2-2]
 
 	// Strategic Roadmap L2 & Smart Contract Extensions
-	Type       string `json:"type,omitempty"`      // Transaction type: STANDARD (default), HTLC_LOCK, HTLC_CLAIM, HTLC_REFUND
-	HashLock   string `json:"hash_lock,omitempty"` // 64 hex chars (SHA-256 hash lock for HTLC/Lightning channel)
-	TimeLock   int64  `json:"time_lock,omitempty"` // Expiration timestamp or block height for refund
-	Preimage   string `json:"preimage,omitempty"`  // Secret preimage revealed to claim HTLC funds
-	cachedSize int32  `json:"-"`                   // Cached serialized byte size [C-28, C-34, v1.0.6]
+	Type             string `json:"type,omitempty"`      // Transaction type: STANDARD (default), HTLC_LOCK, HTLC_CLAIM, HTLC_REFUND
+	HashLock         string `json:"hash_lock,omitempty"` // 64 hex chars (SHA-256 hash lock for HTLC/Lightning channel)
+	TimeLock         int64  `json:"time_lock,omitempty"` // Expiration timestamp or block height for refund
+	Preimage         string `json:"preimage,omitempty"`  // Secret preimage revealed to claim HTLC funds
+	cachedSize       int32  `json:"-"`                   // Cached JSON serialized byte size [C-28, C-34, v1.0.6]
+	cachedBinarySize int32  `json:"-"`                   // Cached TxBinaryV1 serialized byte size
 }
 
 // Hash produces a canonical double-SHA256 (SHA-256d) digest of the transaction data
@@ -145,9 +156,411 @@ func (tx *Transaction) Size() int {
 	return int(sz)
 }
 
-// InvalidateCache resets the cached serialized byte size of the transaction [v1.0.6]
+// InvalidateCache resets the cached serialized byte sizes of the transaction [v1.0.6]
 func (tx *Transaction) InvalidateCache() {
 	atomic.StoreInt32(&tx.cachedSize, 0)
+	atomic.StoreInt32(&tx.cachedBinarySize, 0)
+}
+
+// IsCoinbase reports whether this transaction is a protocol block reward (Coinbase) transaction.
+func (tx *Transaction) IsCoinbase() bool {
+	return tx != nil && strings.EqualFold(tx.Sender, "SYSTEM")
+}
+
+// EffectiveTxSize returns the consensus-effective serialized byte size of tx at blockIndex
+// (or height 0 if omitted). Before BlockBinarySizeActivationHeight it returns legacy JSON tx.Size();
+// from activation onward it returns tx.BinarySize() (falling back to tx.Size() if tx is malformed).
+func EffectiveTxSize(tx *Transaction, blockIndex ...int) int {
+	if tx == nil {
+		return 0
+	}
+	h := 0
+	if len(blockIndex) > 0 {
+		h = blockIndex[0]
+	}
+	if IsBlockBinarySizeActive(h) {
+		if binSz := tx.BinarySize(); binSz > 0 {
+			return binSz
+		}
+	}
+	return tx.Size()
+}
+
+// BinarySize returns the deterministic byte length of the TxBinaryV1 encoding, caching the result thread-safely.
+func (tx *Transaction) BinarySize() int {
+	if cached := atomic.LoadInt32(&tx.cachedBinarySize); cached > 0 {
+		return int(cached)
+	}
+	data, err := tx.MarshalBinary()
+	if err != nil {
+		return 0
+	}
+	sz := int32(len(data))
+	atomic.StoreInt32(&tx.cachedBinarySize, sz)
+	return int(sz)
+}
+
+func appendU16Bytes(buf []byte, b []byte) ([]byte, error) {
+	if len(b) > 0xFFFF {
+		return nil, fmt.Errorf("field exceeds uint16 max length: %d", len(b))
+	}
+	var lenBuf [2]byte
+	binary.LittleEndian.PutUint16(lenBuf[:], uint16(len(b)))
+	buf = append(buf, lenBuf[:]...)
+	return append(buf, b...), nil
+}
+
+func readU16Bytes(data []byte, off *int) ([]byte, error) {
+	if *off+2 > len(data) {
+		return nil, errors.New("unexpected EOF reading length prefix")
+	}
+	n := int(binary.LittleEndian.Uint16(data[*off : *off+2]))
+	*off += 2
+	if *off+n > len(data) {
+		return nil, errors.New("unexpected EOF reading payload bytes")
+	}
+	out := make([]byte, n)
+	copy(out, data[*off:*off+n])
+	*off += n
+	return out, nil
+}
+
+// MarshalBinary encodes the transaction into the compact TxBinaryV1 wire format.
+// Regular ML-DSA-65 transactions serialize in ~5,320 bytes; Coinbase transactions omit
+// ML-DSA-65 keys/signatures and serialize in ~60 bytes.
+func (tx *Transaction) MarshalBinary() ([]byte, error) {
+	if tx == nil {
+		return nil, errors.New("cannot marshal nil transaction")
+	}
+
+	isCoinbase := tx.IsCoinbase()
+	hasExtended := (tx.Type != "" && tx.Type != TxTypeStandard) || tx.HashLock != "" || tx.TimeLock != 0 || tx.Preimage != ""
+
+	var flags byte
+	if isCoinbase {
+		flags |= txFlagIsCoinbase
+	}
+	if hasExtended {
+		flags |= txFlagHasExtended
+	} else if tx.Type == TxTypeStandard {
+		flags |= txFlagExplicitStandardType
+	}
+
+	var pubBytes, sigBytes []byte
+	if !isCoinbase {
+		if len(tx.SenderPub) != 2*pqsig.PublicKeySize {
+			return nil, fmt.Errorf("invalid sender public key hex length: got %d, want %d", len(tx.SenderPub), 2*pqsig.PublicKeySize)
+		}
+		var err error
+		pubBytes, err = hex.DecodeString(tx.SenderPub)
+		if err != nil || len(pubBytes) != pqsig.PublicKeySize {
+			return nil, errors.New("failed to decode ML-DSA-65 sender public key hex bytes")
+		}
+		if tx.SigAlg == 0 {
+			return nil, errors.New("missing sig_alg for non-coinbase transaction")
+		}
+		derivedSender, err := PubToAddress(tx.SigAlg, pubBytes)
+		if err != nil || tx.Sender != derivedSender {
+			flags |= txFlagCustomSender
+		}
+
+		if len(tx.Signature) != 2*pqsig.SignatureSize {
+			return nil, fmt.Errorf("invalid signature hex length: got %d, want %d", len(tx.Signature), 2*pqsig.SignatureSize)
+		}
+		sigBytes, err = hex.DecodeString(tx.Signature)
+		if err != nil || len(sigBytes) != pqsig.SignatureSize {
+			return nil, errors.New("failed to decode ML-DSA-65 signature hex bytes")
+		}
+	} else if tx.Sender != "SYSTEM" {
+		// Preserve exact non-canonical case if any ("system")
+		flags |= txFlagCustomSender
+	}
+
+	var recipPayload []byte
+	if hrp, p, err := Bech32Decode(tx.Recipient); err == nil && hrp == Bech32HRP && len(p) == AddressPayloadLen {
+		recipPayload = p
+	} else {
+		flags |= txFlagRawRecipient
+	}
+
+	estCap := 128
+	if !isCoinbase {
+		estCap = 5400
+	}
+	buf := make([]byte, 0, estCap)
+	buf = append(buf, TxBinaryVersionV1, flags, tx.SigAlg)
+
+	if !isCoinbase {
+		buf = append(buf, pubBytes...)
+	}
+
+	var err error
+	if (flags & txFlagCustomSender) != 0 {
+		buf, err = appendU16Bytes(buf, []byte(tx.Sender))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if (flags & txFlagRawRecipient) == 0 {
+		buf = append(buf, recipPayload...)
+	} else {
+		buf, err = appendU16Bytes(buf, []byte(tx.Recipient))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var numBuf [8]byte
+	binary.LittleEndian.PutUint64(numBuf[:], uint64(tx.Amount))
+	buf = append(buf, numBuf[:]...)
+	binary.LittleEndian.PutUint64(numBuf[:], uint64(tx.Fee))
+	buf = append(buf, numBuf[:]...)
+	binary.LittleEndian.PutUint64(numBuf[:], uint64(tx.Nonce))
+	buf = append(buf, numBuf[:]...)
+
+	if isCoinbase {
+		if tx.Signature == "REWARD_SIG" {
+			buf = append(buf, 0x01)
+		} else {
+			buf = append(buf, 0x02)
+			buf, err = appendU16Bytes(buf, []byte(tx.Signature))
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		buf = append(buf, sigBytes...)
+	}
+
+	if hasExtended {
+		buf, err = appendU16Bytes(buf, []byte(tx.Type))
+		if err != nil {
+			return nil, err
+		}
+		if tx.HashLock == "" {
+			buf = append(buf, 0x00)
+		} else if len(tx.HashLock) == 64 {
+			if rawHL, decErr := hex.DecodeString(tx.HashLock); decErr == nil && hex.EncodeToString(rawHL) == tx.HashLock {
+				buf = append(buf, 0x01)
+				buf = append(buf, rawHL...)
+			} else {
+				buf = append(buf, 0x02)
+				buf, err = appendU16Bytes(buf, []byte(tx.HashLock))
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			buf = append(buf, 0x02)
+			buf, err = appendU16Bytes(buf, []byte(tx.HashLock))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		binary.LittleEndian.PutUint64(numBuf[:], uint64(tx.TimeLock))
+		buf = append(buf, numBuf[:]...)
+
+		if tx.Preimage == "" {
+			buf = append(buf, 0x00)
+		} else if len(tx.Preimage) == 64 {
+			if rawPre, decErr := hex.DecodeString(tx.Preimage); decErr == nil && hex.EncodeToString(rawPre) == tx.Preimage {
+				buf = append(buf, 0x01)
+				buf, err = appendU16Bytes(buf, rawPre)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				buf = append(buf, 0x02)
+				buf, err = appendU16Bytes(buf, []byte(tx.Preimage))
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			buf = append(buf, 0x02)
+			buf, err = appendU16Bytes(buf, []byte(tx.Preimage))
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return buf, nil
+}
+
+// UnmarshalBinary decodes a TxBinaryV1 byte buffer back into the Transaction struct.
+func (tx *Transaction) UnmarshalBinary(data []byte) error {
+	if tx == nil {
+		return errors.New("cannot unmarshal into nil transaction")
+	}
+	if len(data) < 3 {
+		return errors.New("tx binary buffer too short")
+	}
+	ver := data[0]
+	if ver != TxBinaryVersionV1 {
+		return fmt.Errorf("unsupported tx binary version: 0x%02x", ver)
+	}
+	flags := data[1]
+	sigAlg := data[2]
+	off := 3
+
+	isCoinbase := (flags & txFlagIsCoinbase) != 0
+	var decoded Transaction
+	decoded.SigAlg = sigAlg
+
+	var pubBytes []byte
+	if !isCoinbase {
+		if off+pqsig.PublicKeySize > len(data) {
+			return errors.New("unexpected EOF reading sender public key")
+		}
+		pubBytes = data[off : off+pqsig.PublicKeySize]
+		off += pqsig.PublicKeySize
+		decoded.SenderPub = hex.EncodeToString(pubBytes)
+	}
+
+	if (flags & txFlagCustomSender) != 0 {
+		sBytes, err := readU16Bytes(data, &off)
+		if err != nil {
+			return fmt.Errorf("failed reading custom sender: %w", err)
+		}
+		decoded.Sender = string(sBytes)
+	} else if isCoinbase {
+		decoded.Sender = "SYSTEM"
+	} else {
+		addr, err := PubToAddress(sigAlg, pubBytes)
+		if err != nil {
+			return fmt.Errorf("failed deriving sender address: %w", err)
+		}
+		decoded.Sender = addr
+	}
+
+	if (flags & txFlagRawRecipient) == 0 {
+		if off+AddressPayloadLen > len(data) {
+			return errors.New("unexpected EOF reading recipient payload")
+		}
+		addr, err := Bech32Encode(Bech32HRP, data[off:off+AddressPayloadLen])
+		if err != nil {
+			return fmt.Errorf("failed encoding recipient address: %w", err)
+		}
+		decoded.Recipient = addr
+		off += AddressPayloadLen
+	} else {
+		rBytes, err := readU16Bytes(data, &off)
+		if err != nil {
+			return fmt.Errorf("failed reading raw recipient: %w", err)
+		}
+		decoded.Recipient = string(rBytes)
+	}
+
+	if off+24 > len(data) {
+		return errors.New("unexpected EOF reading amount/fee/nonce")
+	}
+	decoded.Amount = int64(binary.LittleEndian.Uint64(data[off : off+8]))
+	off += 8
+	decoded.Fee = int64(binary.LittleEndian.Uint64(data[off : off+8]))
+	off += 8
+	decoded.Nonce = int64(binary.LittleEndian.Uint64(data[off : off+8]))
+	off += 8
+
+	if isCoinbase {
+		if off >= len(data) {
+			return errors.New("unexpected EOF reading coinbase signature mode")
+		}
+		cbMode := data[off]
+		off++
+		switch cbMode {
+		case 0x01:
+			decoded.Signature = "REWARD_SIG"
+		case 0x02:
+			cbSig, err := readU16Bytes(data, &off)
+			if err != nil {
+				return fmt.Errorf("failed reading coinbase signature: %w", err)
+			}
+			decoded.Signature = string(cbSig)
+		default:
+			return fmt.Errorf("invalid coinbase signature mode: 0x%02x", cbMode)
+		}
+	} else {
+		if off+pqsig.SignatureSize > len(data) {
+			return errors.New("unexpected EOF reading ML-DSA-65 signature")
+		}
+		decoded.Signature = hex.EncodeToString(data[off : off+pqsig.SignatureSize])
+		off += pqsig.SignatureSize
+	}
+
+	if (flags & txFlagHasExtended) != 0 {
+		tBytes, err := readU16Bytes(data, &off)
+		if err != nil {
+			return fmt.Errorf("failed reading tx type: %w", err)
+		}
+		decoded.Type = string(tBytes)
+
+		if off >= len(data) {
+			return errors.New("unexpected EOF reading hash_lock mode")
+		}
+		hlMode := data[off]
+		off++
+		switch hlMode {
+		case 0x00:
+			decoded.HashLock = ""
+		case 0x01:
+			if off+32 > len(data) {
+				return errors.New("unexpected EOF reading 32-byte hash_lock")
+			}
+			decoded.HashLock = hex.EncodeToString(data[off : off+32])
+			off += 32
+		case 0x02:
+			hlBytes, err := readU16Bytes(data, &off)
+			if err != nil {
+				return fmt.Errorf("failed reading hash_lock string: %w", err)
+			}
+			decoded.HashLock = string(hlBytes)
+		default:
+			return fmt.Errorf("invalid hash_lock mode: 0x%02x", hlMode)
+		}
+
+		if off+8 > len(data) {
+			return errors.New("unexpected EOF reading time_lock")
+		}
+		decoded.TimeLock = int64(binary.LittleEndian.Uint64(data[off : off+8]))
+		off += 8
+
+		if off >= len(data) {
+			return errors.New("unexpected EOF reading preimage mode")
+		}
+		preMode := data[off]
+		off++
+		switch preMode {
+		case 0x00:
+			decoded.Preimage = ""
+		case 0x01:
+			preBytes, err := readU16Bytes(data, &off)
+			if err != nil {
+				return fmt.Errorf("failed reading binary preimage: %w", err)
+			}
+			decoded.Preimage = hex.EncodeToString(preBytes)
+		case 0x02:
+			preBytes, err := readU16Bytes(data, &off)
+			if err != nil {
+				return fmt.Errorf("failed reading string preimage: %w", err)
+			}
+			decoded.Preimage = string(preBytes)
+		default:
+			return fmt.Errorf("invalid preimage mode: 0x%02x", preMode)
+		}
+	} else if (flags & txFlagExplicitStandardType) != 0 {
+		decoded.Type = TxTypeStandard
+	}
+
+	if off != len(data) {
+		return fmt.Errorf("trailing bytes in tx binary payload: consumed %d of %d", off, len(data))
+	}
+
+	atomic.StoreInt32(&decoded.cachedBinarySize, int32(len(data)))
+	*tx = decoded
+	return nil
 }
 
 // Sign signs the transaction using an ML-DSA-65 PrivateKey [P2-2]
@@ -166,6 +579,7 @@ func (tx *Transaction) Sign(privKey *pqsig.PrivateKey) error {
 	}
 	tx.Signature = hex.EncodeToString(sig)
 	atomic.StoreInt32(&tx.cachedSize, 0)
+	atomic.StoreInt32(&tx.cachedBinarySize, 0)
 	return nil
 }
 

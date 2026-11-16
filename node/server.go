@@ -881,12 +881,17 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 	mux.HandleFunc("/getblocktemplate", func(w http.ResponseWriter, r *http.Request) {
 		bc.Lock.RLock()
 		latest := bc.GetLatestBlockUnsafe()
+		nextHeight := latest.Index + 1
 		maxAllowedTxs := core.MaxBlockTransactions - 1
 		maxAllowedSize := core.MaxBlockSize - 50000
+		if core.IsBlockBinarySizeActive(nextHeight) {
+			maxAllowedSize = core.MaxBlockSize
+		}
 		candidateTxs, totalFees := bc.SelectCandidateTransactionsLocked(maxAllowedTxs, maxAllowedSize)
 
 		minTs := core.MinValidTimestamp(bc.Chain, &latest, latest.Index+1)
-		curTime := time.Now().Unix()
+		realNow := time.Now().Unix()
+		curTime := realNow
 		if curTime < minTs {
 			curTime = minTs
 		}
@@ -894,7 +899,10 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		diff := core.TargetToDifficulty(target)
 		blockReward := bc.GetBlockReward(latest.Index + 1)
 
-		maxTs := curTime + core.MaxFutureTimestampSeconds(latest.Index+1)
+		maxTs := realNow + core.MaxFutureTimestampSeconds(latest.Index+1)
+		if maxTs < curTime {
+			maxTs = curTime
+		}
 		if core.IsASERTActive(latest.Index + 1) {
 			asertLimit := curTime + 15
 			if asertLimit < maxTs {

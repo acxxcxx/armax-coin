@@ -1,17 +1,17 @@
 [center]
 [size=24pt][b]ARMAXCOIN TESTNET (tARMX)[/b][/size]
 [size=14pt][b]Proof-of-Work Layer-1 Blockchain with Post-Quantum Signatures (NIST FIPS 204, ML-DSA-65)[/b][/size]
-[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.10)[/b][/size]
+[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.11)[/b][/size]
 [/center]
 
 [hr]
 
-[b]Active & Scheduled Consensus Hard Fork Notice (v1.0.10 / v1.0.9 / v1.0.8 / v1.0.7):[/b]
+[b]Active & Scheduled Consensus Hard Fork Notice (v1.0.11 / v1.0.10 / v1.0.9 / v1.0.7):[/b]
 [list]
-[*] [b]Block 13,335 Activation (v1.0.10 — Armax-ASERT-AW DAA):[/b] Activates the canonical pure integer [tt]aserti3-2d[/tt] difficulty adjustment algorithm ([tt]ASERTActivationHeight = 13335[/tt]), anchored to Block #13,334 with Anti-Poisoning fallback (DA-03), 4-hour surge cap ([tt]14400s[/tt]), and TEDR Boost ([tt]7200s[/tt]) for rapid 200x hashrate crash recovery.
+[*] [b]Block 20,000 Unified Activation (v1.0.11 — Proposal C6 + [tt]TxBinaryV1[/tt] Binary Block Size Accounting):[/b] Simultaneously activates the C6 10-minute future block timestamp limit ([tt]FutureTimestampLimitActivationHeight = 20000[/tt], paired with [tt]v1.0.11[/tt] adaptive 5s inherited-tip / 30s local-clock miner safety margins) and canonical binary block/transaction size accounting ([tt]BlockBinarySizeActivationHeight = 20000[/tt] on Testnet, [tt]0[/tt] on Mainnet), expanding 2 MB block capacity from 185 to [b]375 regular ML-DSA-65 user transactions[/b] (+1 coinbase = 376 total). Nodes running [tt]v1.0.11[/tt] maintain full P2P and JSON block-size backward compatibility with active [tt]v1.0.10[/tt] peers across blocks #15,967–#19,999 (~5.6 days rolling upgrade window).
+[*] [b]Block 13,335 Activation (v1.0.10 — Armax-ASERT-AW DAA):[/b] Activates the canonical pure integer [tt]aserti3-2d[/tt] difficulty adjustment algorithm ([tt]ASERTActivationHeight = 13335[/tt]), anchored to Block #13,334 with Anti-Poisoning fallback (DA-03), 4-hour surge cap ([tt]14400s[/tt]), TEDR Boost ([tt]7200s[/tt]), and bounded drift cache pruning (`10,000 -> 2,048` entries in `v1.0.11`).
 [*] [b]Block 13,293 Activation (v1.0.9 — Anti-Stall TEDR):[/b] Activates Testnet Anti-Stall Emergency Difficulty Adjustment ([tt]AntiStallActivationHeight = 13293[/tt]). When the elapsed interval since the parent block exceeds [b]1,200 seconds (20 minutes)[/b], candidate blocks qualify for the emergency fallback target ([tt]Difficulty 3[/tt]) under Model 3 Synthetic Target Normalization. Also introduces a [b]5.45x zero-allocation CPU miner optimization[/b] in [tt]armminer[/tt] and embedded node auto-start in Linux/Unix [tt]armgui[/tt].
-[*] [b]Block 20,000 Activation (v1.0.7+ — Proposal C6):[/b] Maximum allowed future block timestamp is tightened from [b]7,200 seconds (2 hours)[/b] down to [b]600 seconds (10 minutes)[/b] ahead of the validating node's local clock. Historical blocks below height 20,000 preserve the legacy 2-hour window.
-[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools [b]MUST upgrade immediately to v1.0.10[/b] prior to Block 13,335 for consensus compatibility and maintain accurate NTP clock synchronization ([tt]timedatectl set-ntp true[/tt] / [tt]w32tm /resync[/tt]).
+[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools should upgrade to [b]v1.0.11 prior to Block 20,000[/b] (rolling upgrade supported on #15,967–#19,999) and maintain accurate NTP clock synchronization ([tt]timedatectl set-ntp true[/tt] / [tt]w32tm /resync[/tt]) ahead of Block 20,000.
 [/list]
 
 [b]Official Links:[/b]
@@ -21,7 +21,8 @@
 [*] [b]Testnet Mining Pool:[/b] [url=https://pool.armax-coin.cloud]https://pool.armax-coin.cloud[/url]
 [*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
 [*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]
-[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.10]refs/tags/v1.0.10[/url]
+[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.11]refs/tags/v1.0.11[/url]
+[*] [b]v1.0.11 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.11.md]docs/releases/v1.0.11.md[/url]
 [*] [b]v1.0.10 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.10.md]docs/releases/v1.0.10.md[/url]
 [*] [b]v1.0.9 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.9.md]docs/releases/v1.0.9.md[/url]
 [*] [b]v1.0.8 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.8.md]docs/releases/v1.0.8.md[/url]
@@ -37,7 +38,7 @@ The Armaxcoin Public Testnet ([tt]ARMX-TESTNET-1[/tt]) is an open, decentralized
 [list]
 [*] Quantum-resistant digital signatures ([b]NIST FIPS 204 ML-DSA-65[/b]) in Layer-1 consensus transactions.
 [*] High-efficiency CPU Proof-of-Work mining ([b]ArmaxHash v2 Stream-Fast[/b]) activated at block #2500 (historical v1 Argon2id active blocks 520..2499).
-[*] Responsive difficulty retargeting via [b]LWMA-1[/b] (N=60 sliding evaluation window).
+[*] Responsive difficulty retargeting via [b]Armax-ASERT-AW[/b] (Anchor-Weighted ASERT [font=monospace]aserti3-2d[/font] with $\tau = 3600\text{s}$ half-life, 14,400s per-block surge cap, and 7,200s TEDR Boost active at block #13,335+; historical Anti-Stall TEDR at #13,293 and LWMA-1 N=60 below #13,335) plus unified Block #20,000 [b]Proposal C6 (+600s)[/b] & [b]TxBinaryV1[/b] (375 user ML-DSA-65 txs / 2 MB block).
 [*] P2P mesh transport encrypted with mandatory [b]TLS 1.3[/b], [b]TOFU certificate pinning[/b], optional SPKI seed fingerprint pinning, and [b]PUSH_BLOCKS[/b] NAT propagation.
 [*] Scalable initial sync with [b]incremental persistence[/b] (O(1) batch write instead of O(N^2) rewrite).
 [/list]
@@ -66,7 +67,7 @@ The Armaxcoin Public Testnet ([tt]ARMX-TESTNET-1[/tt]) is an open, decentralized
 [/list]
 [*] [b]Digital Signatures:[/b] NIST FIPS 204 (ML-DSA-65) Post-Quantum Module-Lattice Signatures (pure, non-hybrid)
 [*] [b]Target Block Time:[/b] 120 seconds (2 minutes)
-[*] [b]Difficulty Retargeting:[/b] Continuous LWMA-1 (N=60 sliding evaluation window)
+[*] [b]Difficulty Retargeting:[/b] Armax-ASERT-AW ([font=monospace]aserti3-2d[/font], $\tau = 3600\text{s}$, active from Block #13,335+; historical LWMA-1 N=60 for Blocks 0..13,334)
 [*] [b]Initial Block Reward:[/b] 60.00000000 tARMX (6,000,000,000 Armoids)
 [*] [b]Halving Interval:[/b] Every 1,050,000 blocks (~4.0 years on 120s cadence)
 [*] [b]Maximum Hard Cap:[/b] 126,000,000 tARMX (12,600,000,000,000,000 Armoids, 8 decimal places)
@@ -94,10 +95,11 @@ Armaxcoin incorporates NIST FIPS 204 (ML-DSA-65) post-quantum signatures for eve
 [*] [b]Public Key Size:[/b] 1,952 bytes (3,904 hex characters)
 [*] [b]Signature Size:[/b] 3,309 bytes (6,618 hex characters)
 [*] [b]Combined Public Key and Signature:[/b] 5,261 raw bytes per transaction (before addresses and transaction fields)
-[*] [b]Total JSON Wire Format:[/b] ~10,761 bytes per transaction
+[*] [b]Legacy JSON Wire Format (Pre-#20,000):[/b] ~10,761 bytes per transaction (185 user transactions per block, ~1.54 TPS)
+[*] [b][tt]TxBinaryV1[/tt] Size Accounting (Block #20,000+ / Mainnet #0+):[/b] ~5,320 bytes per signed ML-DSA-65 transaction (`60` bytes coinbase, `194`-byte canonical header + 4-byte tx framing)
 [*] [b]Block Size Limit:[/b] 2,000,000 bytes (2 MB)
-[*] [b]Measured Block Capacity:[/b] Up to 185 user transactions per block (+1 coinbase transaction = 186 total, ~1,990,513 bytes)
-[*] [b]Transaction Throughput:[/b] ~1.54 transactions per second (at 120s block time)
+[*] [b]Measured Block Capacity (Block #20,000+):[/b] Up to [b]375 user transactions per block[/b] (+1 coinbase = 376 total, 1,996,758 binary bytes)
+[*] [b]Transaction Throughput (Block #20,000+):[/b] ~3.13 transactions per second (at 120s block time)
 [/list]
 
 [hr]
@@ -128,10 +130,10 @@ sha256sum --check --ignore-missing SHA256SUMS
 [*] [b]Verification Commands (Windows PowerShell):[/b]
 [code]
 # Compute SHA-256 hash of archive
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.10-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.11-windows-amd64.zip
 
 # Match against published SHA256SUMS manifest
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.10-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.11-windows-amd64.zip"
 [/code]
 [/list]
 

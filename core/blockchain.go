@@ -740,16 +740,31 @@ func SetMiningDeterministicRaceHookForTesting(hook func(recordErr func(error))) 
 // and returns valid candidate transactions along with their total fees [C-20].
 // Callers must hold bc.Lock (at least RLock).
 func (bc *Blockchain) SelectCandidateTransactionsLocked(maxTxs int, maxBytes int) ([]Transaction, int64) {
+	nextHeight := 1
+	if len(bc.Chain) > 0 {
+		nextHeight = bc.Chain[len(bc.Chain)-1].Index + 1
+	}
+	binaryActive := IsBlockBinarySizeActive(nextHeight)
+
 	if maxTxs <= 0 || maxTxs > MaxBlockTransactions-1 {
 		maxTxs = MaxBlockTransactions - 1
 	}
-	if maxBytes <= 0 || maxBytes > MaxBlockSize-50000 {
-		maxBytes = MaxBlockSize - 50000
+	if binaryActive {
+		if maxBytes <= 0 || maxBytes > MaxBlockSize {
+			maxBytes = MaxBlockSize
+		}
+	} else {
+		if maxBytes <= 0 || maxBytes > MaxBlockSize-50000 {
+			maxBytes = MaxBlockSize - 50000
+		}
 	}
 
 	var validTxs []Transaction
 	var totalFees int64
-	currentSize := 1000 // header and coinbase margin
+	currentSize := 1000 // header and coinbase margin for legacy JSON sizing
+	if binaryActive {
+		currentSize = 258 // 194B canonical header + 64B framed Coinbase tx
+	}
 
 	simBalances := make(map[string]int64)
 	simNonces := make(map[string]int64)
@@ -759,8 +774,12 @@ func (bc *Blockchain) SelectCandidateTransactionsLocked(maxTxs int, maxBytes int
 		if len(validTxs) >= maxTxs {
 			break
 		}
-		txSize := tx.Size()
-		if txSize > MaxTxSize || currentSize+txSize > maxBytes {
+		txSize := EffectiveTxSize(&tx, nextHeight)
+		stepSize := txSize
+		if binaryActive {
+			stepSize = 4 + txSize // 4-byte uint32 LE framing per tx in binary block
+		}
+		if txSize > MaxTxSize || currentSize+stepSize > maxBytes {
 			continue
 		}
 		txHash := tx.HashHex()
@@ -804,7 +823,7 @@ func (bc *Blockchain) SelectCandidateTransactionsLocked(maxTxs int, maxBytes int
 		simBalances[recipHex] += tx.Amount
 
 		seenHashes[txHash] = struct{}{}
-		currentSize += txSize
+		currentSize += stepSize
 		totalFees += tx.Fee
 		validTxs = append(validTxs, tx)
 	}
@@ -855,7 +874,11 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 	target := CalculateExpectedTargetForCandidate(bc.Chain, prevBlock.Index+1, now)
 
 	// 2. Simulate transactions against state overlay to discard invalid ones [C-20]
-	validTxsToMine, totalFees := bc.SelectCandidateTransactionsLocked(MaxBlockTransactions-1, MaxBlockSize-50000)
+	maxCandidateBytes := MaxBlockSize - 50000
+	if IsBlockBinarySizeActive(prevBlock.Index + 1) {
+		maxCandidateBytes = MaxBlockSize
+	}
+	validTxsToMine, totalFees := bc.SelectCandidateTransactionsLocked(MaxBlockTransactions-1, maxCandidateBytes)
 
 	rewardTx := Transaction{
 		Sender:    "SYSTEM",
@@ -1195,11 +1218,11 @@ func (bc *Blockchain) IsChainValid() bool {
 		currentBlock := bc.Chain[i]
 		prevBlock := bc.Chain[i-1]
 
-		if currentBlock.Size() > MaxBlockSize {
+		if EffectiveBlockSize(&currentBlock) > MaxBlockSize {
 			return false
 		}
-		for _, tx := range currentBlock.Transactions {
-			if tx.Size() > MaxTxSize {
+		for idx := range currentBlock.Transactions {
+			if EffectiveTxSize(&currentBlock.Transactions[idx], currentBlock.Index) > MaxTxSize {
 				return false
 			}
 		}

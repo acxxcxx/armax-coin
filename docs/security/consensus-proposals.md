@@ -2,14 +2,14 @@
 
 **Status:**
 - **C1 & C2:** IMPLEMENTED in v1.0.5, active on Testnet since Block #8,000.
-- **C6:** IMPLEMENTED in v1.0.7 code, scheduled to activate on Testnet at **Block #20,000**.
+- **C6:** IMPLEMENTED & SCHEDULED in v1.0.7+ / v1.0.11 code to activate on Testnet at **Block #20,000** (unified at Block `#20,000` with `TxBinaryV1` binary block size accounting `BlockBinarySizeActivationHeight = 20000` and adaptive `5s`/`30s` `armminer` inherited-tip wait margins).
 - **C3:** AUDITED & VERIFIED via `core/c3_audit_test.go` (audit test suite completed; confirms existing preimage bindings and replay defenses without requiring consensus changes).
-- **C4 & C5:** DRAFT SPECIFICATIONS ONLY — Not implemented in active code (C4 proposed for Block 25,000; C5 evaluated as local node policy). Unratified for active consensus deployment.
+- **C4 & C5:** DRAFT SPECIFICATIONS ONLY — Not implemented in active code (C4 drafted as an unratified TTL idea for future evaluation; C5 evaluated as local node policy). Unratified for active consensus deployment.
 
-**v1.0.7 note:** C6 (future-timestamp limit 2 hours -> 10 minutes) activates at testnet block 20,000 and is disabled on mainnet, soak and regtest. C3 was audited without consensus alterations. C4 and C5 remain design drafts.
+**v1.0.11 note:** C6 (future-timestamp limit 2 hours -> 10 minutes) activates at Testnet Block `#20,000` simultaneously with canonical `TxBinaryV1` binary block size accounting (`375` user ML-DSA-65 txs / 2 MB block), while `armminer` applies adaptive `5s`/`30s` safety margins for inherited forward-drifted tips. C6 is disabled by default on pre-launch mainnet, soak, and regtest profiles (`FutureTimestampLimitActivationHeight = -1`). C3 was audited without consensus alterations. C4 and C5 remain design drafts.
 **Target Network:** `ARMX-TESTNET-1` and Future `ARMX-MAINNET-1`  
 **Author:** Armaxcoin Core Security & Consensus Engineering  
-**Date:** Updated November 2026 (v1.0.7 Release Cycle)
+**Date:** Updated November 2026 (v1.0.11 Release Cycle)
 
 ---
 
@@ -30,7 +30,7 @@ In accordance with strict consensus safety protocols, **proposals altering block
 | **C3** | ML-DSA-65 Canonicality & Replay Audit | Cryptographic Verification | Audit Only (No Rule Change) | **Completed in v1.0.7** (`core/c3_audit_test.go`) |
 | **C4** | Transaction Time-To-Live (TTL / Expiry) | Mempool & Transaction Structure | Hard Fork | **Draft Only** (Proposed Block #25,000) |
 | **C5** | Reorg Depth Limit & Maturity Invariant | Fork Resolution & State Replay | Local Policy | **Draft Only** (No fork activation) |
-| **C6** | Tighter Future-Timestamp Limit (10 min) | Header Timestamp Validation | Hard Fork | **Scheduled for Block #20,000** (v1.0.7) |
+| **C6** | Tighter Future-Timestamp Limit (10 min) | Header Timestamp Validation | Hard Fork | **Scheduled & Unified for Block #20,000** (v1.0.7+ / v1.0.11 alongside `TxBinaryV1`) |
 
 ---
 
@@ -225,24 +225,24 @@ const (
 
 ## Proposal C6: Tighter Future-Timestamp Limit
 
-**Status:** Implemented in code (v1.0.7, unreleased). Testnet only.
+**Status:** Implemented & Scheduled for Testnet Block `#20,000` (`v1.0.7+` / `v1.0.11`; unified with `TxBinaryV1` `BlockBinarySizeActivationHeight = 20000`). Testnet only (`FutureTimestampLimitActivationHeight = 20000`; `-1` on pre-launch mainnet, soak, regtest).
 
-- **Rule:** from `FutureTimestampLimitActivationHeight` (testnet 20,000; -1 = disabled on mainnet, soak, regtest) a block timestamp must be at most `FutureTimestampLimitSeconds = 600` ahead of the validating node's clock. Below the height the legacy 7,200 s limit applies (`core/timestamp_rules.go`, `MaxFutureTimestampSeconds`, `validateFutureTimestamp`).
-- **Non-determinism:** the check uses the local wall clock, so it is not a pure function of chain data. Historical replay skips it, so stored blocks never become invalid. Nodes and miners need NTP.
-- **Effect:** the rule only narrows the set of accepted blocks. Un-upgraded nodes still accept every block v1.0.7 accepts, but may accept forward-stamped blocks that upgraded nodes reject, which can split the chain; upgrading before block 20,000 is required.
-- **Miner mitigation (`miner/miner.go`):** corrects a local clock that is ahead of the node and waits (up to 30 s, 30 s safety margin) rather than mining a block that would be rejected.
-- **Tests:** `core/future_timestamp_fork_test.go`, `miner/clock_skew_test.go` (`TestFutureLimitWait`), `node/fork_rehearsal_test.go` (in-process, activation lowered). A multi-process or VPS rehearsal across height 20,000 is still open.
-- **Not part of this fork:** C4, C5 and LWMA changes have no specification and are excluded.
+- **Rule:** From `FutureTimestampLimitActivationHeight = 20000` on `ARMX-TESTNET-1`, a block timestamp must be at most `FutureTimestampLimitSeconds = 600` ahead of the validating node's clock. Below the height the legacy 7,200 s limit applies (`core/timestamp_rules.go`, `MaxFutureTimestampSeconds`, `validateFutureTimestamp`).
+- **Non-determinism:** The check uses the local wall clock, so it is not a pure function of chain data. Historical replay skips it, so stored blocks never become invalid. Nodes and miners need NTP.
+- **Effect & Unified Block 20,000 Upgrade:** C6 narrows accepted future drift, while `BlockBinarySizeActivationHeight = 20000` activates `TxBinaryV1` binary block size accounting at the exact same height (`v1.0.11`). Across Testnet Blocks `#15,967–#19,999`, `v1.0.11` preserves full backward compatibility with `v1.0.10`; all node operators and miners must upgrade to `v1.0.11` before Block `#20,000` (see [`../releases/v1.0.11.md`](../releases/v1.0.11.md) and [`../CONSENSUS_AND_NETWORK.md`](../CONSENSUS_AND_NETWORK.md)).
+- **Miner & Template Mitigation (`v1.0.11` in `miner/miner.go`, `node/server.go`):** Corrects a local clock that is ahead of the node (`ClockSkewWarnSeconds`), clamps `/getblocktemplate` timestamps cleanly below `+600s` (`minTemplateTimestampSafetyBuffer = 60s`), and in `futureLimitWaitWithMinTime` applies an adaptive safety margin: **`inheritedTipSafetyMargin = 5` seconds** when clamping to an inherited forward-drifted parent (`blockTs <= minTs`, preventing honest-miner starvation under repeated `dt = 0` third-party blocks near `+600s`) vs **`futureLimitSafetyMargin = 30` seconds** when local clock skew dominates (`blockTs > minTs`).
+- **Tests:** `core/future_timestamp_fork_test.go`, `miner/clock_skew_test.go` (`TestFutureLimitWait`, `TestFutureLimitWait_AdaptiveInheritedTipMargin`), `node/fork_rehearsal_test.go`, and `node/v1011_compat_test.go` (`TestV1011_UnifiedBlock20000Fork_C6AndBinarySize`, `TestV1011_TemplateTimestampClampedUnderExtendedC6Drift`).
+- **Not part of C6:** C4 and C5 remain unratified design drafts and are excluded.
 
 ---
 
 ## Summary & Roadmap
 
-| Milestone | Target Testnet Height | Target Date | Scope |
+| Milestone | Target Testnet Height | Release / Status | Scope |
 |---|---|---|---|
-| **Phase 1** | Block #8,000 | v1.0.5 | C1 (MTP-55), C2 (Monotonic Time) |
-| **Phase 2** | No activation proposed | Q2 2027 | C3 (ML-DSA-65 Encoding and Cross-Network Replay Audit), C5 (Reorg Depth Policy, local node policy, not height-gated) |
-| **Phase 3** | Block #25,000 | Q3 2027 | C4 (Transaction Expiry Height / TTL) |
-| **v1.0.7** | Block #20,000 (testnet) | Not scheduled | C6 (10-minute future-timestamp limit) |
+| **Phase 1** | Block #8,000 | v1.0.5 (Active) | C1 (MTP-55), C2 (Monotonic Time) |
+| **Phase 2** | No activation proposed | Audited / Draft | C3 (ML-DSA-65 Encoding and Cross-Network Replay Audit), C5 (Reorg Depth Policy, local node policy, draft only) |
+| **Phase 3 (Draft Only)** | Unratified draft (`#25,000` example) | Q3 2027 (Draft Only) | C4 (Transaction Expiry Height / TTL — unimplemented design draft) |
+| **Unified Block 20,000 Fork** | Block #20,000 (testnet) | **Scheduled (`v1.0.7+` / `v1.0.11`)** | **C6** (10-minute future-timestamp limit + adaptive `5s`/`30s` miner margin) + **`TxBinaryV1`** binary block size accounting |
 
 *Document compiled in strict accordance with Armaxcoin Security Audit Guidelines.*

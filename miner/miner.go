@@ -98,11 +98,20 @@ func clockOffsetFromTemplate(localNow, nodeCurTime int64) (offset int64, warning
 // clock drift between template and submission does not get a solved block rejected.
 const futureLimitSafetyMargin = 30
 
-// futureLimitWait returns how many seconds to pause (at most 30) before mining a block whose
-// timestamp is too far ahead of nodeNow for the limit that applies at the given height. Waiting is
-// correct because the timestamp becomes valid once real time catches up; 0 means mine now.
-func futureLimitWait(height int, blockTs, nodeNow int64) int64 {
-	allowed := core.MaxFutureTimestampSeconds(height) - futureLimitSafetyMargin
+// inheritedTipSafetyMargin reduces the wait buffer to 5s when candidateBlock.Timestamp merely
+// inherits parent/template MinTime due to consensus Rule C2 rather than a locally advanced clock.
+const inheritedTipSafetyMargin = 5
+
+// futureLimitWaitWithMinTime returns how many seconds to pause before mining a block whose
+// timestamp is too far ahead of nodeNow for the limit that applies at the given height.
+// When blockTs <= minTs (clock is inheriting prev.Timestamp / tmpl.MinTime), the adaptive margin
+// caps pausing to at most 5s to avoid starvation from sliding +600s third-party tips.
+func futureLimitWaitWithMinTime(height int, blockTs, minTs, nodeNow int64) int64 {
+	margin := int64(futureLimitSafetyMargin)
+	if minTs > 0 && blockTs <= minTs {
+		margin = inheritedTipSafetyMargin
+	}
+	allowed := core.MaxFutureTimestampSeconds(height) - margin
 	if allowed < 0 {
 		allowed = 0
 	}
@@ -110,10 +119,17 @@ func futureLimitWait(height int, blockTs, nodeNow int64) int64 {
 	if over <= 0 {
 		return 0
 	}
-	if over > 30 {
-		over = 30
+	if over > margin {
+		over = margin
 	}
 	return over
+}
+
+// futureLimitWait returns how many seconds to pause (at most 30) before mining a block whose
+// timestamp is too far ahead of nodeNow for the limit that applies at the given height. Waiting is
+// correct because the timestamp becomes valid once real time catches up; 0 means mine now.
+func futureLimitWait(height int, blockTs, nodeNow int64) int64 {
+	return futureLimitWaitWithMinTime(height, blockTs, 0, nodeNow)
 }
 
 func main() {
@@ -593,7 +609,7 @@ func main() {
 		} else {
 			candidateBlock.Timestamp = now
 		}
-		if wait := futureLimitWait(tmpl.Height, candidateBlock.Timestamp, time.Now().Unix()+clockOffset); wait > 0 {
+		if wait := futureLimitWaitWithMinTime(tmpl.Height, candidateBlock.Timestamp, minTs, time.Now().Unix()+clockOffset); wait > 0 {
 			fmt.Printf("[%s] [!] Block #%d would be stamped %ds ahead of the node clock (limit %ds); pausing %ds instead of mining a block the network would reject. Check NTP on this machine and on the node.\n",
 				time.Now().Format("15:04:05"), tmpl.Height, candidateBlock.Timestamp-(time.Now().Unix()+clockOffset), core.MaxFutureTimestampSeconds(tmpl.Height), wait)
 			select {

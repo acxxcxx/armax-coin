@@ -24,6 +24,13 @@ const (
 
 	// asertRadix is 2^16 (65536).
 	asertRadix = int64(1) << asertRBits
+
+	// maxASERTDriftCacheEntries caps the in-memory ASERT drift map to prevent unbounded growth.
+	maxASERTDriftCacheEntries = 10000
+
+	// prunedASERTDriftWindowSize retains the most recent 2048 blocks (well above MaxReorganizationDepth = 720)
+	// whenever globalASERTDriftCache is pruned.
+	prunedASERTDriftWindowSize = 2048
 )
 
 // FloorDiv performs exact mathematical floor division for integers: floor(a / b).
@@ -119,7 +126,10 @@ func ComputeDriftBounds(anchorTarget *big.Int, powLimit *big.Int) (int64, int64)
 // preventing emergency parameters from permanently corrupting the ASERT anchor.
 func ResolveASERTAnchor(chain []Block, activationHeight int) (anchorBlock Block, anchorTarget *big.Int, err error) {
 	anchorIdx := activationHeight - 1
-	if len(chain) <= anchorIdx || anchorIdx < 0 {
+	if anchorIdx < 0 {
+		anchorIdx = 0
+	}
+	if len(chain) <= anchorIdx {
 		return Block{}, nil, fmt.Errorf("insufficient chain depth: have %d blocks, need at least %d", len(chain), anchorIdx+1)
 	}
 
@@ -212,11 +222,26 @@ func ResetASERTDriftCache() {
 	globalASERTDriftCache.drifts = make(map[string]int64)
 }
 
+// GetCachedASERTDrift returns the cached cumulative effective drift for a block hash if present.
+func GetCachedASERTDrift(blockHash string) (int64, bool) {
+	globalASERTDriftCache.mu.RLock()
+	defer globalASERTDriftCache.mu.RUnlock()
+	d, ok := globalASERTDriftCache.drifts[blockHash]
+	return d, ok
+}
+
+// ASERTDriftCacheLen returns the current number of entries stored in globalASERTDriftCache.
+func ASERTDriftCacheLen() int {
+	globalASERTDriftCache.mu.RLock()
+	defer globalASERTDriftCache.mu.RUnlock()
+	return len(globalASERTDriftCache.drifts)
+}
+
 // CalculateArmaxASERTTarget evaluates the Armax-ASERT-AW consensus target for a candidate block
 // at nextIndex with candidateTimestamp on top of chain.
 func CalculateArmaxASERTTarget(chain []Block, nextIndex int, candidateTimestamp int64) *big.Int {
 	actHeight := int(GetASERTActivationHeight())
-	if actHeight <= 0 {
+	if actHeight < 0 || nextIndex <= 0 {
 		return CalculateExpectedTarget(chain, nextIndex)
 	}
 
@@ -226,6 +251,9 @@ func CalculateArmaxASERTTarget(chain []Block, nextIndex int, candidateTimestamp 
 	}
 
 	powLimit := GetArmaxHashPowLimit()
+	if !IsArmaxHashActive(nextIndex) && anchorTarget.Cmp(powLimit) > 0 {
+		powLimit = GetPowLimit()
+	}
 	minDrift, maxDrift := ComputeDriftBounds(anchorTarget, powLimit)
 
 	if len(chain) == 0 {
@@ -233,26 +261,68 @@ func CalculateArmaxASERTTarget(chain []Block, nextIndex int, candidateTimestamp 
 	}
 	tip := chain[len(chain)-1]
 
+	startHeight := actHeight
+	if startHeight < 1 {
+		startHeight = 1
+	}
+
 	var effDrift int64
-	if len(chain) <= actHeight {
+	if len(chain) <= startHeight {
 		effDrift = 0
 	} else {
-		// Check O(1) cache for tip
+		// Check O(1) cache for tip or nearest cached ancestor to minimize cold/reorg rebuilds.
+		startIdx := startHeight
 		globalASERTDriftCache.mu.RLock()
-		cachedDrift, found := globalASERTDriftCache.drifts[tip.Hash]
+		if cachedDrift, found := globalASERTDriftCache.drifts[tip.Hash]; found {
+			effDrift = cachedDrift
+			startIdx = len(chain)
+		} else {
+			for i := len(chain) - 2; i >= startHeight; i-- {
+				if cachedDrift, ok := globalASERTDriftCache.drifts[chain[i].Hash]; ok {
+					effDrift = cachedDrift
+					startIdx = i + 1
+					break
+				}
+			}
+		}
 		globalASERTDriftCache.mu.RUnlock()
 
-		if found {
-			effDrift = cachedDrift
-		} else {
-			// Linear scan from activation anchor
-			effDrift = 0
-			for i := actHeight; i < len(chain); i++ {
+		if startIdx < len(chain) {
+			type driftEntry struct {
+				hash  string
+				drift int64
+			}
+			newEntries := make([]driftEntry, 0, len(chain)-startIdx)
+			for i := startIdx; i < len(chain); i++ {
 				prev := &chain[i-1]
 				curr := &chain[i]
 				effDrift = StepEffectiveDrift(effDrift, prev, curr, minDrift, maxDrift)
+				if curr.Hash != "" {
+					newEntries = append(newEntries, driftEntry{hash: curr.Hash, drift: effDrift})
+				}
+			}
+			if len(newEntries) > 0 {
 				globalASERTDriftCache.mu.Lock()
-				globalASERTDriftCache.drifts[curr.Hash] = effDrift
+				for _, entry := range newEntries {
+					globalASERTDriftCache.drifts[entry.hash] = entry.drift
+				}
+				if len(globalASERTDriftCache.drifts) > maxASERTDriftCacheEntries {
+					keepStart := len(chain) - prunedASERTDriftWindowSize
+					if keepStart < startHeight {
+						keepStart = startHeight
+					}
+					pruned := make(map[string]int64, prunedASERTDriftWindowSize)
+					for i := keepStart; i < len(chain); i++ {
+						h := chain[i].Hash
+						if h == "" {
+							continue
+						}
+						if d, ok := globalASERTDriftCache.drifts[h]; ok {
+							pruned[h] = d
+						}
+					}
+					globalASERTDriftCache.drifts = pruned
+				}
 				globalASERTDriftCache.mu.Unlock()
 			}
 		}

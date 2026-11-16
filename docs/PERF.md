@@ -62,3 +62,20 @@ $$\text{Estimated capacity} = \left\lfloor \frac{2,000,000 - 653}{10,761 + 1} \r
   $$\text{MinRelayFee} \times \lceil\text{txSize} / 1000\rceil = 1,000 \times \lceil 10,761 / 1,000 \rceil = 11,000 \text{ Armoids (0.00011 ARMX)}$$
 - **Block Mining Bandwidth**:
   A full 2 MB block propagation requires ~1.99 MB of network transfer every 2 minutes (~133 Kbps sustained bandwidth), well within consumer and testnet network capabilities.
+
+---
+
+## 6. `TxBinaryV1` Compact Binary Size Accounting (`v1.0.11`, Testnet Block #20,000+ / Mainnet Block #0+)
+
+JSON hexadecimal encoding inflates raw ML-DSA-65 keys and signatures (`5,261` raw bytes $\rightarrow$ `10,522` hex characters) to `10,761` bytes per transaction. Starting in `v1.0.11` at **`BlockBinarySizeActivationHeight = 20000` (`ARMX-TESTNET-1`)** (unified with Rule C6 at Block `#20,000`) and **`0` (`ARMX-MAINNET-1`)**, consensus size validation and block template selection transition from JSON `Size()` to canonical binary **`BinarySize()`** (`EffectiveBlockSize` / `EffectiveTxSize`), while P2P wire transport preserves backward-compatible JSON framing with `v1.0.10` peers.
+
+| Metric | Legacy JSON (`< #20,000` Testnet) | `TxBinaryV1` Binary (`>= #20,000` Testnet / `#0+` Mainnet) |
+|---|---|---|
+| **Standard Signed ML-DSA-65 Tx** | ~`10,761` bytes | ~`5,320` bytes (`+ 4 B` block framing) |
+| **Coinbase Transaction** | ~`200–350` bytes | `60` bytes (`+ 4 B` block framing) |
+| **Block Header + Framing Base** | ~`653` bytes JSON | `194` bytes canonical header (`258 B` w/ coinbase) |
+| **Max User ML-DSA-65 Txs / 2 MB Block** | `185` (+1 coinbase = `186` total) | **`375`** (+1 coinbase = **`376`** total) |
+| **Measured 376-Tx Block Size** | `4,036,307` JSON bytes (`> 2 MB`) | **`1,996,758` binary bytes** (`< 2,000,000` `MaxBlockSize`) |
+| **Effective Network Throughput (120s)** | `~1.54 TPS` | **`~3.13 TPS`** (`2.03x` user-tx capacity) |
+
+*(Verified in `core/transaction_binary_test.go` via `TestBlock_BinarySize_2MBCapacity` and `TestBlockBinarySizeActivation_BackwardCompatibility`.)*

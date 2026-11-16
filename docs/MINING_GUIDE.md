@@ -100,11 +100,11 @@ When connecting to `armcoind`, `armminer` supports three authentication mechanis
   ArmaxHash v2 does not use the Argon2 memory-hard stage. Memory use of the complete miner and node depends on header construction, networking, and other runtime activity; the hash benchmark alone does not measure it.
 - **Thermal Management:**
   Sustained CPU mining can increase power use and temperatures. Monitor the device and use an appropriate thread count and cooling setup.
-- **Clock Synchronization & Block 20,000 Hard Fork (v1.0.7):**
-  From testnet block **20,000**, candidate block timestamps may be at most **600 seconds (10 minutes)** ahead of the validating node's clock (down from the legacy 7,200s window).
-  - In v1.0.7, `armminer` actively aligns candidate block timestamps to the node's reference template time when the local machine clock leads by > 60 seconds (`ClockSkewWarnSeconds`).
-  - If a candidate block timestamp risks exceeding the 10-minute future ceiling, the miner automatically pauses (`futureLimitWait`, up to 30s) and refetches a fresh template rather than submitting an un-minable candidate.
-  - **Operator Requirement:** All miners must maintain active NTP clock synchronization (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Stratum and remote miners stamp with host time and are not compensated by local RPC hooks.
+- **Clock Synchronization & Unified Block 20,000 Hard Fork (`v1.0.7+` / `v1.0.11`):**
+  From testnet block **20,000**, two consensus rules activate simultaneously: Proposal C6 narrows candidate block timestamps to at most **600 seconds (10 minutes)** ahead of the validating node's clock (down from the legacy 7,200s window), and `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`) expands 2 MB block capacity from **185** to **375 user ML-DSA-65 transactions**.
+  - `armminer` aligns candidate block timestamps to the node's reference template time when the local machine clock leads by > 60 seconds (`ClockSkewWarnSeconds`), while `armcoind` (`/getblocktemplate`) clamps candidate timestamps within `maxFutureLimit - minTemplateTimestampSafetyBuffer` (`540s` post-fork).
+  - If a candidate block timestamp approaches the 10-minute future ceiling, `futureLimitWaitWithMinTime` in `miner/miner.go` applies an **adaptive wait margin** (`v1.0.11`): **`inheritedTipSafetyMargin = 5` seconds** when clamping to an inherited forward-drifted parent (`blockTs <= minTs`, preventing honest miner starvation if competing miners mine `dt = 0` tips near `+600s`), vs **`futureLimitSafetyMargin = 30` seconds** when advancing under local clock skew (`blockTs > minTs`).
+  - **Operator Requirement:** All miners must upgrade to `v1.0.11` before Block `#20,000` and maintain active NTP clock synchronization (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Stratum and remote miners stamp with host time and are not compensated by local RPC hooks.
 
 ---
 

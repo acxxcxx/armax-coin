@@ -3,6 +3,7 @@ package core
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // buildTimestampChain builds a synthetic chain whose block i has timestamp ts(i).
@@ -271,4 +272,77 @@ func FuzzMedianTimePastN(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestTimestamp_C2_C6_BoundaryFastBlock tests the edge case where Block #20,000 is mined
+// right at the C6 upper tolerance limit (wallNow + 600s), followed 5 seconds later by a fast
+// Block #20,001 whose template timestamp is clamped to prev.Timestamp (dt = 0) under rule C2.
+func TestTimestamp_C2_C6_BoundaryFastBlock(t *testing.T) {
+	unlock := AcquireNetworkTestLock()
+	defer unlock()
+	SetTimestampRulesActivationHeight(8000)
+	defer ResetTimestampRulesActivationHeightOverride()
+	SetFutureTimestampLimitActivationHeight(20000)
+	defer ResetFutureTimestampLimitActivationHeightOverride()
+
+	realNow := time.Now().Unix()
+
+	// Build a recent history ending at Block #19,999 with timestamps well below realNow.
+	chain := make([]Block, 20000)
+	for i := 0; i < 20000; i++ {
+		chain[i] = Block{
+			Index:     i,
+			Timestamp: realNow - int64(20000-i)*120,
+		}
+	}
+
+	// Block #20,000 mined at exact +600s C6 upper tolerance boundary (using slight -1s margin
+	// against second boundary flip during validateFutureTimestamp's time.Now().Unix() call).
+	block20000 := Block{
+		Index:     20000,
+		Timestamp: realNow + FutureTimestampLimitSeconds - 1,
+	}
+	if err := validateFutureTimestamp(&block20000); err != nil {
+		t.Fatalf("block #20000 at C6 boundary must pass validateFutureTimestamp: %v", err)
+	}
+	if err := validateBlockTimestampRules(&block20000, &chain[19999], chain); err != nil {
+		t.Fatalf("block #20000 must pass C1/C2 rules: %v", err)
+	}
+	chain = append(chain, block20000)
+
+	// 5 seconds later, normal-NTP miner asks for next block template at #20,001.
+	nodeWallClock := realNow + 5
+	minTs := MinValidTimestamp(chain, &chain[20000], 20001)
+	if minTs != block20000.Timestamp {
+		t.Fatalf("expected MinValidTimestamp to clamp to parent timestamp %d, got %d", block20000.Timestamp, minTs)
+	}
+
+	curTime := nodeWallClock
+	if curTime < minTs {
+		curTime = minTs
+	}
+	if curTime != block20000.Timestamp {
+		t.Fatalf("expected template curtime clamped to prev.Timestamp (%d), got %d", block20000.Timestamp, curTime)
+	}
+
+	// Fast Block #20,001 solved with dt = 0 (curr.Timestamp == prev.Timestamp)
+	block20001 := Block{
+		Index:     20001,
+		Timestamp: curTime,
+	}
+	if err := validateBlockTimestampRules(&block20001, &chain[20000], chain); err != nil {
+		t.Fatalf("fast block #20001 with dt=0 must pass C1/C2 rules: %v", err)
+	}
+	if err := validateFutureTimestamp(&block20001); err != nil {
+		t.Fatalf("fast block #20001 with dt=0 must pass C6 validateFutureTimestamp: %v", err)
+	}
+
+	// Verify C2 rejects regressing 1 second below prev.Timestamp even if well above MTP-55
+	regressing20001 := Block{
+		Index:     20001,
+		Timestamp: block20000.Timestamp - 1,
+	}
+	if err := validateBlockTimestampRules(&regressing20001, &chain[20000], chain); err == nil {
+		t.Fatalf("expected C2 to reject block #20001 with timestamp < prev.Timestamp")
+	}
 }

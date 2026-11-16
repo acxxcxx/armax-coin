@@ -242,3 +242,72 @@ func TestSyncBestPeerSkipsUnreachableAndStale(t *testing.T) {
 	}
 }
 
+// TestUnverifiedPeerNotGossiped verifies that unverified peers (LastSeen zero) are not gossiped via GET_PEERS.
+func TestUnverifiedPeerNotGossiped(t *testing.T) {
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
+	dir := t.TempDir()
+
+	ps := NewPeerServer("0", nil, dir, "ARMX-TESTNET-1")
+	seedAddr := "testnet-seed1.armax-coin.cloud:19335"
+	ps.SetSeedPeers([]string{seedAddr})
+
+	verifiedAddr := "203.0.113.10:19335"
+	unverifiedAddr := "203.0.113.20:19335"
+
+	ps.Lock.Lock()
+	ps.triedPeers[verifiedAddr] = &PeerInfo{
+		Address:   verifiedAddr,
+		LastSeen:  time.Now(),
+		Failures:  0,
+		NetworkID: "ARMX-TESTNET-1",
+	}
+	ps.newPeers[unverifiedAddr] = &PeerInfo{
+		Address:   unverifiedAddr,
+		LastSeen:  time.Time{}, // Unverified rumor
+		Failures:  0,
+		NetworkID: "ARMX-TESTNET-1",
+	}
+	ps.rebuildPeersListLocked()
+	ps.Lock.Unlock()
+
+	if !ps.isPeerVerified(seedAddr) {
+		t.Fatalf("expected seed peer to be verified")
+	}
+	if !ps.isPeerVerified(verifiedAddr) {
+		t.Fatalf("expected active handshaked peer to be verified")
+	}
+	if ps.isPeerVerified(unverifiedAddr) {
+		t.Fatalf("expected unverified peer with zero LastSeen to NOT be verified")
+	}
+}
+
+// TestUnverifiedFailedPeerPruned verifies that unverified peers with failures are pruned by PruneStalePeers.
+func TestUnverifiedFailedPeerPruned(t *testing.T) {
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
+	dir := t.TempDir()
+
+	ps := NewPeerServer("0", nil, dir, "ARMX-TESTNET-1")
+	unverifiedFailed := "203.0.113.30:19335"
+
+	ps.Lock.Lock()
+	ps.newPeers[unverifiedFailed] = &PeerInfo{
+		Address:   unverifiedFailed,
+		LastSeen:  time.Time{}, // Zero time
+		Failures:  1,
+		NetworkID: "ARMX-TESTNET-1",
+	}
+	ps.rebuildPeersListLocked()
+	ps.Lock.Unlock()
+
+	pruned, err := ps.PruneStalePeers()
+	if err != nil {
+		t.Fatalf("PruneStalePeers failed: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("expected 1 unverified failed peer pruned, got %d", pruned)
+	}
+	if ps.HasPeer(unverifiedFailed) {
+		t.Fatalf("expected peer %s to be evicted", unverifiedFailed)
+	}
+}
+

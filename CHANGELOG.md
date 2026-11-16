@@ -5,6 +5,24 @@ All notable changes to the **Armaxcoin** (`armax-coin`) project will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.11] - 2026-11-14
+
+### Added
+- **Scheduled Binary Block Size Activation (`core/network.go`, `core/block.go`, `core/transaction.go`, `core/consensus.go`, `core/blockchain.go`, `node/server.go`):**
+  - Added `BlockBinarySizeActivationHeight` to `NetworkProfile` (`20000` on `ARMX-TESTNET-1` unified with `FutureTimestampLimitActivationHeight`, `0` on `ARMX-MAINNET-1`, `-1` on `ARMX-SOAK-1` / `ARMX-REGTEST-1`), alongside `GetBlockBinarySizeActivationHeight`, `SetBlockBinarySizeActivationHeight`, `ResetBlockBinarySizeActivationHeightOverride`, and `IsBlockBinarySizeActive`.
+  - Added height-gated `EffectiveTxSize(&tx, blockIndex...)` and `EffectiveBlockSize(&b)` helpers: prior to Block `#20,000` on Testnet, consensus and `/getblocktemplate` continue enforcing legacy JSON sizes (`181–185` user ML-DSA-65 txs per 2 MB block) for full backward compatibility with active `v1.0.10` nodes across `#15,967`–`#19,999`; from Block `#20,000` onward (activating alongside C6 `+600s`), compact `TxBinaryV1` size accounting expands 2 MB block capacity to **375 regular ML-DSA-65 txs + 1 coinbase = 376 total txs** (`1,996,758` binary bytes vs `4,036,307` JSON bytes).
+- **Adaptive Inherited-Tip Margin in `armminer` (`miner/miner.go`):**
+  - Added `inheritedTipSafetyMargin = 5` seconds and `futureLimitWaitWithMinTime`, keeping a compact `5s` buffer when `blockTs <= minTs` (inherited parent timestamp near the C6 `+600s` boundary at Block `#20,000+`) while preserving the `30s` `futureLimitSafetyMargin` when the miner's local clock advances past `minTs`.
+- **Bounded ASERT Drift Cache Pruning (`core/asert.go`):**
+  - Added `maxASERTDriftCacheEntries = 10000`, `prunedASERTDriftWindowSize = 2048`, and `ASERTDriftCacheLen()` so long-running nodes prune older ASERT drift entries while preserving a `2,048`-block tail above `MaxReorganizationDepth = 720`.
+- **Unit & Compatibility Tests:**
+  - Added `TestBlockBinarySizeActivation_BackwardCompatibility`, `TestMainnetRemainLocked_WithGenesisASERTAndBinaryReady` (`core/transaction_binary_test.go`), `TestASERT_DriftCachePruning` (`core/asert_test.go`), `TestMiner_AdaptiveInheritedTipWait` (`miner/miner_test.go`), and `TestV1011_BackwardCompatibilityAtBlock15967` (`node/v1011_compat_test.go`).
+
+### Changed
+- **Consensus Version Identifier (`core/consensus.go`, GUI, Release Scripts):** Updated canonical `core.Version` to `"1.0.11"`, Unix GUI footer metadata (`gui/main_unix.go`), and release packaging defaults (`scripts/build-release.ps1`, `scripts/verify-release.sh`).
+- **Preimage Binary Encoding Guard (`core/transaction.go`):** Narrowed compact 32-byte preimage hex encoding in `MarshalBinary()` strictly to canonical 64-hex-char SHA-256 preimages (`len(tx.Preimage) == 64`), ensuring oversized non-canonical preimages remain raw-encoded (`0x02`) and trigger `MaxTxSize` validation cleanly.
+- **Rolling Backward Compatibility (`ARMX-TESTNET-1` `#15,967+`):** Preserved existing TLS 1.3 TOFU P2P handshakes, JSON wire payloads (`NEW_BLOCK`, `BLOCK_RANGE_RESPONSE`, `NEW_TX`), and pre-launch `core.MainnetLaunched = false` guard.
+
 ## [v1.0.10] - 2026-11-10
 
 > **Consensus Hard Fork: Pure Integer `aserti3-2d` Difficulty Adjustment at Block #13,335, 4-Hour Surge Cap & TEDR Boost, Immutable Thread-Safe MiningJob Engine, and 3-Tier P2P Clock Skew Policy.** Schedules the Armax-ASERT-AW difficulty adjustment hard fork at Block `#13,335` on Testnet anchored to Block `#13,334` with emergency block poisoning protection (DA-03) and emergency target inversion guard (DA-04). Introduces a 4-hour surge cap (`MaxASERTBlockInterval = 14400s`, ~15.63x drop per block) and TEDR Boost (`7200s` synthetic solve time, ~3.91x relaxation per emergency block) enabling complete 200x hashrate crash recovery in 3 emergency blocks. Fully hardens miner state isolation via immutable `MiningJob` and a 4-point submission gate across TEDR transitions, isolates clock skew via typed `*core.FutureTimestampError` and a 3-tier P2P scoring policy, fixes orphan target validation using true parent branch context (F-03), and exports `"maxtime"` in `/getblocktemplate`.
