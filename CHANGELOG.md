@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounded ASERT Drift Cache Pruning (`core/asert.go`):**
   - Added `maxASERTDriftCacheEntries = 10000`, `prunedASERTDriftWindowSize = 2048`, and `ASERTDriftCacheLen()` so long-running nodes prune older ASERT drift entries while preserving a `2,048`-block tail above `MaxReorganizationDepth = 720`.
 - **Unit & Compatibility Tests:**
-  - Added `TestBlockBinarySizeActivation_BackwardCompatibility`, `TestMainnetRemainLocked_WithGenesisASERTAndBinaryReady` (`core/transaction_binary_test.go`), `TestASERT_DriftCachePruning` (`core/asert_test.go`), `TestMiner_AdaptiveInheritedTipWait` (`miner/miner_test.go`), and `TestV1011_BackwardCompatibilityAtBlock15967` (`node/v1011_compat_test.go`).
+  - Added `TestBlockBinarySizeActivation_BackwardCompatibility`, `TestMainnetRemainLocked_WithGenesisASERTAndBinaryReady` (`core/transaction_binary_test.go`), `TestASERT_DriftCachePruning` (`core/asert_test.go`), `TestMiner_AdaptiveInheritedTipWait` (`miner/miner_test.go`), and `TestV1011_BackwardCompatibilityAtBlock15967` (`node/v1011_block_size_compat_test.go`).
 
 ### Changed
 - **Consensus Version Identifier (`core/consensus.go`, GUI, Release Scripts):** Updated canonical `core.Version` to `"1.0.11"`, Unix GUI footer metadata (`gui/main_unix.go`), and release packaging defaults (`scripts/build-release.ps1`, `scripts/verify-release.sh`).

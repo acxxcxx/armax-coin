@@ -14,6 +14,12 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     }
 }
 
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Push-Location $RepoRoot
+try {
+$BinDir = Join-Path $RepoRoot "bin"
+New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+
 Write-Host "=================================================="
 Write-Host "[*] COMPILING ARMAXCOIN (ARMX) ECOSYSTEM (WINDOWS)"
 Write-Host "=================================================="
@@ -22,24 +28,24 @@ Write-Host "=================================================="
 # Stripping PE symbol tables and DWARF headers triggers Windows Defender ML
 # false-positive heuristics (Trojan:Win32/Wacatac.B!ml / Bearfoos) on Go binaries.
 
-Write-Host "[+] Compiling Daemon Node (armcoind.exe)..."
-go build -o armcoind.exe .
+Write-Host "[+] Compiling Daemon Node (bin/armcoind.exe)..."
+go build -o (Join-Path $BinDir "armcoind.exe") .
 
-Write-Host "[+] Compiling CPU Miner (armminer.exe)..."
-go build -o armminer.exe ./miner
+Write-Host "[+] Compiling CPU Miner (bin/armminer.exe)..."
+go build -o (Join-Path $BinDir "armminer.exe") ./miner
 
-Write-Host "[+] Compiling Transaction Sender CLI (armsend.exe)..."
-go build -o armsend.exe ./cli/armsend
+Write-Host "[+] Compiling Transaction Sender CLI (bin/armsend.exe)..."
+go build -o (Join-Path $BinDir "armsend.exe") ./cli/armsend
 
-Write-Host "[+] Compiling Wallet Manager CLI (armwallet.exe)..."
-go build -o armwallet.exe ./cli/armwallet
+Write-Host "[+] Compiling Wallet Manager CLI (bin/armwallet.exe)..."
+go build -o (Join-Path $BinDir "armwallet.exe") ./cli/armwallet
 
-Write-Host "[+] Compiling Desktop GUI Wallet & Node (armgui.exe)..."
-go build -ldflags="-H=windowsgui" -o armgui.exe ./gui
+Write-Host "[+] Compiling Desktop GUI Wallet & Node (bin/armgui.exe)..."
+go build -ldflags="-H=windowsgui" -o (Join-Path $BinDir "armgui.exe") ./gui
 
 # Optional Authenticode signing if local code-signing certificate is available
 $SigningCert = $null
-$PfxPath = Join-Path $PSScriptRoot "signing_keys\armax-code-signing.pfx"
+$PfxPath = Join-Path $RepoRoot "signing_keys\armax-code-signing.pfx"
 if ((Test-Path $PfxPath) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_PASSWORD)) {
     try {
         $SigningCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
@@ -60,10 +66,11 @@ if (-not $SigningCert) {
 if ($SigningCert) {
     Write-Host "[+] Signing Windows binaries with Authenticode ($($SigningCert.Thumbprint))..." -ForegroundColor Cyan
     foreach ($Exe in @("armcoind.exe", "armminer.exe", "armsend.exe", "armwallet.exe", "armgui.exe")) {
-        if (Test-Path $Exe) {
-            $sig = Set-AuthenticodeSignature -FilePath $Exe -Certificate $SigningCert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com" -ErrorAction SilentlyContinue
+        $ExePath = Join-Path $BinDir $Exe
+        if (Test-Path $ExePath) {
+            $sig = Set-AuthenticodeSignature -FilePath $ExePath -Certificate $SigningCert -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com" -ErrorAction SilentlyContinue
             if (-not $sig -or $sig.Status -eq "UnknownError") {
-                Set-AuthenticodeSignature -FilePath $Exe -Certificate $SigningCert -HashAlgorithm SHA256 | Out-Null
+                Set-AuthenticodeSignature -FilePath $ExePath -Certificate $SigningCert -HashAlgorithm SHA256 | Out-Null
             }
         }
     }
@@ -72,3 +79,6 @@ if ($SigningCert) {
 Write-Host "=================================================="
 Write-Host "[OK] ALL WINDOWS BINARIES SUCCESSFULLY COMPILED!"
 Write-Host "=================================================="
+} finally {
+    Pop-Location
+}

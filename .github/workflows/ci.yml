@@ -29,11 +29,11 @@ jobs:
       - name: Shell Scripts Syntax & LF Line Ending Check [Phase 2]
         run: |
           # 1. Verify bash syntax
-          bash -n build.sh scripts/*.sh
+          bash -n scripts/*.sh
 
           # 2. Reject CRLF in shell scripts
           CRLF_FOUND=0
-          for file in build.sh scripts/*.sh; do
+          for file in scripts/*.sh; do
             if grep -q $'\r' "$file"; then
               echo "Error: CRLF line ending detected in $file" >&2
               CRLF_FOUND=1

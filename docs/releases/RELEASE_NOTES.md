@@ -4,7 +4,7 @@
 
 **Target Release:** Armaxcoin v1.0.11 — Backward-Compatible Consensus Transition, Unified Block `#20,000` Activation (`C6` + `TxBinaryV1`), Adaptive C2/C6 Miner Margin, and Bounded ASERT Cache  
 **Status:** Active Testnet Release (100% rolling P2P & consensus backward compatible with `v1.0.10` on `ARMX-TESTNET-1` across `#15,967`–`#19,999`; `MainnetLaunched = false`)  
-**Detailed Technical Specification:** [docs/releases/v1.0.11.md](docs/releases/v1.0.11.md)
+**Detailed Technical Specification:** [docs/releases/v1.0.11.md](v1.0.11.md)
 
 ### Highlights
 
@@ -27,7 +27,7 @@
 **Status:** OFFICIAL RELEASE  
 **Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
 **Activation Height:** **Testnet Block `#13,335`** (Armax-ASERT-AW Consensus Hard Fork)  
-**Detailed Technical Specification:** [docs/releases/v1.0.10.md](docs/releases/v1.0.10.md)
+**Detailed Technical Specification:** [docs/releases/v1.0.10.md](v1.0.10.md)
 
 ---
 
@@ -55,7 +55,7 @@ Armaxcoin v1.0.10 introduces the **Armax-ASERT-AW (Absolutely-Scheduled Exponent
 **Status:** OFFICIAL RELEASE  
 **Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
 **Activation Height:** **Testnet Block `#13,293`** (Anti-Stall TEDR Consensus Hard Fork)  
-**Detailed Technical Specification:** [docs/releases/v1.0.9.md](docs/releases/v1.0.9.md)
+**Detailed Technical Specification:** [docs/releases/v1.0.9.md](v1.0.9.md)
 
 ---
 
@@ -74,7 +74,7 @@ Armaxcoin v1.0.9 is a consensus resilience, miner performance, and desktop GUI u
 **Target Release:** Armaxcoin v1.0.8 — Desktop GUI Authentication, First-Time Onboarding & Peer Privacy Hardening  
 **Status:** OFFICIAL RELEASE  
 **Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
-**Detailed Technical Specification:** [docs/releases/v1.0.8.md](docs/releases/v1.0.8.md)
+**Detailed Technical Specification:** [docs/releases/v1.0.8.md](v1.0.8.md)
 
 ---
 
@@ -94,10 +94,10 @@ Armaxcoin v1.0.8 resolves critical user-facing issues in the Linux/Unix Desktop 
 **Target Release:** Armaxcoin v1.0.7 — Testnet Consensus Fork & Optimization Release  
 **Status:** OFFICIAL RELEASE (Released 2026-11-05, Tagged `v1.0.7`).  
 **Network:** `ARMX-TESTNET-1` (Public Testnet only). Mainnet is not launched (`core.MainnetLaunched = false`).  
-**Detailed Technical Specification:** [docs/releases/v1.0.7.md](docs/releases/v1.0.7.md)
+**Detailed Technical Specification:** [docs/releases/v1.0.7.md](v1.0.7.md)
 
 > [!NOTE]
-> **Known Issue in v1.0.7:** Linux and ARM GUI wallet creation encounters authentication errors in v1.0.7 due to session token handling. Linux and ARM users should upgrade to [v1.0.8](docs/releases/v1.0.8.md).
+> **Known Issue in v1.0.7:** Linux and ARM GUI wallet creation encounters authentication errors in v1.0.7 due to session token handling. Linux and ARM users should upgrade to [v1.0.8](v1.0.8.md).
 
 ---
 
@@ -124,7 +124,7 @@ Armaxcoin v1.0.7 is a targeted consensus fork and stability release for the publ
 ### Consensus Proposals Status Summary
 - **C1 & C2 (MTP-55 & Monotonicity):** Active since Block 8,000 (v1.0.5).
 - **C6 (10-Minute Future Timestamp Ceiling):** Active at **Block 20,000** (v1.0.7).
-- **C3 (ML-DSA-65 Cryptographic Audit):** Completed in `core/c3_audit_test.go` (audit verification only; no consensus rule change required).
+- **C3 (ML-DSA-65 Cryptographic Audit):** Completed in `core/tx_preimage_canonicality_test.go` (audit verification only; no consensus rule change required).
 - **C4 (Transaction Time-To-Live / TTL) & C5 (Reorg Depth Policy):** Unimplemented design drafts; not active in code and not part of the block 20,000 fork.
 
 ### Operator & Miner Requirements

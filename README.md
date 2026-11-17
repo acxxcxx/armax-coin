@@ -23,7 +23,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 > **DEVELOPER EARLY-MINING PHASE DISCLOSURE & RISKS:**
 > Mainnet is locked and has not launched. Source code preserves the 126,000,000 ARMX maximum supply, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target block time, and existing genesis (60 ARMX genesis coinbase burned to the canonical zero-payload address).
 > Before public mainnet opening, the developers will mine blocks 1 through 16,667. Stop rule: Stop at block 16,667 or when total developer mining rewards reach 1,000,000 ARMX, whichever comes first. Developers will mine all blocks in this range. At 60 ARMX per block, 16,667 blocks yield up to 1,000,020 ARMX (16,666 blocks = 999,960 ARMX; block 16,667 yields 1,000,020 ARMX due to discrete block subsidies, representing ~0.7937% of the total 126,000,000 ARMX supply). Estimated duration is approximately 23.15 days at 120-second target block time; actual duration depends on hashrate and difficulty. Public mainnet opening: TBA. Treasury address will be published before mainnet launch. Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch.
-> **Risks / Criticism:** Early developer mining represents an initial point of centralization and grants the developer team a material fraction (~0.79% of the total 126,000,000 ARMX supply) before the public opening. For the proposed post-launch allocation draft, see [`TREASURY_MIGRATION_PLAN.md`](TREASURY_MIGRATION_PLAN.md) and [`docs/architecture/tokenomics/mining-accumulation-plan.md`](docs/architecture/tokenomics/mining-accumulation-plan.md).
+> **Risks / Criticism:** Early developer mining represents an initial point of centralization and grants the developer team a material fraction (~0.79% of the total 126,000,000 ARMX supply) before the public opening. For the proposed post-launch allocation draft, see [`docs/governance/TREASURY_MIGRATION_PLAN.md`](docs/governance/TREASURY_MIGRATION_PLAN.md) and [`docs/architecture/tokenomics/mining-accumulation-plan.md`](docs/architecture/tokenomics/mining-accumulation-plan.md).
 
 ---
 
@@ -31,10 +31,10 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 | Guide | Description |
 |---|---|
-| **[Release Notes (v1.0.11)](RELEASE_NOTES.md)** | Authoritative v1.0.11 release notes, `v1.0.10` compatibility (`#15,967–#19,999`), unified Block `#20,000` (`C6` + `TxBinaryV1`), adaptive C2/C6 margin, and bounded ASERT cache |
+| **[Release Notes (v1.0.11)](docs/releases/RELEASE_NOTES.md)** | Authoritative v1.0.11 release notes, `v1.0.10` compatibility (`#15,967–#19,999`), unified Block `#20,000` (`C6` + `TxBinaryV1`), adaptive C2/C6 margin, and bounded ASERT cache |
 | **[Changelog](CHANGELOG.md)** | Complete version history adhering to Keep a Changelog |
-| **[Technical Whitepaper](WHITEPAPER.md)** | Core system architecture, post-quantum signatures, consensus rules, and tokenomics |
-| **[Treasury & Miner Migration Plan](TREASURY_MIGRATION_PLAN.md)** | Proposed Mainnet treasury governance, testnet miner compensation, liquidity reserves, and soak criteria |
+| **[Technical Whitepaper](docs/architecture/WHITEPAPER.md)** | Core system architecture, post-quantum signatures, consensus rules, and tokenomics |
+| **[Treasury & Miner Migration Plan](docs/governance/TREASURY_MIGRATION_PLAN.md)** | Proposed Mainnet treasury governance, testnet miner compensation, liquidity reserves, and soak criteria |
 | **[Open Testnet Guide](docs/TESTNET.md)** | Comprehensive testnet guide: syncing, mining, CLI usage, multi-node setups, and troubleshooting |
 | **[CPU Mining Guide](docs/MINING_GUIDE.md)** | Solo mining with `armminer`, thread tuning, memory footprints, and Stratum pool integration |
 | **[Node Operations Guide](docs/NODE_OPERATIONS.md)** | Running full nodes, seed nodes, systemd deployment, TLS 1.3, and TOFU certificate security |
@@ -46,7 +46,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 | **[Architecture Documentation](docs/architecture/README.md)** | Taxonomy of architectural designs, consensus proposals, and implementation boundaries |
 | **[Contribution Guidelines](CONTRIBUTING.md)** | Contributor workflows, coding standards, Conventional Commits, and test requirements |
 | **[Code of Conduct](CODE_OF_CONDUCT.md)** | Community standards and enforcement guidelines |
-| **[Contributors](CONTRIBUTORS.md)** | List of project contributors recognized across Git history |
+| **[Contributors](docs/community/CONTRIBUTORS.md)** | List of project contributors recognized across Git history |
 | **[Development Support](SUPPORT.md)** | Voluntary contribution addresses and developer contact information |
 
 ---

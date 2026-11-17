@@ -27,7 +27,7 @@ This documentation directory contains official user guides, operator manuals, sp
 
 ## 4. Release History
 
-- [Release Notes Overview (v1.0.11)](../RELEASE_NOTES.md): Top-level summary of the active release, `v1.0.10` compatibility, and unified Block #20,000 (`C6` + `TxBinaryV1`) upgrade requirements.
+- [Release Notes Overview (v1.0.11)](releases/RELEASE_NOTES.md): Top-level summary of the active release, `v1.0.10` compatibility, and unified Block #20,000 (`C6` + `TxBinaryV1`) upgrade requirements.
 - [v1.0.11 Release Notes](releases/v1.0.11.md): Unified Block #20,000 Activation (`C6` + `TxBinaryV1` Block Size Accounting), Adaptive C2/C6 Miner Margin, and Bounded ASERT Drift Cache.
 - [v1.0.10 Release Notes](releases/v1.0.10.md): Armax-ASERT-AW DAA Consensus Fork at Block #13,335, Surge Cap & TEDR Boost, Immutable MiningJob & 3-Tier P2P Policy.
 - [v1.0.9 Release Notes](releases/v1.0.9.md): Testnet Anti-Stall TEDR Fork at Block #13,293, 5.45x Zero-Alloc CPU Miner & Linux GUI Auto-Start.

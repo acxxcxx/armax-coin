@@ -170,7 +170,7 @@ Please add a `Signed-off-by:` trailer to each commit message (e.g. `git commit -
 
 ## 8. Contributor Recognition
 
-Contributions to Armaxcoin are entirely voluntary. Contributors are credited in [CONTRIBUTORS.md](CONTRIBUTORS.md) and official release notes.
+Contributions to Armaxcoin are entirely voluntary. Contributors are credited in [docs/community/CONTRIBUTORS.md](docs/community/CONTRIBUTORS.md) and official release notes.
 
 > [!IMPORTANT]
 > **No Financial or Token Compensation:**

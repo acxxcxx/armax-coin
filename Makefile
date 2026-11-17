@@ -1,15 +1,17 @@
-.PHONY: all build clean run test release
+.PHONY: all build clean run test test-race vet release
 
-BINARY_DAEMON=armcoind
-BINARY_MINER=armminer
-BINARY_SEND=armsend
-BINARY_WALLET=armwallet
-BINARY_GUI=armgui
+BIN_DIR=bin
+BINARY_DAEMON=$(BIN_DIR)/armcoind
+BINARY_MINER=$(BIN_DIR)/armminer
+BINARY_SEND=$(BIN_DIR)/armsend
+BINARY_WALLET=$(BIN_DIR)/armwallet
+BINARY_GUI=$(BIN_DIR)/armgui
 
 all: build
 
 build:
-	@echo "Building Armaxcoin binaries..."
+	@echo "Building Armaxcoin binaries into $(BIN_DIR)/..."
+	@mkdir -p $(BIN_DIR)
 	go build -ldflags="-s -w" -o $(BINARY_DAEMON) .
 	go build -ldflags="-s -w" -o $(BINARY_MINER) ./miner
 	go build -ldflags="-s -w" -o $(BINARY_SEND) ./cli/armsend
@@ -21,7 +23,13 @@ run:
 	./$(BINARY_DAEMON) -port 19332 -p2p 19334
 
 test:
-	go run main.go -test
+	go test ./...
+
+test-race:
+	go test -race ./...
+
+vet:
+	go vet ./...
 
 clean:
-	rm -f $(BINARY_DAEMON) $(BINARY_MINER) $(BINARY_SEND) $(BINARY_WALLET) $(BINARY_GUI) *.exe blockchain.db.tmp
+	rm -rf $(BIN_DIR) armcoind armminer armsend armwallet armgui *.exe blockchain.db.tmp

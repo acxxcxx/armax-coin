@@ -74,7 +74,7 @@ To prevent conflation between speculative design iterations and production-ready
 
 ## 3. Directory Navigation
 
-- **[`../../TREASURY_MIGRATION_PLAN.md`](../../TREASURY_MIGRATION_PLAN.md):** Canonical 1,000,000 ARMX treasury, miner migration, and liquidity framework.
+- **[`../governance/TREASURY_MIGRATION_PLAN.md`](../governance/TREASURY_MIGRATION_PLAN.md):** Canonical 1,000,000 ARMX treasury, miner migration, and liquidity framework.
 - **[`tokenomics/mining-accumulation-plan.md`](tokenomics/mining-accumulation-plan.md):** Developer early-mining operational policy (blocks 1..16,667).
 - **[`consensus/mainnet-pow-activation.md`](consensus/mainnet-pow-activation.md):** Proposal and analysis for future Mainnet PoW activation.
 - **[`../CONSENSUS_AND_NETWORK.md`](../CONSENSUS_AND_NETWORK.md):** Canonical Layer-1 mathematical consensus specification.

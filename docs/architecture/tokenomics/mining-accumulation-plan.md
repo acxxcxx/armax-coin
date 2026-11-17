@@ -1,6 +1,6 @@
 # Developer Early-Mining Plan
 
-**Status: OPERATIONAL POLICY — Mainnet is locked and has not launched.**
+**Status: PRELIMINARY DRAFT — NOT FINAL (Aligned with `TREASURY_MIGRATION_PLAN.md`; Mainnet is locked and has not launched.)**
 
 ---
 
@@ -20,7 +20,7 @@ Before public mainnet opening, the developers will mine blocks 1 through 16,667.
 
 Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch.
 
-- The developer early-mining phase is intended to accumulate base inventory for eventual network bootstrapping and ecosystem liquidity. For the proposed allocation framework, see [`TREASURY_MIGRATION_PLAN.md`](../../../TREASURY_MIGRATION_PLAN.md).
+- The developer early-mining phase is intended to accumulate base inventory for eventual network bootstrapping and ecosystem liquidity. For the proposed allocation framework, see [`TREASURY_MIGRATION_PLAN.md`](../../governance/TREASURY_MIGRATION_PLAN.md).
 - No commitments regarding specific decentralized exchanges, lockup structures, or bridging mechanisms are finalized at this time.
 - All bridge and liquidity architectures remain subject to code completion, testing, and independent security auditing prior to any mainnet deployment.
 

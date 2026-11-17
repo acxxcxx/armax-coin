@@ -3,7 +3,7 @@
 **Status:**
 - **C1 & C2:** IMPLEMENTED in v1.0.5, active on Testnet since Block #8,000.
 - **C6:** IMPLEMENTED & SCHEDULED in v1.0.7+ / v1.0.11 code to activate on Testnet at **Block #20,000** (unified at Block `#20,000` with `TxBinaryV1` binary block size accounting `BlockBinarySizeActivationHeight = 20000` and adaptive `5s`/`30s` `armminer` inherited-tip wait margins).
-- **C3:** AUDITED & VERIFIED via `core/c3_audit_test.go` (audit test suite completed; confirms existing preimage bindings and replay defenses without requiring consensus changes).
+- **C3:** AUDITED & VERIFIED via `core/tx_preimage_canonicality_test.go` (audit test suite completed; confirms existing preimage bindings and replay defenses without requiring consensus changes).
 - **C4 & C5:** DRAFT SPECIFICATIONS ONLY — Not implemented in active code (C4 drafted as an unratified TTL idea for future evaluation; C5 evaluated as local node policy). Unratified for active consensus deployment.
 
 **v1.0.11 note:** C6 (future-timestamp limit 2 hours -> 10 minutes) activates at Testnet Block `#20,000` simultaneously with canonical `TxBinaryV1` binary block size accounting (`375` user ML-DSA-65 txs / 2 MB block), while `armminer` applies adaptive `5s`/`30s` safety margins for inherited forward-drifted tips. C6 is disabled by default on pre-launch mainnet, soak, and regtest profiles (`FutureTimestampLimitActivationHeight = -1`). C3 was audited without consensus alterations. C4 and C5 remain design drafts.
@@ -27,7 +27,7 @@ In accordance with strict consensus safety protocols, **proposals altering block
 |---|---|---|---|---|
 | **C1** | Extended MTP Window (MTP-55) | Header Timestamp Validation | Hard Fork | **Active since Block #8,000** (v1.0.5) |
 | **C2** | Nondecreasing Timestamps for LWMA-1 | LWMA Difficulty Calculation | Hard Fork | **Active since Block #8,000** (v1.0.5) |
-| **C3** | ML-DSA-65 Canonicality & Replay Audit | Cryptographic Verification | Audit Only (No Rule Change) | **Completed in v1.0.7** (`core/c3_audit_test.go`) |
+| **C3** | ML-DSA-65 Canonicality & Replay Audit | Cryptographic Verification | Audit Only (No Rule Change) | **Completed in v1.0.7** (`core/tx_preimage_canonicality_test.go`) |
 | **C4** | Transaction Time-To-Live (TTL / Expiry) | Mempool & Transaction Structure | Hard Fork | **Draft Only** (Proposed Block #25,000) |
 | **C5** | Reorg Depth Limit & Maturity Invariant | Fork Resolution & State Replay | Local Policy | **Draft Only** (No fork activation) |
 | **C6** | Tighter Future-Timestamp Limit (10 min) | Header Timestamp Validation | Hard Fork | **Scheduled & Unified for Block #20,000** (v1.0.7+ / v1.0.11 alongside `TxBinaryV1`) |
@@ -142,7 +142,7 @@ Two questions warrant verification; this proposal does not establish either as a
 - Fuzzing of signature byte encodings to ensure alternate polynomial packings are rejected.
 
 ### 6. Audit Execution & Verification (Completed in v1.0.7)
-The audit test suite was implemented in `core/c3_audit_test.go` and verified in v1.0.7:
+The audit test suite was implemented in `core/tx_preimage_canonicality_test.go` and verified in v1.0.7:
 - **Preimage Integrity:** `TestC3_PreimageCommitsEveryStandardField` proves that mutating any standard transaction field (`SigAlg`, `Sender`, `SenderPub`, `Recipient`, `Amount`, `Fee`, `Nonce`) alters the digest and invalidates the ML-DSA-65 signature.
 - **Cross-Network Replay Protection:** `TestC3_CrossNetworkReplayRejected` confirms that transactions signed for `testnet` fail verification when evaluated against `mainnet` or `regtest`.
 - **Malformed Encodings:** `TestC3_MalformedSignatureRejected` confirms that corrupted or malformed signature bytes fail cleanly.
@@ -231,7 +231,7 @@ const (
 - **Non-determinism:** The check uses the local wall clock, so it is not a pure function of chain data. Historical replay skips it, so stored blocks never become invalid. Nodes and miners need NTP.
 - **Effect & Unified Block 20,000 Upgrade:** C6 narrows accepted future drift, while `BlockBinarySizeActivationHeight = 20000` activates `TxBinaryV1` binary block size accounting at the exact same height (`v1.0.11`). Across Testnet Blocks `#15,967–#19,999`, `v1.0.11` preserves full backward compatibility with `v1.0.10`; all node operators and miners must upgrade to `v1.0.11` before Block `#20,000` (see [`../releases/v1.0.11.md`](../releases/v1.0.11.md) and [`../CONSENSUS_AND_NETWORK.md`](../CONSENSUS_AND_NETWORK.md)).
 - **Miner & Template Mitigation (`v1.0.11` in `miner/miner.go`, `node/server.go`):** Corrects a local clock that is ahead of the node (`ClockSkewWarnSeconds`), clamps `/getblocktemplate` timestamps cleanly below `+600s` (`minTemplateTimestampSafetyBuffer = 60s`), and in `futureLimitWaitWithMinTime` applies an adaptive safety margin: **`inheritedTipSafetyMargin = 5` seconds** when clamping to an inherited forward-drifted parent (`blockTs <= minTs`, preventing honest-miner starvation under repeated `dt = 0` third-party blocks near `+600s`) vs **`futureLimitSafetyMargin = 30` seconds** when local clock skew dominates (`blockTs > minTs`).
-- **Tests:** `core/future_timestamp_fork_test.go`, `miner/clock_skew_test.go` (`TestFutureLimitWait`, `TestFutureLimitWait_AdaptiveInheritedTipMargin`), `node/fork_rehearsal_test.go`, and `node/v1011_compat_test.go` (`TestV1011_UnifiedBlock20000Fork_C6AndBinarySize`, `TestV1011_TemplateTimestampClampedUnderExtendedC6Drift`).
+- **Tests:** `core/future_timestamp_fork_test.go`, `miner/clock_skew_test.go` (`TestFutureLimitWait`, `TestFutureLimitWait_AdaptiveInheritedTipMargin`), `node/fork_rehearsal_test.go`, and `node/v1011_block_size_compat_test.go` (`TestV1011_UnifiedBlock20000Fork_C6AndBinarySize`, `TestV1011_TemplateTimestampClampedUnderExtendedC6Drift`).
 - **Not part of C6:** C4 and C5 remain unratified design drafts and are excluded.
 
 ---

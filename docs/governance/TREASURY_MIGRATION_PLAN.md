@@ -8,7 +8,7 @@
 
 > [!IMPORTANT]
 > **CRITICAL DISCLAIMER (PRELIMINARY NON-FINAL PLAN):**  
-> This document is a **preliminary, non-final strategic plan** subject to revision, ongoing evaluation, and formal governance ratification. The public testnet operational timeline is **open-ended (`TBA` / undetermined)** and depends on the completion of all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](docs/MAINNET_READINESS.md). Testnet coins (`tARMX`) possess **zero monetary value**, no market price, and no promise or guarantee of conversion, trading, or monetary worth. This document is **not an investment offer, not a promise of financial return, and not financial advice**. All figures, exclusion lists, conversion ratios, and execution schedules become effective only upon formal governance ratification and official public announcement.
+> This document is a **preliminary, non-final strategic plan** subject to revision, ongoing evaluation, and formal governance ratification. The public testnet operational timeline is **open-ended (`TBA` / undetermined)** and depends on the completion of all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md). Testnet coins (`tARMX`) possess **zero monetary value**, no market price, and no promise or guarantee of conversion, trading, or monetary worth. This document is **not an investment offer, not a promise of financial return, and not financial advice**. All figures, exclusion lists, conversion ratios, and execution schedules become effective only upon formal governance ratification and official public announcement.
 
 ---
 

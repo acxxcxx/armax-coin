@@ -16,35 +16,7 @@ Armaxcoin implements post-quantum cryptography conforming to NIST FIPS 204 (ML-D
 
 ## 2. Compiling from Source
 
-To build deterministic, stripped binaries matching official releases:
-
-```bash
-# Clone the repository
-git clone https://github.com/acxxcxx/armax-coin.git
-cd armax-coin
-
-# Ensure Go 1.27+ is active
-go version
-
-# Compile core node daemon
-go build -trimpath -ldflags="-s -w -buildid=" -o armcoind main.go
-
-# Compile CPU miner client
-go build -trimpath -ldflags="-s -w -buildid=" -o armminer miner/miner.go
-
-# Compile CLI wallet tool
-go build -trimpath -ldflags="-s -w -buildid=" -o armwallet ./cli/armwallet
-
-# Compile CLI transaction sender
-go build -trimpath -ldflags="-s -w -buildid=" -o armsend ./cli/armsend
-
-# (Windows AMD64 only) Compile desktop GUI wallet
-# Note: uses deliberate Windows resource object gui/rsrc_windows_amd64.syso (manifest & icon).
-# To re-generate rsrc_windows_amd64.syso from source:
-#   go install github.com/akavel/rsrc@latest
-#   cd gui && rsrc -manifest armgui.exe.manifest -ico armax_logo.ico -arch amd64 -o rsrc_windows_amd64.syso
-go build -trimpath -ldflags="-s -w -buildid=" -o armgui.exe ./gui
-```
+All local and cross-platform build commands (`linux/amd64`, `linux/arm64`, `windows/amd64`, `darwin/arm64`) are maintained in a single canonical guide: see **[Build & Compilation Guide](BUILD.md)** (or run `./scripts/build.sh` / `.\scripts\build.ps1`).
 
 ---
 
@@ -190,7 +162,7 @@ This checklist defines the formal verification gates required before tagging, pa
 
 ### 6.4 Documentation & Public Information Verification
 - [x] **Canonical Module & Naming:** `go.mod` declares `module github.com/acxxcxx/armax-coin` and documentation consistently refers to `armax-coin`.
-- [x] **Documentation Set Present & Synchronized:** `README.md`, `WHITEPAPER.md`, `SECURITY.md`, `CHANGELOG.md`, `RELEASE_NOTES.md`, `TREASURY_MIGRATION_PLAN.md`, `docs/TESTNET.md`, `docs/MINING_GUIDE.md`, `docs/NODE_OPERATIONS.md`, and `docs/CONSENSUS_AND_NETWORK.md`.
+- [x] **Documentation Set Present & Synchronized:** `README.md`, `docs/architecture/WHITEPAPER.md`, `SECURITY.md`, `CHANGELOG.md`, `docs/releases/RELEASE_NOTES.md`, `docs/governance/TREASURY_MIGRATION_PLAN.md`, `docs/TESTNET.md`, `docs/MINING_GUIDE.md`, `docs/NODE_OPERATIONS.md`, and `docs/CONSENSUS_AND_NETWORK.md`.
 - [x] **Experimental Disclaimers:** Visible notices that testnet coins (`tARMX`) have no economic value and mainnet remains locked.
 
 ### 6.5 Seed Infrastructure & Live P2P Connectivity

@@ -26,8 +26,8 @@ To build all 5 binaries locally:
 ### On Linux / macOS:
 ```bash
 # Make build script executable and compile
-chmod +x build.sh
-./build.sh
+chmod +x scripts/build.sh
+./scripts/build.sh
 ```
 
 Or compile individual binaries manually:
@@ -51,7 +51,7 @@ go build -trimpath -ldflags="-H=windowsgui" -o armgui.exe ./gui
 
 ### On Windows (PowerShell):
 ```powershell
-.\build.ps1
+.\scripts\build.ps1
 ```
 
 ---

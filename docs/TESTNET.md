@@ -71,7 +71,7 @@ go build -o armminer miner/miner.go
 
 On Windows (PowerShell):
 ```powershell
-.\build.ps1
+.\scripts\build.ps1
 ```
 
 ### Step 2: Start the Testnet Node (`armcoind`)

@@ -53,6 +53,7 @@ blockchain.db.invalid-*
 !gui/rsrc_windows_amd64.syso
 
 # Release artifacts & staging
+/bin/
 release_assets/
 dist/
 
