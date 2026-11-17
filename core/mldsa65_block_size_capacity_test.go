@@ -12,6 +12,7 @@ import (
 
 // TestL1_5_RealSizes measures exact JSON sizes for ML-DSA-65 transactions and blocks [L1-5]
 func TestL1_5_RealSizes(t *testing.T) {
+	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
 	_ = SetNetwork("mainnet")
 

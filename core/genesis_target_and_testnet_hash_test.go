@@ -50,6 +50,7 @@ func TestL1_6_CalculateGenesisTarget(t *testing.T) {
 // TestL1_6_TestnetGenesisHashContent verifies that Testnet Genesis hash is strictly derived
 // from its contents and satisfies TestnetGenesisTargetHex [L1-6]
 func TestL1_6_TestnetGenesisHashContent(t *testing.T) {
+	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
 	if err := SetNetwork("testnet"); err != nil {
 		t.Fatalf("SetNetwork(testnet) failed: %v", err)
@@ -107,6 +108,7 @@ func TestL1_6_TestnetGenesisHashContent(t *testing.T) {
 
 // TestL1_6_MainnetGenesisUntouched verifies that Mainnet Genesis is 100% UNCHANGED [L1-6]
 func TestL1_6_MainnetGenesisUntouched(t *testing.T) {
+	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
 	if err := SetNetwork("mainnet"); err != nil {
 		t.Fatalf("SetNetwork(mainnet) failed: %v", err)

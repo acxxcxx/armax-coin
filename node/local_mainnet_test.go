@@ -3,9 +3,15 @@
 package node
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -542,10 +548,31 @@ func TestLocalMainnet_OutboundDialingExhaustiveValidation(t *testing.T) {
 	}
 
 	// 4. Actual outbound connection test: verify dialer connects directly to loopback IP
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	rawLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to start local test listener: %v", err)
 	}
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		rawLn.Close()
+		t.Fatalf("Failed to generate ephemeral key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:     []string{"localhost"},
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &privKey.PublicKey, privKey)
+	if err != nil {
+		rawLn.Close()
+		t.Fatalf("Failed to create ephemeral cert: %v", err)
+	}
+	srvTLS := &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{derBytes}, PrivateKey: privKey}},
+	}
+	ln := tls.NewListener(rawLn, srvTLS)
 	defer ln.Close()
 
 	_, port, err := net.SplitHostPort(ln.Addr().String())
@@ -553,16 +580,25 @@ func TestLocalMainnet_OutboundDialingExhaustiveValidation(t *testing.T) {
 		t.Fatalf("SplitHostPort failed on listener addr: %v", err)
 	}
 
-	accepted := make(chan net.Conn, 1)
+	accepted := make(chan net.Conn, 2)
 	go func() {
-		c, err := ln.Accept()
-		if err == nil {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// Complete TLS handshake if clientTLSConf is active from earlier tests
+			if clientTLSConf != nil {
+				if tc, ok := c.(*tls.Conn); ok {
+					_ = tc.Handshake()
+				}
+			}
 			accepted <- c
 		}
 	}()
 
-	// Dial using "localhost:<port>" in local mainnet mode
-	clientConn, _, err := DialEncryptedWithFallbackForNetwork("ARMX-MAINNET-1", "localhost:"+port, 2*time.Second, true)
+	// Dial using "localhost:<port>" in local mainnet mode (allow 5s for IPv6 ::1 -> 127.0.0.1 fallback on Windows)
+	clientConn, _, err := DialEncryptedWithFallbackForNetwork("ARMX-MAINNET-1", "localhost:"+port, 5*time.Second, true)
 	if err != nil {
 		t.Fatalf("Failed to dial local listener via localhost:%s in local mainnet mode: %v", port, err)
 	}

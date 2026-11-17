@@ -3,7 +3,6 @@
 package core
 
 import (
-	"os"
 	"testing"
 )
 
@@ -19,23 +18,8 @@ func TestArmaxHashActivationEnvOverrideLockedToRegtest(t *testing.T) {
 	ResetArmaxHashV2ActivationHeightOverride()
 
 	// Set environment variables to non-standard values
-	origV1 := os.Getenv("ARMX_ARMAXHASH_HEIGHT")
-	origV2 := os.Getenv("ARMX_ARMAXHASH_V2_HEIGHT")
-	t.Cleanup(func() {
-		if origV1 != "" {
-			_ = os.Setenv("ARMX_ARMAXHASH_HEIGHT", origV1)
-		} else {
-			_ = os.Unsetenv("ARMX_ARMAXHASH_HEIGHT")
-		}
-		if origV2 != "" {
-			_ = os.Setenv("ARMX_ARMAXHASH_V2_HEIGHT", origV2)
-		} else {
-			_ = os.Unsetenv("ARMX_ARMAXHASH_V2_HEIGHT")
-		}
-	})
-
-	_ = os.Setenv("ARMX_ARMAXHASH_HEIGHT", "123")
-	_ = os.Setenv("ARMX_ARMAXHASH_V2_HEIGHT", "456")
+	t.Setenv("ARMX_ARMAXHASH_HEIGHT", "123")
+	t.Setenv("ARMX_ARMAXHASH_V2_HEIGHT", "456")
 
 	// 1. Verify Testnet ignores env vars
 	SetNetworkForTesting(true)

@@ -12,6 +12,7 @@ import (
 // 2. Tx signed in testnet is rejected by Verify() in mainnet and vice-versa
 // 3. SetNetwork cannot be called twice in non-testing mode
 func TestL1_2_DynamicNetworkID_TxCrossNetworkRejection(t *testing.T) {
+	LockNetworkForTesting(t)
 	// Enable test override mode
 	SetNetworkForTesting(true)
 	defer SetNetworkForTesting(true)

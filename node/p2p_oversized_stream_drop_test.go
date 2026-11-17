@@ -21,6 +21,7 @@ func TestN13_BoundedMessageReaderDropsOversizedStream(t *testing.T) {
 	port := getFreePort(t)
 	ps := NewPeerServer(port, bc)
 	go ps.StartServer()
+	defer ps.Stop()
 
 	time.Sleep(100 * time.Millisecond)
 

@@ -14,11 +14,11 @@ func TestL2_1_TestIsolation(t *testing.T) {
 		t.Fatalf("Found stray armax.cookie in working directory! Tests must isolate file writes.")
 	}
 
-	// 2. Verify root and node directories have no stray database files
+	// 2. Verify node/ and repo root directories have no stray database or cookie files
 	candidates := []string{
 		"blockchain.db",
-		filepath.Join("node", "armax.cookie"),
-		filepath.Join("node", "blockchain.db"),
+		filepath.Join("..", "armax.cookie"),
+		filepath.Join("..", "blockchain.db"),
 	}
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err == nil {

@@ -220,7 +220,7 @@ func TestP1_NoLegacyPortsInGoCode(t *testing.T) {
 		}
 
 		// Skip this test file itself so it doesn't self-flag
-		if strings.HasSuffix(path, "p1_test.go") {
+		if strings.HasSuffix(path, "node_profile_ports_and_legacy_scan_test.go") {
 			return nil
 		}
 
