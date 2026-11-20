@@ -1092,7 +1092,6 @@ minedOK:
 func TestCPUMiner_WaitingForSyncAutoStartAndLegacyV1011Fallback(t *testing.T) {
 	origRPC := rpcURL
 	origAddr := activeAddress
-	origNet := activeNetwork
 	origCoreNet := core.ActiveNetwork
 	origSync := getCachedSyncStatus()
 	origPeers := atomic.LoadInt64(&lastPeersActive)
@@ -1101,7 +1100,6 @@ func TestCPUMiner_WaitingForSyncAutoStartAndLegacyV1011Fallback(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		rpcURL = origRPC
 		activeAddress = origAddr
-		activeNetwork = origNet
 		core.ActiveNetwork = origCoreNet
 		setCachedSyncStatus(origSync)
 		atomic.StoreInt64(&lastPeersActive, origPeers)
@@ -1170,7 +1168,6 @@ func TestCPUMiner_WaitingForSyncAutoStartAndLegacyV1011Fallback(t *testing.T) {
 	defer srv.Close()
 
 	rpcURL = srv.URL
-	activeNetwork = core.TestnetProfile
 	core.ActiveNetwork = core.TestnetProfile
 	activeAddress = "armx1cdj242tzwrp5uutzyktj0p4jsyl0s06ahxfk3xzv0vqgnn438e7s2ps308"
 
@@ -1299,7 +1296,6 @@ func TestCPUMiner_WaitingForSyncAutoStartAndLegacyV1011Fallback(t *testing.T) {
 	}
 
 	// (d) Legacy v1.0.11 /stats fallback (no "synced" field): testnet requires peers_active > 0, regtest exempt.
-	activeNetwork = core.TestnetProfile
 	core.ActiveNetwork = core.TestnetProfile
 	st0 := computeLegacyV1011SyncStatus(100, 0)
 	if st0.Synced || !st0.Syncing {
@@ -1310,7 +1306,6 @@ func TestCPUMiner_WaitingForSyncAutoStartAndLegacyV1011Fallback(t *testing.T) {
 		t.Fatalf("legacy v1.0.11 fallback on testnet with >=1 peers must unlock, got: %+v", st1)
 	}
 
-	activeNetwork = core.RegtestProfile
 	core.ActiveNetwork = core.RegtestProfile
 	stReg := computeLegacyV1011SyncStatus(0, 0)
 	if !stReg.Synced || stReg.Syncing {
