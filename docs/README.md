@@ -5,8 +5,8 @@ This documentation directory contains official user guides, operator manuals, sp
 ## 1. Getting Started & User Guides
 
 - [Project Overview & Quickstart](../README.md): High-level introduction, key features, and architecture.
-- [Public Testnet Guide](TESTNET.md): Comprehensive node setup, building from source, wallet management, transactions, and mining.
-- [Mining Guide](MINING_GUIDE.md): Solo mining, multi-threaded CPU miner configuration, Stratum pool setup, Block #20,000 miner margins, and Armax-ASERT-AW / LWMA-1 difficulty details.
+- [Public Testnet Guide](TESTNET.md): Comprehensive node setup, 1-click Desktop GUI v2 (`armgui`), building from source, wallet management, transactions, and mining.
+- [Mining Guide](MINING_GUIDE.md): Solo CPU mining, thread tuning, Stratum TCP/TLS setup, and Armax-ASERT-AW difficulty details.
 - [Build and Compilation Guide](BUILD.md): Step-by-step toolchain and cross-compilation instructions.
 - [Development Support](../SUPPORT.md): Official developer contact and voluntary contribution channels.
 
@@ -27,7 +27,8 @@ This documentation directory contains official user guides, operator manuals, sp
 
 ## 4. Release History
 
-- [Release Notes Overview (v1.0.11)](releases/RELEASE_NOTES.md): Top-level summary of the active release, `v1.0.10` compatibility, and unified Block #20,000 (`C6` + `TxBinaryV1`) upgrade requirements.
+- [Release Notes Overview (v1.0.12)](releases/RELEASE_NOTES.md): Top-level summary of the active Testnet release, Desktop Wallet GUI v2 (`"Waiting for Sync"`, WebView2, System Tray, Multi-Wallet), Node Sync Gate (`HTTP 503`), integrated CPU multi-thread optimization, Stratum TLS, additive Node RPC, and Go `1.27.4`.
+- [v1.0.12 Release Notes](releases/v1.0.12.md): Desktop Wallet GUI v2 (`armgui` `"Waiting for Sync"` & System Tray), Node Sync Gate (`HTTP 503`), integrated multi-thread CPU optimization (`armaxhash.V2JobHasher`, padded worker slots), Stratum TLS, additive Node RPC, and Go `1.27.4`.
 - [v1.0.11 Release Notes](releases/v1.0.11.md): Unified Block #20,000 Activation (`C6` + `TxBinaryV1` Block Size Accounting), Adaptive C2/C6 Miner Margin, and Bounded ASERT Drift Cache.
 - [v1.0.10 Release Notes](releases/v1.0.10.md): Armax-ASERT-AW DAA Consensus Fork at Block #13,335, Surge Cap & TEDR Boost, Immutable MiningJob & 3-Tier P2P Policy.
 - [v1.0.9 Release Notes](releases/v1.0.9.md): Testnet Anti-Stall TEDR Fork at Block #13,293, 5.45x Zero-Alloc CPU Miner & Linux GUI Auto-Start.

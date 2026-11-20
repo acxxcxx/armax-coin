@@ -1,5 +1,25 @@
 # Armaxcoin Release Notes
 
+## Armaxcoin v1.0.12
+
+**Target Release:** Armaxcoin v1.0.12 — Desktop Wallet GUI v2 (`"Waiting for Sync"`, WebView2 & System Tray), Node Sync Gate (`HTTP 503`), Integrated Multi-Thread CPU Optimization, Stratum TLS, and Go `1.27.4`  
+**Status:** Active Testnet Release (100% rolling P2P & consensus backward compatible with `v1.0.11` on `ARMX-TESTNET-1`; zero hard forks or activation-height changes; `MainnetLaunched = false` with Mainnet provisional and subject to change prior to launch freeze)  
+**Detailed Technical Specification:** [docs/releases/v1.0.12.md](v1.0.12.md)
+
+### Highlights
+
+1. **Desktop Wallet GUI v2 (`armgui`), `"Waiting for Sync"` Mode & Windows System Tray (`gui/`):**
+   - Pure-Go (`CGO_ENABLED=0`) Windows WebView2 window (`github.com/wailsapp/go-webview2 v1.0.23`), Light/Dark `armax_explorer` theme, 1-click embedded node startup, Multi-Wallet switcher, local `bbolt` paged history cache, accurate ML-DSA-65 fee estimator, WSL `~/.config/ArmaxCoin` fallback + browser interop, and startup lock / 15-minute idle auto-lock.
+   - Added **`"Waiting for Sync"`** CPU miner queue (`#minerSyncBanner`, `WAITING FOR SYNC` badge, automatic mining transition once `/stats` reports `synced: true`, `v1.0.11` `peers_active` fallback compatibility, clean `POST /mine/stop` cancellation, and physical-core `optimal_threads` default) alongside Windows **Minimize-to-System-Tray** (`Shell_NotifyIconW`).
+2. **Node Sync Gate (`HTTP 503`), Integrated Multi-Thread CPU Optimization & Stratum TLS (`armaxhash/`, `core/`, `miner/`, `node/`):**
+   - Enforced `HTTP 503 Service Unavailable` sync gating on `POST /mine` and `GET /getblocktemplate` (`PeerServer.GetSyncStatus()`) with additive `/stats` sync telemetry, deterministic `POST /mine/stop` cancel-drain handoff, and orphan target slice correction (`AddOrphanBlock` -> `Chain[:b.Index]`).
+   - Integrated `armaxhash.V2JobHasher` inline prefix caching (`0 B/op`, `0 allocs/op`, bit-identical with `HashV2`), 64-byte padded worker slots (`_ [56]byte`), 1s Sliding-EMA smoothing, sequential positive `1<<36` nonce partitions (`< 2^53` JSON safe), lock-free `atomic.Pointer[stratumTargetSnap]`, `HTTP 503` sync auto-wait, physical-core default thread selection, and TLS 1.2+ Stratum (`stratum+ssl://` / `stratum+tls://`).
+   - Maintained strict Mainnet launch lock (`core.MainnetLaunched = false`) with `ARMX-MAINNET-1` updated solely as a **provisional pre-launch staging configuration** for isolated `-local-mainnet` testing (non-final and subject to change prior to Mainnet launch freeze).
+3. **Go `1.27.4` Security Toolchain & Build Pipeline (`go.mod`, `.github/workflows/release.yml`, `scripts/*`):**
+   - Updated to `toolchain go1.27.4` (`GO-2026-6859`), pruned unused `github.com/lxn/walk`, updated `gui/armgui.exe.manifest` + `.syso` to `1.0.12.0`, and fixed `./miner` & `armgui` release packaging/verification scripts.
+
+---
+
 ## Armaxcoin v1.0.11
 
 **Target Release:** Armaxcoin v1.0.11 — Backward-Compatible Consensus Transition, Unified Block `#20,000` Activation (`C6` + `TxBinaryV1`), Adaptive C2/C6 Miner Margin, and Bounded ASERT Cache  

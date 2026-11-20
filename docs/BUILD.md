@@ -6,7 +6,7 @@ This document describes the compilation process, toolchain requirements, cross-c
 
 ## 1. Prerequisites
 
-- **Go Toolchain:** Go `1.27` or higher is strictly required; use `1.27.3` or newer (fixes `GO-2026-6809`, `crypto/x509`).
+- **Go Toolchain:** Go `1.27` or higher is required; use **`1.27.4`** or newer (remediates `GO-2026-6809` and `GO-2026-6859`). `go.mod` pins `go 1.27.0` and `toolchain go1.27.4`.
   - Reason: Armaxcoin relies on the Go standard library package `crypto/mldsa` (implementing NIST FIPS 204 Module-Lattice-Based Digital Signature Algorithm ML-DSA-65).
   - Check your compiler version:
     ```bash
@@ -35,8 +35,8 @@ Or compile individual binaries manually:
 # 1. Main Node Daemon (armcoind)
 go build -trimpath -o armcoind ./main.go
 
-# 2. CPU Miner (armminer)
-go build -trimpath -o armminer ./miner
+# 2. CPU Miner (armminer — pure Go CGO_ENABLED=0)
+CGO_ENABLED=0 go build -trimpath -o armminer ./miner
 
 # 3. CLI Transaction Sender (armsend)
 go build -trimpath -o armsend ./cli/armsend
@@ -44,21 +44,25 @@ go build -trimpath -o armsend ./cli/armsend
 # 4. CLI Wallet Manager (armwallet)
 go build -trimpath -o armwallet ./cli/armwallet
 
-# 5. Desktop GUI Wallet & Explorer (armgui)
-# Note: MUST compile package directory './gui' to embed rsrc_windows_amd64.syso (Common Controls 6)
-go build -trimpath -ldflags="-H=windowsgui" -o armgui.exe ./gui
+# 5. Desktop GUI Wallet v2 & Node Explorer (armgui — pure Go CGO_ENABLED=0)
+# Uses embedded Microsoft Edge WebView2 + Shell_NotifyIconW system tray on Windows,
+# and local web server with browser interop + POSIX 0600 fallback on Linux/WSL/macOS.
+# MUST compile package directory './gui' to embed rsrc_windows_amd64.syso (manifest version 1.0.12.0 & icon).
+CGO_ENABLED=0 go build -trimpath -ldflags="-H=windowsgui" -o armgui.exe ./gui
 ```
 
 ### On Windows (PowerShell):
 ```powershell
 .\scripts\build.ps1
+# Or cross-compile all 3 core targets (15 binaries):
+.\scripts\build-all.ps1
 ```
 
 ---
 
 ## 3. Cross-Compilation Commands
 
-To compile for target platforms from any host OS:
+To compile for target platforms from any host OS (all 5 binaries compile cleanly with `CGO_ENABLED=0`):
 
 ### Linux / amd64:
 ```bash
@@ -66,7 +70,7 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildi
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-amd64/armminer ./miner
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-amd64/armsend ./cli/armsend
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-amd64/armwallet ./cli/armwallet
-GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-amd64/armgui ./gui
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-amd64/armgui ./gui
 ```
 
 ### Linux / arm64 (Raspberry Pi, Orange Pi, Armbian):
@@ -75,7 +79,7 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildi
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-arm64/armminer ./miner
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-arm64/armsend ./cli/armsend
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-arm64/armwallet ./cli/armwallet
-GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-arm64/armgui ./gui
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/linux-arm64/armgui ./gui
 ```
 
 ### Windows / amd64:
@@ -84,8 +88,8 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buil
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/windows-amd64/armminer.exe ./miner
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/windows-amd64/armsend.exe ./cli/armsend
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/windows-amd64/armwallet.exe ./cli/armwallet
-# Package path './gui' links rsrc_windows_amd64.syso (Windows Common Controls 6 manifest & icon)
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -buildid= -H windowsgui" -o dist/windows-amd64/armgui.exe ./gui
+# Package path './gui' links rsrc_windows_amd64.syso (manifest version 1.0.12.0 & icon) and dynamically loads WebView2Loader.dll at runtime
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid= -H windowsgui" -o dist/windows-amd64/armgui.exe ./gui
 cp gui/armgui.exe.manifest dist/windows-amd64/
 ```
 
@@ -95,7 +99,7 @@ GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -build
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/darwin-arm64/armminer ./miner
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/darwin-arm64/armsend ./cli/armsend
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/darwin-arm64/armwallet ./cli/armwallet
-GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w -buildid=" -o dist/darwin-arm64/armgui ./gui
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" -o dist/darwin-arm64/armgui ./gui
 ```
 
 ---
@@ -151,7 +155,4 @@ go test -v -race -tags testhooks ./core
 
 # Run node P2P network tests
 go test -v -tags testhooks ./node
-
-# Run local smart contract EVM test suite
-cd contracts && npm test && cd ..
 ```

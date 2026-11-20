@@ -26,7 +26,7 @@ Armaxcoin is built from the ground up for the post-quantum era. All user transac
 - **Block Hashing (Testnet, Blocks 0..519):** Double-SHA256 (`SHA-256d`).
 - **Block Hashing (Testnet, Blocks 520..2499):** **ArmaxHash v1** (network/header-derived BLAKE2b-512 input, Argon2id 2048 KiB, then BLAKE2b-256 finalization).
 - **Block Hashing (Testnet, Blocks 2500+):** **ArmaxHash v2 Stream-Fast** (chained BLAKE2b-512 + BLAKE2b-256 with domain separation).
-- **Block Hashing (Mainnet Profile - Locked):** Double-SHA256 (`SHA-256d`).
+- **Block Hashing (Mainnet — Locked Provisional Staging):** Provisional pre-launch configuration sets ArmaxHash v2 Stream-Fast (chained BLAKE2b-512 + BLAKE2b-256) from Block `#1+` while preserving immutable SHA-256d Genesis `#0` (subject to revision prior to Mainnet launch freeze).
 - **Transaction ID & Merkle Trees:** SHA-256 hashing.
 - **Address Derivation:** SHA-256(SigAlg || PublicKey) followed by BIP-173 Bech32 encoding.
 
@@ -71,12 +71,13 @@ On the public testnet, PoW consensus evolves across three distinct height eras t
   - **Microsecond Verification:** Blocks verify in microseconds on commodity processors.
   - **Memory Hardness:** **ArmaxHash v2 is NOT memory-hard.** It is computationally intensive and designed for commodity CPU execution, but does not saturate DRAM. Resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated.
 
-### 2.2 Mainnet Profile (`ARMX-MAINNET-1` - Unreleased / Locked)
+### 2.2 Mainnet Profile (`ARMX-MAINNET-1` — Locked Provisional Staging)
 
-In `core/network.go`, `MainnetProfile.ArmaxHashActivationHeight` and `MainnetProfile.ArmaxHashV2ActivationHeight` are both `-1`, while `MainnetProfile.BlockBinarySizeActivationHeight` is `0` (`TxBinaryV1` size accounting ready from Genesis) and `core.MainnetLaunched` remains `false`.
-
-Unless changed by a future consensus hard-fork proposal, the mainnet profile in code specifies standard **Double-SHA256 (`SHA-256d`)** for all blocks. 
-- *Hardware Profile:* SHA-256d can be implemented in specialized hardware (ASIC/GPU). It is custom-serialized and not compatible with standard Bitcoin mining firmware without modifications, but is **not claimed to be CPU-friendly, memory-hard, or ASIC-resistant**.
+In `core/network.go`, `core.MainnetLaunched` remains strictly `false` (invoking `-network mainnet` fails closed across all binaries). The current `MainnetProfile` preserves immutable **Double-SHA256 (`SHA-256d`)** Genesis `#0` (`GenesisHash = "0820d429..."`) and holds a **provisional pre-launch staging configuration** for isolated `-local-mainnet` dry runs — **it is not a finalized Mainnet launch specification and remains subject to revision prior to official Mainnet launch freeze**:
+- **Proof-of-Work (Provisional):** `ArmaxHashActivationHeight = -1`, `ArmaxHashV2ActivationHeight = 1` (**ArmaxHash v2 Stream-Fast**, chained BLAKE2b-512 + BLAKE2b-256, with Difficulty 5 bootstrap limit `ArmaxHashPowLimitHex = "00000fff..."`).
+- **Difficulty Adjustment (Provisional):** `ASERTActivationHeight = 0` (**Armax-ASERT-AW**, anchored to Genesis `#0` at `ArmaxHashPowLimitHex`), `AntiStallActivationHeight = -1` (TEDR disabled).
+- **Timestamps & Block Sizing (Provisional):** `TimestampRulesActivationHeight = 0` (C1/C2 MTP-55 non-decreasing), `FutureTimestampLimitActivationHeight = 0` (C6 10-minute `+600s` limit), and `BlockBinarySizeActivationHeight = 0` (`TxBinaryV1` binary block/tx size accounting from Genesis `#0`).
+- *Hardware Profile:* SHA-256d (Genesis `#0`) is immutable; ArmaxHash v2 is computation-bound chained BLAKE2b designed for commodity CPUs without memory-hardness or claims of ASIC/GPU resistance.
 
 ### 2.3 Regtest & Soak Profiles
 The `regtest` and `soak` profiles have ArmaxHash activation heights set to `-1`, so they use Double-SHA256 (`SHA-256d`).
@@ -125,9 +126,9 @@ Active from Testnet Block `#13,335` (`core.TestnetProfile.ASERTActivationHeight 
 - **TEDR Boost:** `TEDRBoostDriftSeconds = 7200` seconds (2 hours). Emergency blocks solved under TEDR inject 2 hours of synthetic solve time into the ASERT drift accumulator, relaxing difficulty by ~3.91x per emergency block and enabling recovery from a 200x hashrate crash within 3 emergency blocks.
 - **Emergency Inversion Guard (DA-04):** Guarantees that nominal ASERT targets never become more lenient than the emergency `powLimit` threshold.
 - **Bounded Drift Cache (`v1.0.11`):** `globalASERTDriftCache` enforces `maxASERTDriftCacheEntries = 10000` and prunes to the newest `prunedASERTDriftWindowSize = 2048` blocks (`> MaxReorganizationDepth = 720`), keeping long-running node memory bounded without losing recent reorg coverage.
-- **Mainnet Readiness & Isolation:** Pre-launch default keeps Mainnet locked (`MainnetLaunched = false`, `ASERTActivationHeight = -1`, `AntiStallActivationHeight = -1`), while `core/asert.go` (`IsASERTActive`, `ResolveASERTAnchor`, `CalculateArmaxASERTTarget`, `StepEffectiveDrift`) natively supports Genesis activation (`ASERTActivationHeight = 0`, `MaxASERTBlockInterval = 14400`) with pure per-block 14,400s surge capping and TEDR permanently disabled.
+- **Locked Pre-Launch Staging Status:** `core.MainnetLaunched` keeps Mainnet strictly locked (`false`). Current `MainnetProfile` values in `core/network.go` (ArmaxHash v2 from `#1`, Genesis-anchored Armax-ASERT-AW `0` at Difficulty 5, C1/C2/C6 `0`, `TxBinaryV1` `0`, TEDR `-1`) serve solely as a provisional pre-launch staging profile for isolated `-local-mainnet` verification; they are not bound to `v1.0.12` as a final Mainnet baseline and may change before launch freeze.
 
-### 3.5 Binary Block Size Accounting (`TxBinaryV1`, Testnet Block 20,000+ / Mainnet Block 0+)
+### 3.5 Binary Block Size Accounting (`TxBinaryV1`, Testnet Block 20,000+ / Provisional Mainnet Staging)
 To eliminate JSON hex-encoding overhead on NIST FIPS 204 ML-DSA-65 public keys (`1,952 B`) and signatures (`3,309 B`), `v1.0.11` schedules `BlockBinarySizeActivationHeight`:
 - **Activation Schedule:** `20000` on `ARMX-TESTNET-1` (unified with Rule C6 `+600s` at Block `#20,000`, giving full backward compatibility with `v1.0.10` across `#15,967`–`#19,999`, ~4,033 blocks / ~5.6 days of rolling upgrade window), `0` on `ARMX-MAINNET-1` (ready for Genesis launch once `MainnetLaunched` is enabled), and `-1` on `Soak`/`Regtest`.
 - **Height-Gated Consensus Size Helpers:** `EffectiveBlockSize(b)` and `EffectiveTxSize(&tx, blockIndex)` continue evaluating legacy JSON `Size()` prior to activation (`MaxBlockSize - 50000` template ceiling) and transition to canonical binary `BinarySize()` (`TxBinaryV1` + `194 B` canonical block header + 4-byte tx length framing, full `MaxBlockSize = 2,000,000` template ceiling) from activation onward.
@@ -178,7 +179,7 @@ It is critical to distinguish between two distinct concepts:
 
 > **Timestamp rules (v1.0.5):** Below the activation height (testnet 8,000) a block timestamp must exceed MTP-11. From the activation height (mainnet: from genesis, activation height 0) it must exceed MTP-55 and must not be earlier than its parent. The 2-hour future limit applies throughout and is skipped when replaying stored blocks. See `docs/security/consensus-proposals.md`.
 >
-> **Unified Block 20,000 Consensus Fork (`v1.0.7+` / `v1.0.11`):** From testnet block 20,000, Proposal C6 tightens the future-timestamp limit from 2 hours to 10 minutes (`FutureTimestampLimitActivationHeight = 20000`; paired with `v1.0.11` adaptive `5s`/`30s` miner inherited-tip safety margins; `-1` on mainnet pre-launch default, soak and regtest) **simultaneously** with canonical `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`, raising 2 MB capacity from `185` to `375` user ML-DSA-65 transactions; `0` on Mainnet). The C6 check is node-local wall-clock based, so nodes and miners need NTP; it is skipped for historical replay. See proposal C6 in [`security/consensus-proposals.md`](security/consensus-proposals.md) and [`releases/v1.0.11.md`](releases/v1.0.11.md).
+> **Unified Block 20,000 Consensus Fork (`ARMX-TESTNET-1`, Active):** From testnet block 20,000, Proposal C6 tightens the future-timestamp limit from 2 hours to 10 minutes (`FutureTimestampLimitActivationHeight = 20000`; paired with `v1.0.11+` adaptive `5s`/`30s` miner inherited-tip safety margins) **simultaneously** with canonical `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`, raising 2 MB capacity from `185` to `375` user ML-DSA-65 transactions). These are provisionally staged at `0` in locked `MainnetProfile` (subject to change prior to launch freeze) and set to `-1` on soak and regtest. The C6 check is node-local wall-clock based, so nodes and miners need NTP; it is skipped for historical replay. See proposal C6 in [`security/consensus-proposals.md`](security/consensus-proposals.md) and [`releases/v1.0.11.md`](releases/v1.0.11.md).
 
 ### 6.3 Technical Implications & Security Analysis
 
@@ -188,7 +189,7 @@ Mining 720 blocks privately **does NOT** guarantee mainnet security, and introdu
    - Proof-of-Work networks derive security entirely from verifiable, cumulative chainwork produced under open competition.
   - Whether a competing branch can exceed the private branch's chainwork depends on the targets and work accumulated on both branches; block count and the phrase "modest hashrate" are insufficient to estimate the time or outcome.
 2. **Difficulty Misalignment:**
-  - If private blocks are produced faster than target, the active DAA (`Armax-ASERT-AW` if configured at Genesis `#0`, or the pre-launch `LWMA-1` default) adjusts difficulty based on the observed timestamps and targets, within its configured bounds.
+  - If private blocks are produced faster than target under a staged DAA (such as Genesis-anchored `Armax-ASERT-AW` in the provisional Mainnet profile), difficulty adjusts based on the observed timestamps and targets, within configured bounds.
   - Opening the network with a substantially different hashrate can change block cadence; the magnitude and duration depend on the actual chain history and require simulation rather than a fixed prediction.
 3. **Economic Transparency & Premine Perception:**
    - Mining 720 blocks generates $720 \times 60 = 43,200 \text{ ARMX}$ in coinbase rewards.
@@ -205,7 +206,7 @@ Instead of private mining, the following transparent launch procedure is strongl
 3. **Tokenomics Preservation:** Mainnet remains locked. Current source retains the 126,000,000 ARMX cap, 60 ARMX initial reward, 1,050,000-block halving interval, 120-second target time, and existing genesis. No special early reward, project treasury genesis output, or consensus mining destination is introduced for treasury accumulation. The genesis block has a 60 ARMX coinbase output to the canonical zero-payload address; source evidence does not establish off-chain arrangements.
 4. **Developer Early-Mining Phase:** Before public mainnet opening, the developers will mine blocks 1 through 16,667. Stop rule: Stop at block 16,667 or when total developer mining rewards reach 1,000,000 ARMX, whichever comes first. Developers will mine all blocks in this range. At 60 ARMX per block, 16,667 blocks yield up to 1,000,020 ARMX (16,666 blocks = 999,960 ARMX; block 16,667 yields 1,000,020 ARMX due to discrete block subsidies). Estimated duration is approximately 23.15 days at 120-second target block time; actual duration depends on hashrate and difficulty. Public mainnet opening: TBA. Treasury address will be published before mainnet launch. Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch. Risks / Criticism: Early developer mining represents an initial point of centralization and grants the developer team a material fraction (~0.79% of the total 126,000,000 ARMX supply) before the public opening. See [`architecture/tokenomics/mining-accumulation-plan.md`](architecture/tokenomics/mining-accumulation-plan.md).
 5. **Bridge/Liquidity Boundary:** Mining holdings are not automatically bridge backing or DEX liquidity. Do not mint wARMX without verified native backing under an approved custody and proof-of-lock model. Liquidity and bridge design are not finalized and will be announced, with full technical details, before mainnet launch.
-6. **Public Mining Opening:** Allow all community miners to compete openly upon completion of the developer early-mining phase (Block 16,668 onwards) under real-time difficulty adjustment (`Armax-ASERT-AW` / `LWMA-1`).
+6. **Public Mining Opening:** Allow all community miners to compete openly upon completion of the developer early-mining phase (Block 16,668 onwards) under real-time `Armax-ASERT-AW` difficulty adjustment.
 7. **Checkpoint Policy (Optional):** Do not add checkpoints without a separately reviewed trust and governance model. Hardcoded checkpoints constrain which histories nodes accept and are not equivalent to proof-of-work consensus.
 
 ---

@@ -79,3 +79,21 @@ JSON hexadecimal encoding inflates raw ML-DSA-65 keys and signatures (`5,261` ra
 | **Effective Network Throughput (120s)** | `~1.54 TPS` | **`~3.13 TPS`** (`2.03x` user-tx capacity) |
 
 *(Verified in `core/transaction_binary_test.go` via `TestBlock_BinarySize_2MBCapacity` and `TestBlockBinarySizeActivation_BackwardCompatibility`.)*
+
+---
+
+## 7. `ArmaxHash v2` CPU Prefix Caching Benchmarks (`V2JobHasher`)
+
+To eliminate Stage-1 header prefix hashing and slice assembly per nonce across multi-thread CPU mining (`core/blockchain.go`, `miner/miner.go`), `v1.0.12` introduces stack-allocated `armaxhash.V2JobHasher` with inline `[768]byte` prefix caching (`NewV2JobHasher`, `UpdatePrefix`, `HashNonce`), paired with 64-byte cache-line padded worker counters (`_ [56]byte`) to prevent cross-core MESI false sharing.
+
+Measured on a 284-byte canonical `ArmaxHash v2` header (`go test -run='^$' -bench='Benchmark(HashV2Canonical|V2JobHasherCanonical)' -benchtime=500ms -count=3 ./armaxhash` on `Intel(R) Core(TM) i5-8365U @ 1.60GHz`, Windows `amd64`):
+
+| Benchmark | Run 1 | Run 2 | Run 3 | Allocations |
+|---|---|---|---|---|
+| `BenchmarkHashV2CanonicalSingleCore-8` | `641.4 ns/op` (`442.76 MB/s`) | `592.3 ns/op` (`479.48 MB/s`) | `619.7 ns/op` (`458.27 MB/s`) | `0 B/op`, `0 allocs/op` |
+| `BenchmarkV2JobHasherCanonicalSingleCore-8` | `568.9 ns/op` (`499.23 MB/s`) | `550.7 ns/op` (`515.69 MB/s`) | `559.8 ns/op` (`507.33 MB/s`) | `0 B/op`, `0 allocs/op` |
+| `BenchmarkHashV2CanonicalParallel-8` | `140.2 ns/op` (`2025.57 MB/s`) | `134.8 ns/op` (`2107.17 MB/s`) | `133.2 ns/op` (`2131.87 MB/s`) | `0 B/op`, `0 allocs/op` |
+| `BenchmarkV2JobHasherCanonicalParallel-8` | `127.8 ns/op` (`2222.50 MB/s`) | `140.4 ns/op` (`2023.45 MB/s`) | `176.2 ns/op` (`1611.58 MB/s`) | `0 B/op`, `0 allocs/op` |
+
+> [!NOTE]
+> These microbenchmarks measure pure canonical header hashing (`V2JobHasher` digests are verified bit-identical to `HashV2` via `TestV2JobHasherBitIdentical`). End-to-end mining throughput depends on hardware architecture, thermal headroom, memory subsystem, OS thread scheduling, and network template refresh intervals.

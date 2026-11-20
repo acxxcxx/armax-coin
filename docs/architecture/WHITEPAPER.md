@@ -1,6 +1,6 @@
 # Armaxcoin (ARMX) Technical Whitepaper
 
-**Version:** 1.0.11 (Active Testnet Release)
+**Version:** 1.0.12 (Active Testnet Release)
 **Ticker:** `ARMX` (mainnet; testnet GUI and explorer display `tARMX`)
 **Network Profiles:** `ARMX-TESTNET-1` (active default) and `ARMX-MAINNET-1` (locked; not launched)
 **Consensus:** Proof-of-Work (PoW) with Armax-ASERT-AW (`aserti3-2d`, `#13,335+`) & historical LWMA-1 ($N=60$)
@@ -121,12 +121,12 @@ Armaxcoin bootstrapped with **LWMA-60 (Linear Weighted Moving Average across 60 
 
 At Testnet Block `#13,293` (`v1.0.9`), Anti-Stall TEDR added emergency fallback (`ArmaxHashPowLimitHex`) when block intervals exceeded 1,200 seconds.
 
-**Era 2 — Armax-ASERT-AW (`aserti3-2d`, Testnet Blocks $H \ge 13,335$ / Mainnet Ready):**
+**Era 2 — Armax-ASERT-AW (`aserti3-2d`, Testnet Blocks $H \ge 13,335$ / Locked Mainnet `#1+`):**
 Starting at Testnet Block `#13,335` (`v1.0.10`, anchored to Block `#13,334`), Armaxcoin upgrades to pure-integer **Armax-ASERT-AW (Anchor-Weighted Absolutely-Scheduled Exponentially-Rising Targets with Anti-Windup)** using a Q48.16 cubic polynomial approximation ($2^{16}$ fixed-point factor):
 - **Half-Life ($\tau$):** $3,600\text{ seconds}$ (30 blocks at $T = 120\text{s}$), halving or doubling difficulty smoothly for every hour of cumulative schedule drift.
 - **Per-Block Surge Cap:** `MaxASERTBlockInterval = 14400` seconds (4 hours) caps single-block time injection during recovery without limiting lifetime difficulty growth relative to the anchor.
 - **TEDR Boost:** Emergency blocks ($\Delta t > 1,200\text{s}$ on Testnet) contribute $7,200\text{s}$ of effective drift to recover from severe hashrate drops.
-- **Bounded Drift Cache (`v1.0.11`):** `globalASERTDriftCache` bounds memory to `10,000` entries and prunes to the latest `2,048` blocks (`> MaxReorganizationDepth = 720`). For `ARMX-MAINNET-1` (locked pre-launch), ASERT supports Genesis (`#0`) activation with pure per-block 14,400s capping and TEDR permanently disabled (`AntiStallActivationHeight = -1`). The 120-second value remains a target interval, not a guarantee of stable timing or low variance.
+- **Bounded Drift Cache & Locked Mainnet Staging (`v1.0.11` / `v1.0.12`):** `globalASERTDriftCache` bounds memory to `10,000` entries and prunes to the latest `2,048` blocks (`> MaxReorganizationDepth = 720`). On `ARMX-MAINNET-1`, `core.MainnetLaunched` remains strictly `false`; current `MainnetProfile` values (ArmaxHash v2 at `#1` over immutable SHA-256d Genesis `#0`, Genesis-anchored Armax-ASERT-AW `0` at Difficulty 5, C1/C2/C6 `0`, `TxBinaryV1` `0`, and TEDR `-1`) serve solely as a provisional pre-launch staging configuration for isolated `-local-mainnet` testing and remain subject to change prior to official Mainnet launch freeze. The 120-second value remains a target interval, not a guarantee of stable timing or low variance.
 
 ### 4.3 Heaviest Chain Rule (Satoshi Cumulative Chainwork)
 Armaxcoin does not rely on naive block count for fork resolution. Instead, each block contributes cumulative work based on Satoshi's work formula:
@@ -178,8 +178,9 @@ To maintain accurate difficulty retargeting and prevent artificial difficulty ma
 
 ## 5. Mining Ecosystem & Infrastructure
 
-### 5.1 Bounded `/getblocktemplate` JSON RPC Interface
+### 5.1 Bounded & Sync-Gated `/getblocktemplate` JSON RPC Interface
 Armaxcoin exposes an optimized, bounded `/getblocktemplate` RPC endpoint conforming to Bitcoin Core specifications:
+- Enforces the pre-sync safety gate (`PeerServer.GetSyncStatus()`), returning `HTTP 503 Service Unavailable` alongside `/mine` while initial P2P synchronization is incomplete so new nodes do not mine stale low-height blocks or trigger public-peer IP bans (`regtest`, `-local-mainnet`, and isolated seedless `-noseeds` runs stay unblocked).
 - Provides `previousblockhash`, `height`, `curtime`, 256-bit `target`, `difficulty`, `coinbasevalue`, bounded candidate `transactions`, and `merkleroot`.
 - Transaction count is strictly bounded to `MaxBlockTransactions - 1` with aggregate byte size limits, preventing oversize block creation.
 - Solved blocks are submitted via `/block/submit` or the standard `/submitblock` alias, validated atomically against consensus rules, and immediately gossiped across the global P2P mesh.
@@ -190,12 +191,12 @@ Node operators and external mining software can inspect live consensus metrics:
 - **`getnetworkhashps`**: Calculates instantaneous network hash power estimation:
   $$\text{NetworkHashPS} = \frac{2^{256}}{\text{Target} \times 120\text{s}}$$
 
-### 5.3 Dedicated Multi-Threaded CPU Miner Client (`armminer`)
-Armaxcoin provides an autonomous, multi-threaded CPU miner client (`armminer`):
-- Connects to one or more failover daemon nodes via `/getblocktemplate`.
-- Spawns $N$ concurrent worker threads (configured via `-threads <N>`, defaulting to all CPU cores).
-- Explores non-overlapping 32-bit nonce partitions with live console hashrate telemetry (hash/s, kH/s, MH/s).
-- Listens for new network tips to automatically abandon stale work and avoid wasted hashing power.
+### 5.3 Dedicated Multi-Threaded CPU Miner Client (`armminer`) & Integrated Prefix Caching
+Armaxcoin provides an autonomous, multi-threaded CPU miner client (`armminer`) paired with shared optimization primitives in `armaxhash` and `core`:
+- Connects to one or more failover daemon nodes via `/getblocktemplate` (automatically waiting through `HTTP 503` syncing responses) or Stratum TCP/TLS endpoints (`stratum+tcp://`, `stratum+ssl://`, `stratum+tls://`).
+- Defaults worker count to physical CPU core count (`GetOptimalCPUWorkerThreads`) unless overridden by `-threads <N>`.
+- Uses stack-allocated `armaxhash.V2JobHasher` (`[768]byte` inline prefix buffer, `0 B/op`, `0 allocs/op`) across `core.Blockchain.MineBlockContext` and `armminer`, combined with 64-byte cache-line padded worker counters (`_ [56]byte`), 1s Sliding-EMA telemetry, and contiguous positive nonce partitions (`startNonce + int64(workerID)*(1<<36)`, JSON IEEE-754 `< 2^53` safe).
+- Listens for new network tips and explicit cancellations (`POST /mine/stop`, isolated atomic `stopState`) to abandon stale work cleanly with minimal latency.
 - Delivers an integrated hardware benchmark suite via `-benchmark`.
 
 ---
@@ -324,13 +325,13 @@ Armaxcoin is compiled into standalone, zero-dependency static binaries:
 
 A rigorous blockchain design requires transparency regarding operational boundaries and threat assumptions:
 
-1. **Quantum-Resistant Digital Signatures (NIST FIPS 204, ML-DSA-65):** User transactions employ module-lattice signatures resistant to Shor's algorithm. However, this does not eliminate all quantum attack vectors: SHA-256 PoW mining remains subject to quadratic Grover speedups ($\approx 128\text{-bit}$ effective quantum security).
+1. **Quantum-Resistant Digital Signatures (NIST FIPS 204, ML-DSA-65):** User transactions employ module-lattice signatures resistant to Shor's algorithm. However, this does not eliminate all quantum attack vectors: PoW hashing (ArmaxHash v2 BLAKE2b and historical SHA-256d) remains subject to quadratic Grover speedups ($\approx 128\text{-bit}$ effective quantum security).
 2. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
 3. **Mainnet Readiness & Verification:** Protocol readiness, network stabilization, and operational release criteria are tracked under formal verification gates (see [Mainnet Readiness Checklist](docs/MAINNET_READINESS.md)).
 4. **Reorganization Policy (720 Blocks):** The node rejects reorganizations deeper than 720 blocks. Reorganizations within that limit remain possible, so the limit is not transaction finality. A partition beyond the limit may require coordinated operator recovery.
 5. **RPC Daemon Isolation:** The RPC daemon (`armcoind`) binds strictly to loopback (`127.0.0.1`). Exposing the RPC port to public interfaces without strong authentication introduces severe security risks.
 6. **Key Management & Signing Architecture:** Key generation, keystore management, and post-quantum signing are performed exclusively by the local client tools (`armwallet`, `armsend`, `armgui`). No private keys are generated, stored, or processed in web browsers; public web interfaces and explorers are read-only and broadcast-only.
-7. **Proof-of-Work Hardware Considerations:** Historical testnet blocks 0..519 and the unreleased mainnet profile use Double-SHA256 (SHA-256d), which is not claimed to be CPU-friendly or ASIC-resistant. Active testnet blocks 2500+ use ArmaxHash v2 Stream-Fast (chained BLAKE2b), which is computation-bound and designed for CPU mining; its resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated (see `docs/CONSENSUS_AND_NETWORK.md`).
+7. **Proof-of-Work Hardware Considerations:** Historical testnet blocks 0..519 and immutable Genesis `#0` blocks use Double-SHA256 (SHA-256d), which is not claimed to be CPU-friendly or ASIC-resistant. Active testnet blocks 2500+ (as well as the current provisional locked Mainnet staging profile `Block #1+`, `core.MainnetLaunched = false`, which remains subject to change prior to launch freeze) use ArmaxHash v2 Stream-Fast (chained BLAKE2b), which is computation-bound and designed for CPU mining; its resistance to specialized hardware (ASIC/FPGA) or high-end GPU acceleration has not been evaluated (see `docs/CONSENSUS_AND_NETWORK.md`).
 8. **Initial Hashrate & 51% Risk:** Early testnet and launch states operate with low aggregate hashrate, rendering the network vulnerable to 51% hash power reorganization attacks.
 9. **ARM Verification Overhead:** NIST FIPS 204 ML-DSA-65 signatures require modular polynomial arithmetic, introducing measurable CPU overhead and verification latency on constrained ARM single-board computers (Raspberry Pi, Orange Pi).
 10. **Minimum Go Version:** Compiling Armaxcoin requires Go 1.27+ due to reliance on the Go standard library `crypto/mldsa` package and toolchain alignment (`go.mod`).

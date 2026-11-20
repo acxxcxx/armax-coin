@@ -1,17 +1,18 @@
 [center]
 [size=24pt][b]ARMAXCOIN TESTNET (tARMX)[/b][/size]
 [size=14pt][b]Proof-of-Work Layer-1 Blockchain with Post-Quantum Signatures (NIST FIPS 204, ML-DSA-65)[/b][/size]
-[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.11)[/b][/size]
+[size=12pt][b]Experimental Public Open Testnet Release Announcement (v1.0.12)[/b][/size]
 [/center]
 
 [hr]
 
-[b]Active & Scheduled Consensus Hard Fork Notice (v1.0.11 / v1.0.10 / v1.0.9 / v1.0.7):[/b]
+[b]Release Highlights & Active Consensus Milestones (v1.0.12 / v1.0.11 / v1.0.10 / v1.0.9):[/b]
 [list]
-[*] [b]Block 20,000 Unified Activation (v1.0.11 — Proposal C6 + [tt]TxBinaryV1[/tt] Binary Block Size Accounting):[/b] Simultaneously activates the C6 10-minute future block timestamp limit ([tt]FutureTimestampLimitActivationHeight = 20000[/tt], paired with [tt]v1.0.11[/tt] adaptive 5s inherited-tip / 30s local-clock miner safety margins) and canonical binary block/transaction size accounting ([tt]BlockBinarySizeActivationHeight = 20000[/tt] on Testnet, [tt]0[/tt] on Mainnet), expanding 2 MB block capacity from 185 to [b]375 regular ML-DSA-65 user transactions[/b] (+1 coinbase = 376 total). Nodes running [tt]v1.0.11[/tt] maintain full P2P and JSON block-size backward compatibility with active [tt]v1.0.10[/tt] peers across blocks #15,967–#19,999 (~5.6 days rolling upgrade window).
-[*] [b]Block 13,335 Activation (v1.0.10 — Armax-ASERT-AW DAA):[/b] Activates the canonical pure integer [tt]aserti3-2d[/tt] difficulty adjustment algorithm ([tt]ASERTActivationHeight = 13335[/tt]), anchored to Block #13,334 with Anti-Poisoning fallback (DA-03), 4-hour surge cap ([tt]14400s[/tt]), TEDR Boost ([tt]7200s[/tt]), and bounded drift cache pruning (`10,000 -> 2,048` entries in `v1.0.11`).
-[*] [b]Block 13,293 Activation (v1.0.9 — Anti-Stall TEDR):[/b] Activates Testnet Anti-Stall Emergency Difficulty Adjustment ([tt]AntiStallActivationHeight = 13293[/tt]). When the elapsed interval since the parent block exceeds [b]1,200 seconds (20 minutes)[/b], candidate blocks qualify for the emergency fallback target ([tt]Difficulty 3[/tt]) under Model 3 Synthetic Target Normalization. Also introduces a [b]5.45x zero-allocation CPU miner optimization[/b] in [tt]armminer[/tt] and embedded node auto-start in Linux/Unix [tt]armgui[/tt].
-[*] [b]Mandatory Operator Action:[/b] All full nodes, miners, and mining pools should upgrade to [b]v1.0.11 prior to Block 20,000[/b] (rolling upgrade supported on #15,967–#19,999) and maintain accurate NTP clock synchronization ([tt]timedatectl set-ntp true[/tt] / [tt]w32tm /resync[/tt]) ahead of Block 20,000.
+[*] [b]v1.0.12 Desktop Wallet GUI v2 ("Waiting for Sync"), Sync Gate, Multi-Thread CPU Optimization & Go 1.27.4:[/b] Delivers a standalone pure-Go Windows WebView2 window ([tt]armgui.exe[/tt]) with [b]Minimize-to-System-Tray[/b], Dark & Light [tt]armax_explorer[/tt] themes, 1-click embedded daemon auto-start, Multi-Wallet switcher, local [tt]bbolt[/tt] paged transaction cache, ML-DSA-65 fee estimator, [b]CPU Miner[/b] tab with [b]"Waiting for Sync"[/b] anti-ban protection, WSL [tt]~/.config/ArmaxCoin[/tt] fallback + browser interop, an [b]HTTP 503[/b] node pre-sync gate preventing unsynced public-node IP bans, deterministic [tt]POST /mine/stop[/tt] cancellation, integrated multi-thread CPU optimization ([tt]armaxhash.V2JobHasher[/tt] inline prefix cache, 64-byte padded worker slots, physical-core default), encrypted Stratum TLS ([tt]stratum+ssl://[/tt]), additive Node RPC telemetry, and Go [tt]1.27.4[/tt] security updates ([tt]GO-2026-6859[/tt]). 100% rolling-compatible with [tt]v1.0.11[/tt] (zero hard forks or activation-height changes).
+[*] [b]Block 20,000 Unified Activation (v1.0.11+ — Active):[/b] Enforces the C6 10-minute future block timestamp limit ([tt]FutureTimestampLimitActivationHeight = 20000[/tt] with adaptive 5s inherited-tip / 30s local-clock miner margins) and canonical binary block/transaction size accounting ([tt]BlockBinarySizeActivationHeight = 20000[/tt] on Testnet, [tt]0[/tt] on Mainnet), expanding 2 MB block capacity from 185 to [b]375 regular ML-DSA-65 user transactions[/b] (+1 coinbase = 376 total).
+[*] [b]Block 13,335 Activation (v1.0.10 — Armax-ASERT-AW DAA, Active):[/b] Activates the canonical pure integer [tt]aserti3-2d[/tt] difficulty adjustment algorithm ([tt]ASERTActivationHeight = 13335[/tt]), anchored to Block #13,334 with Anti-Poisoning fallback (DA-03), 4-hour surge cap ([tt]14400s[/tt]), TEDR Boost ([tt]7200s[/tt]), and bounded drift cache pruning ([tt]10,000 -> 2,048[/tt]).
+[*] [b]Block 13,293 Activation (v1.0.9 — Anti-Stall TEDR, Active):[/b] Activates Testnet Anti-Stall Emergency Difficulty Adjustment ([tt]AntiStallActivationHeight = 13293[/tt]) under Model 3 Synthetic Target Normalization.
+[*] [b]Operator & User Action:[/b] Full nodes, miners, and wallet users can upgrade cleanly from [b]v1.0.11[/b] to [b]v1.0.12[/b] while keeping system clocks NTP-synchronized ([tt]timedatectl set-ntp true[/tt] / [tt]w32tm /resync[/tt]).
 [/list]
 
 [b]Official Links:[/b]
@@ -21,7 +22,8 @@
 [*] [b]Testnet Mining Pool:[/b] [url=https://pool.armax-coin.cloud]https://pool.armax-coin.cloud[/url]
 [*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
 [*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]
-[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.11]refs/tags/v1.0.11[/url]
+[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.12]refs/tags/v1.0.12[/url]
+[*] [b]v1.0.12 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.12.md]docs/releases/v1.0.12.md[/url]
 [*] [b]v1.0.11 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.11.md]docs/releases/v1.0.11.md[/url]
 [*] [b]v1.0.10 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.10.md]docs/releases/v1.0.10.md[/url]
 [*] [b]v1.0.9 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.9.md]docs/releases/v1.0.9.md[/url]
@@ -130,10 +132,10 @@ sha256sum --check --ignore-missing SHA256SUMS
 [*] [b]Verification Commands (Windows PowerShell):[/b]
 [code]
 # Compute SHA-256 hash of archive
-Get-FileHash -Algorithm SHA256 .\armax-v1.0.11-windows-amd64.zip
+Get-FileHash -Algorithm SHA256 .\armax-v1.0.12-windows-amd64.zip
 
 # Match against published SHA256SUMS manifest
-Get-Content .\SHA256SUMS | Select-String "armax-v1.0.11-windows-amd64.zip"
+Get-Content .\SHA256SUMS | Select-String "armax-v1.0.12-windows-amd64.zip"
 [/code]
 [/list]
 
@@ -143,7 +145,7 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.11-windows-amd64.zip"
 
 [b]Prerequisites:[/b]
 [list]
-[*] [b]Go Compiler:[/b] Go 1.27 or higher (required for native [tt]crypto/mldsa[/tt] standard library package)
+[*] [b]Go Compiler:[/b] Go 1.27.4 or higher (required for native [tt]crypto/mldsa[/tt] standard library package and security remediation)
 [*] [b]Git[/b]
 [/list]
 
@@ -155,13 +157,14 @@ cd armax-coin
 # Verify Go toolchain
 go version
 
-# Compile all binaries
+# Compile all 5 binaries
 go build -o armcoind main.go
 go build -o armwallet ./cli/armwallet
 go build -o armsend ./cli/armsend
-go build -o armminer miner/miner.go
+go build -o armminer ./miner
+CGO_ENABLED=0 go build -o armgui ./gui
 [/code]
-[i]On Windows, run: [tt].\build-all.ps1[/tt][/i]
+[i]On Windows, run: [tt].\scripts\build-all.ps1[/tt] or [tt].\scripts\build.ps1[/tt][/i]
 
 [b]Step 2 -- Create an Encrypted Post-Quantum Wallet:[/b]
 [code]

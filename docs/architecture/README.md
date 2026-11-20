@@ -9,9 +9,9 @@ This directory provides the authoritative reference structure for the engineerin
 To prevent conflation between speculative design iterations and production-ready software, all engineering materials are classified into distinct tiers:
 
 ### Tier 1: Active Software Implementation
-- **Scope:** The Go codebase actively running on full nodes, miners, wallets, and tools in this repository.
-- **Source Version Metadata:** `v1.0.11` (Official Testnet Release, `core.Version = "1.0.11"`).
-- **Core Principle:** Safety, reliability, memory bounds, clean shutdown, post-quantum cryptography, consensus fork coordination, and storage efficiency.
+- **Scope:** The Go codebase actively running on full nodes, miners, desktop GUI v2 (`armgui`), and CLI tools in this repository.
+- **Source Version Metadata:** `v1.0.12` (Official Public Testnet Release, `core.Version = "1.0.12"`).
+- **Core Principle:** Safety, reliability, sync-gated mining (`HTTP 503` / GUI `"Waiting for Sync"`), zero-alloc multi-thread CPU execution (`V2JobHasher`, padded slots), clean shutdown & deterministic job cancellation, post-quantum cryptography, consensus fork coordination, pure-Go desktop execution, and storage efficiency.
 
 ### Tier 2: Existing Testnet Compatibility Baseline
 - **Network ID:** `ARMX-TESTNET-1` (Display ticker: `tARMX`).
@@ -19,18 +19,15 @@ To prevent conflation between speculative design iterations and production-ready
 - **Target Block Time:** 120 seconds.
 - **Difficulty Adjustment:** Armax-ASERT-AW (canonical pure integer `aserti3-2d` active from Block #13,335; previously TEDR anti-stall at #13,293 and legacy LWMA-1 $N=60$) with bounded drift cache (`10,000 -> 2,048` entries).
 - **Block Reward Schedule:** Initial subsidy of 60 tARMX, halving every 1,050,000 blocks, total supply cap 126,000,000 ARMX, atomic base unit $10^8$ Armoids.
-- **Binary Block Size Transition (`BlockBinarySizeActivationHeight`):** Scheduled at Testnet Block `#20,000` (`0` on `ARMX-MAINNET-1`) alongside Rule C6 via `EffectiveBlockSize` / `EffectiveTxSize`. Preserves legacy JSON block sizing and `v1.0.10` P2P wire compatibility across `#15,967`–`#19,999` while expanding 2 MB capacity from 185 to **375 user ML-DSA-65 transactions** (`TxBinaryV1`) from Block `#20,000` onward.
+- **Binary Block Size Transition (`BlockBinarySizeActivationHeight`):** Active on Testnet at Block `#20,000` (`0` on `ARMX-MAINNET-1`) alongside Rule C6 via `EffectiveBlockSize` / `EffectiveTxSize`, expanding 2 MB capacity from 185 to **375 user ML-DSA-65 transactions** (`TxBinaryV1`). `v1.0.12` remains 100% consensus-identical and rolling-compatible with `v1.0.11`.
 - **Timestamp Rules:** MTP-11 below block 8,000; MTP-55 with non-decreasing parent timestamps from block 8,000 onward. From block 20,000, the maximum allowed future-timestamp limit narrows from 7,200 seconds (2 hours) to 600 seconds (10 minutes). Under `v1.0.11`, minor skew ($\le 30\text{s}$) incurs 0 peer score penalty, severe skew ($> 600\text{s}$) triggers immediate ban, and `armminer` enforces an adaptive `5s` inherited-tip margin (`inheritedTipSafetyMargin`) vs `30s` local-clock margin (`futureLimitSafetyMargin`).
 - **Persistent Storage:** Key-value storage in BoltDB (`bbolt`) with standard bucket hierarchy (`blocks`, `hashindex`, `txindex`, `chainwork`, `snapshots`, `undo`, `meta`). Optional record compression supported in v1.0.7+ (default off).
 - **Signatures:** NIST FIPS 204 post-quantum ML-DSA-65.
 - **Status:** **Immutable.** Any change to these rules forks or partitions running Testnet nodes and is strictly prohibited without explicit network coordination.
 
 ### Tier 3: Future Mainnet Architecture Work
-- **Scope:** Proposed architectures specifically targeted for the independent Mainnet genesis (`ARMX-MAINNET-1`), including:
-  - ArmaxHash v2 (domain-tagged BLAKE2b-512 into BLAKE2b-256).
-  - Mainnet-specific genesis block vectors and mining seeds.
-  - Dedicated network ports (Mainnet RPC: 19332, P2P: 19334, Stratum: 19338).
-- **Status:** **Deferred / Experimental.** Mainnet code remains locked in source (`core.MainnetLaunched = false`). All Mainnet experimentation must run in isolated local environments with distinct data directories and ports.
+- **Scope:** Locked `ARMX-MAINNET-1` profile (`core/network.go`, `core.MainnetLaunched = false`) holding a **provisional pre-launch staging configuration** (`ArmaxHashV2ActivationHeight = 1` over immutable SHA-256d Genesis `#0`, `ASERTActivationHeight = 0` anchored to `ArmaxHashPowLimitHex` Difficulty 5, `TimestampRulesActivationHeight = 0`, `FutureTimestampLimitActivationHeight = 0`, `BlockBinarySizeActivationHeight = 0`, `AntiStallActivationHeight = -1`), alongside dedicated network ports (Mainnet RPC: 19332, P2P: 19334, Stratum: 19338).
+- **Status:** **Locked & Provisional (Not Finalized by `v1.0.12`).** Mainnet remains strictly locked in source (`core.MainnetLaunched = false`) pending `docs/MAINNET_READINESS.md` gates; all staged Mainnet parameters remain provisional and subject to revision prior to official Mainnet launch freeze. Local Mainnet testing requires `-local-mainnet` in isolated environments with distinct data directories and ports.
 
 ### Tier 4: Archived Historical Plans & Bridge Designs
 - **Scope:** Exploratory implementation plans (v1.0.27 through v1.0.45), bridge relayer specifications, and internal coordination logs.
@@ -44,7 +41,7 @@ To prevent conflation between speculative design iterations and production-ready
 +-------------------------------------------------------------------------+
 |                  ARMAXCOIN ARCHITECTURAL BOUNDARY                       |
 +-------------------------------------------------------------------------+
-| [ACTIVE PROTOCOL IMPLEMENTATION - v1.0.11 CONSENSUS BASELINE]           |
+| [ACTIVE TESTNET PROTOCOL & SOFTWARE - v1.0.12 / v1.0.11 CONSENSUS BASELINE] |
 | - Armax-ASERT-AW pure integer DAA at block 13,335 (tau=3600s, anchor #13,334)|
 | - Bounded ASERT drift cache (max 10,000 entries -> prune latest 2,048)    |
 | - 4-Hour Surge Cap (14,400s) & TEDR Boost (7,200s drift injection)       |
@@ -79,6 +76,7 @@ To prevent conflation between speculative design iterations and production-ready
 - **[`consensus/mainnet-pow-activation.md`](consensus/mainnet-pow-activation.md):** Proposal and analysis for future Mainnet PoW activation.
 - **[`../CONSENSUS_AND_NETWORK.md`](../CONSENSUS_AND_NETWORK.md):** Canonical Layer-1 mathematical consensus specification.
 - **[`../NODE_OPERATIONS.md`](../NODE_OPERATIONS.md):** Operational guidance for running Testnet nodes.
+- **[`../releases/v1.0.12.md`](../releases/v1.0.12.md):** Release notes for Core v1.0.12 (Desktop GUI v2 `"Waiting for Sync"`, WebView2, System Tray, Node Sync Gate `HTTP 503`, integrated CPU multi-thread optimization, Stratum TLS, additive Node RPC, and Go `1.27.4`).
 - **[`../releases/v1.0.11.md`](../releases/v1.0.11.md):** Release notes for Core v1.0.11 (Unified Block #20,000 C6 + `TxBinaryV1` activation, adaptive miner margin & `v1.0.10` compatibility).
 - **[`../releases/v1.0.10.md`](../releases/v1.0.10.md):** Release notes for Core v1.0.10.
 - **[`../releases/v1.0.9.md`](../releases/v1.0.9.md):** Release notes for Core v1.0.9.

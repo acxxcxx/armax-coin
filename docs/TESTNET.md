@@ -50,7 +50,7 @@ The Armaxcoin Public Testnet (`ARMX-TESTNET-1`) operates under isolated network 
   - 2 GB RAM (4 GB recommended if running both node and miner)
   - 10 GB free disk space (SSD recommended)
 - **Toolchain (if building from source):**
-  - **Go 1.27 or higher** (required for `crypto/mldsa`)
+  - **Go 1.27.4 or higher** (required for `crypto/mldsa` and `GO-2026-6859` remediation)
   - Git
 
 ### Step 1: Clone and Build
@@ -66,7 +66,9 @@ go version
 go build -o armcoind main.go
 go build -o armwallet ./cli/armwallet
 go build -o armsend ./cli/armsend
-go build -o armminer miner/miner.go
+go build -o armminer ./miner
+CGO_ENABLED=0 go build -ldflags="-H=windowsgui" -o armgui.exe ./gui   # Windows
+CGO_ENABLED=0 go build -o armgui ./gui                               # Linux / macOS
 ```
 
 On Windows (PowerShell):
@@ -74,7 +76,10 @@ On Windows (PowerShell):
 .\scripts\build.ps1
 ```
 
-### Step 2: Start the Testnet Node (`armcoind`)
+### Step 2: Launch Desktop Wallet GUI v2 (`armgui`) or Headless Node (`armcoind`)
+
+- **1-Click Desktop GUI (`armgui`):** Launch `./armgui.exe` (Windows native WebView2 window with **Minimize to System Tray**, Light/Dark themes, Multi-Wallet switcher, `bbolt` local paged history cache, ML-DSA-65 fee estimator, and **CPU Miner** tab featuring **`"Waiting for Sync"`** pre-sync protection) or `./armgui` on Linux/WSL/macOS (automatically verifies POSIX `0600` writability and falls back cleanly from `/mnt/*` to `~/.config/ArmaxCoin`, opening your host browser with fallback `Launch URL` console output). If no standalone node is running on `127.0.0.1:19333`, `armgui` boots an embedded testnet node automatically. Clicking Start in the CPU Miner tab while initial sync is still running queues mining in `"Waiting for Sync"` mode (`WAITING FOR SYNC`) without issuing `/mine` RPC calls until `/stats` confirms `synced: true`.
+- **Headless CLI Daemon (`armcoind`):**
 
 ```bash
 # In testnet mode (default when -network is omitted)
@@ -206,13 +211,13 @@ ADDR=$(grep -o '"address": "[^"]*' my_testnet_wallet.json | cut -d'"' -f4)
 ```
 
 ### Mining Architecture & Telemetry
-- **Local Multi-Threaded Engine:** `armminer` queries `/getblocktemplate` from `armcoind`, constructs the candidate block with coinbase reward, and runs parallel worker threads across `-threads N` local CPU workers.
+- **Local Multi-Threaded Engine:** `armminer` queries `/getblocktemplate` from `armcoind` (automatically waiting if the node returns `HTTP 503` during initial peer sync), constructs the candidate block with coinbase reward, and runs parallel workers defaulting to physical CPU core count (`GetOptimalCPUWorkerThreads`) using integrated `armaxhash.V2JobHasher` stack prefix caching (`0 B/op`, `0 allocs/op`), 64-byte cache-line padded worker slots, and non-overlapping `1<<36` positive nonce spans.
 - **Proof-of-Work Algorithm Migration:**
   - **Height $0 \le H < 520$:** Legacy SHA-256d PoW. All historical blocks remain valid and preserved.
   - **Height $520 \le H < 2500$:** **ArmaxHash v1** (BLAKE2b-512 prehash derived from the network ID and header, Argon2id with 2,048 KiB, 1 lane, 2 iterations, then BLAKE2b-256 finalization; see `docs/CONSENSUS_AND_NETWORK.md`).
-  - **Height $H \ge 2500$ (active on testnet):** Stream-Fast **ArmaxHash v2** (BLAKE2b-512 over the `ARMX-POW-V2\0` domain, version, network ID, and header, followed by BLAKE2b-256). The fixed-header `HashV2` benchmark reports 0 allocations/op; it does not measure complete block validation or end-to-end miner throughput.
-- **Console Telemetry:** Prints real-time hashrate metrics (`H/s`, `kH/s`, `MH/s`) and solve timestamps every stats interval.
-- **Dynamic Tip Adaptation:** Automatically queries daemon tip height and aborts stale rounds if a competing peer mines a block first (`HTTP 409 Conflict`).
+  - **Height $H \ge 2500$ (active on testnet):** Stream-Fast **ArmaxHash v2** (BLAKE2b-512 over the `ARMX-POW-V2\0` domain, version, network ID, and header, followed by BLAKE2b-256). `V2JobHasher` caches Stage-1 header prefixes inline on the worker stack with 0 allocations/op.
+- **Console Telemetry:** Prints real-time 1s Sliding-EMA hashrate metrics (`H/s`, `kH/s`, `MH/s`) and solve timestamps every stats interval.
+- **Dynamic Tip Adaptation & Clean Cancellation:** Automatically aborts stale rounds on tip changes, waits through `HTTP 503 syncing` states rather than mining behind peers, and supports explicit `POST /mine/stop` cancellation with clean drain handling (avoiding spurious `HTTP 409 Conflict` notices on quick restarts).
 - **Coinbase Maturity (10 Confirmations on Testnet, 100 on Mainnet):** Freshly mined block rewards enter an on-chain immature queue and cannot be spent until 10 blocks (testnet) or 100 blocks (mainnet) have been confirmed on top of them (consensus-enforced, storage schema v3).
 - **Daemon Internal Mining:** Alternatively, `armcoind` can mine in the background using standard flags:
   ```bash
@@ -320,14 +325,14 @@ sudo systemctl start armcoind-testnet
 
 ---
 
-## 9. Node Upgrade and Rollback Runbook (v1.0.11 / v1.0.10)
+## 9. Node Upgrade and Rollback Runbook (v1.0.12 / v1.0.11)
 
 > [!IMPORTANT]
-> **ACTIVE & SCHEDULED CONSENSUS FORKS (TESTNET BLOCKS 13,293, 13,335 & 20,000):**
-> - **Block 13,293 (`v1.0.9` — Anti-Stall TEDR):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When a candidate block's timestamp exceeds the parent block's timestamp by more than **1,200 seconds (20 minutes)**, the candidate block qualifies for the emergency fallback target (`ArmaxHashPowLimitHex`, Difficulty 3) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`).
-> - **Block 13,335 (`v1.0.10` — Armax-ASERT-AW):** Transitions the Testnet DAA from LWMA-1 ($N=60$) to **Armax-ASERT-AW (`aserti3-2d`)** (`ASERTActivationHeight = 13335`, anchored to Block `#13,334`, $T = 120\text{s}$, $\tau = 3600\text{s}$, per-block surge cap `14,400s`, TEDR boost `7,200s`).
-> - **Block 20,000 (`v1.0.11` — Unified Proposal C6 + `TxBinaryV1` Activation):** Simultaneously activates `FutureTimestampLimitActivationHeight = 20000` (narrowing forward timestamp tolerance from `7,200s` to **`+600s`** with `v1.0.11` adaptive `5s`/`30s` miner inherited-tip safety margins) and `BlockBinarySizeActivationHeight = 20000` (switching canonical block size validation to `TxBinaryV1` binary accounting, increasing 2 MB block capacity from **185** to **375 user ML-DSA-65 transactions**). Across Testnet Blocks `#15,967–#19,999`, `v1.0.11` preserves 100% P2P and JSON `Size()` backward compatibility with `v1.0.10`.
-> - All node operators and miners **MUST** upgrade to **v1.0.11** before Block `#20,000` and ensure server clocks are synchronized with NTP.
+> **ACTIVE TESTNET CONSENSUS FORKS (BLOCKS 13,293, 13,335 & 20,000):**
+> - **Block 13,293 (`v1.0.9` — Anti-Stall TEDR, Active):** Activates Testnet Anti-Stall Emergency Difficulty Adjustment (`AntiStallActivationHeight = 13293`). When a candidate block's timestamp exceeds the parent block's timestamp by more than **1,200 seconds (20 minutes)**, the candidate block qualifies for the emergency fallback target (`ArmaxHashPowLimitHex`, Difficulty 3) with Model 3 Synthetic Target Normalization (`720s` solve time, anchored to `lastNormalTarget`).
+> - **Block 13,335 (`v1.0.10` — Armax-ASERT-AW, Active):** Transitions the Testnet DAA from LWMA-1 ($N=60$) to **Armax-ASERT-AW (`aserti3-2d`)** (`ASERTActivationHeight = 13335`, anchored to Block `#13,334`, $T = 120\text{s}$, $\tau = 3600\text{s}$, per-block surge cap `14,400s`, TEDR boost `7,200s`).
+> - **Block 20,000 (`v1.0.11+` — Unified Proposal C6 + `TxBinaryV1`, Active):** Enforces `FutureTimestampLimitActivationHeight = 20000` (**`+600s`** forward timestamp limit with adaptive `5s`/`30s` miner margins) and `BlockBinarySizeActivationHeight = 20000` (`TxBinaryV1` binary accounting allowing **375 user ML-DSA-65 transactions** per 2 MB block). **`v1.0.12`** preserves 100% consensus & P2P wire compatibility with `v1.0.11` (zero hard forks or activation-height changes) while adding Desktop GUI v2 (`"Waiting for Sync"` queue, WebView2, Windows Tray, Multi-Wallet), Node Sync Gate (`HTTP 503`), integrated multi-thread CPU optimization (`V2JobHasher` + padded worker slots + physical-core default), Stratum TLS, additive Node RPC, and Go `1.27.4`.
+> - All node operators, miners, and GUI users should upgrade cleanly to **`v1.0.12`** while keeping clocks synchronized with NTP.
 
 > [!CAUTION]
 > **STORAGE COMPATIBILITY & ROLLBACK WARNING:**
@@ -338,7 +343,7 @@ sudo systemctl start armcoind-testnet
 > ```
 > Always back up `blockchain.db` before executing store conversion.
 
-### Seamless Upgrade Procedure to v1.0.11
+### Seamless Upgrade Procedure to v1.0.12
 1. Verify the current tip height and peer connectivity:
    ```bash
    curl -s http://127.0.0.1:19333/status | jq .
@@ -357,10 +362,10 @@ sudo systemctl start armcoind-testnet
    ```
 4. Back up the database and working binary:
    ```bash
-   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.v1010.bak
-   sudo tar -czvf /var/backups/armax_db_pre_v1011_$(date +%F).tar.gz -C /var/armax testnet/blockchain.db
+   sudo cp /usr/local/bin/armcoind /usr/local/bin/armcoind.v1011.bak
+   sudo tar -czvf /var/backups/armax_db_pre_v1012_$(date +%F).tar.gz -C /var/armax testnet/blockchain.db
    ```
-5. Install the new v1.0.11 binary:
+5. Install the new v1.0.12 binary:
    ```bash
    sudo cp armcoind /usr/local/bin/armcoind
    sudo chmod 755 /usr/local/bin/armcoind
@@ -370,28 +375,19 @@ sudo systemctl start armcoind-testnet
    sudo systemctl start armcoind-testnet
    sudo journalctl -u armcoind-testnet -n 50 --no-pager
    ```
-7. Verify running software version is `"1.0.11"`:
+7. Verify running software version is `"1.0.12"`:
    ```bash
    curl -s http://127.0.0.1:19333/status | jq .version
-   # Expected output: "1.0.11"
+   # Expected output: "1.0.12"
    ```
 
-### Emergency Rollback Procedure (to v1.0.10 prior to Block 20,000)
-If unrecoverable operational issues occur on Blocks `#15,967–#19,999` prior to the unified Block `#20,000` fork:
+### Emergency Rollback Procedure (to v1.0.11)
+Because `v1.0.12` and `v1.0.11` share identical consensus and BoltDB state schemas:
 1. Stop the daemon:
    ```bash
    sudo systemctl stop armcoind-testnet
    ```
-2. **If compression was enabled and rolling back below v1.0.7**, convert the database to uncompressed plain format first (not needed when rolling back between `v1.0.10` and `v1.0.11`):
-   ```bash
-   armcoind -network testnet -datadir /var/armax -store-rewrite plain
-   ```
-3. Restore the `v1.0.10` binary (note: `v1.0.9` and earlier cannot validate post-`#13,335` Armax-ASERT-AW blocks):
-   ```bash
-   sudo cp /usr/local/bin/armcoind.v1010.bak /usr/local/bin/armcoind
-   sudo systemctl start armcoind-testnet
-   ```
-4. Note: Starting at Block **20,000**, rolling back to `v1.0.10` risks rejecting valid blocks with `>185` ML-DSA-65 transactions (whose JSON `Size()` exceeds 2 MB while `TxBinaryV1` `BinarySize()` is within 2 MB) or following a forward-stamped split branch. Remaining on **v1.0.11** (see [`releases/v1.0.11.md`](releases/v1.0.11.md)) is strongly recommended.
+2. Restore the `v1.0.11` binary (`armcoind.v1011.bak`) and restart `armcoind-testnet` (note: do **not** roll back below `v1.0.11` on a post-Block `#20,000` chain). See [`releases/v1.0.12.md`](releases/v1.0.12.md) for full details.
 
 ---
 
@@ -444,6 +440,8 @@ To prevent sybil attacks, resource draining, and spam without introducing comple
   ```
 - **Connection refused on RPC:**
   Ensure `armcoind` has completed startup and created `armax.cookie`. The RPC daemon binds strictly to `127.0.0.1:19333` on testnet.
+- **Mining returns `HTTP 503` or GUI stays in `"Waiting for Sync"`:**
+  Your node is still completing Initial Block Download (IBD) or awaiting peer tip verification (`synced: false` in `/stats`). Leave the node connected until `sync_progress` reaches `100%`; `armgui` and `armminer` automatically begin hashing as soon as synchronization finishes, protecting your public IP from being banned by seed nodes for relaying behind-tip blocks.
 - **Corrupted testnet database:**
   To perform a clean resynchronization:
   ```bash

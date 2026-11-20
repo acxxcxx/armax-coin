@@ -38,7 +38,7 @@ We take the security of the Armaxcoin network and its users seriously. If you di
 ### 1. RPC & Local Service Interface
 - By default, the Armaxcoin RPC daemon (`armcoind`) binds strictly to loopback interface `127.0.0.1:19332` on mainnet (`127.0.0.1:19333` on testnet).
 - All upcoming auxiliary local services (API Explorer `19340`, Web Explorer `19341` (Planned / Removed), Wallet API `19342`, Metrics `19343`) are also designed and specified to bind strictly to `127.0.0.1` loopback by default.
-- Mutating endpoints (`/mine`, `/block/submit`, `/peers`) require valid authentication or local non-CORS context.
+- Mutating and mining endpoints (`/mine`, `/mine/stop`, `/getblocktemplate`, `/block/submit`, `/peers`) require valid authentication or local non-CORS context. `/mine` and `/getblocktemplate` return `HTTP 503 Service Unavailable` until initial P2P synchronization completes, preventing unsynced miners from relaying behind-tip blocks and incurring peer IP bans.
 - If exposed to external networks via `-rpcbind 0.0.0.0`, administrators MUST configure strong HTTP Basic Auth credentials and a TLS certificate/key (`ARMX_RPC_TLS_CERT`, `ARMX_RPC_TLS_KEY`). The daemon rejects a public RPC bind without both controls.
 
 ### 2. P2P Transport Layer
@@ -54,7 +54,7 @@ We take the security of the Armaxcoin network and its users seriously. If you di
 
 ### 4. Consensus & Cryptographic Status
 - Armaxcoin Layer-1 consensus implements the NIST FIPS 204 ML-DSA-65 digital signature algorithm for all user transactions (Go standard library `crypto/mldsa`).
-- PoW hashing algorithms (SHA-256d in the historical bootstrap / locked mainnet profile, and BLAKE2b in active ArmaxHash v2) are subject only to quadratic speedup under Grover's algorithm, retaining ~128 bits of effective post-quantum preimage resistance.
+- PoW hashing algorithms (SHA-256d in historical testnet bootstrap blocks and immutable Genesis `#0`, and BLAKE2b in active ArmaxHash v2 on Testnet `#2500+` and locked Mainnet `#1+` provisional pre-launch staging) are subject only to quadratic speedup under Grover's algorithm, retaining ~128 bits of effective post-quantum preimage resistance.
 - Advanced experimental extensions such as Hash Time-Locked Contracts (`HTLC`) remain in forward-compatible library status.
 - **Verification Status:** Formal verification and security evaluation criteria are tracked under [Mainnet Readiness](docs/MAINNET_READINESS.md).
 
@@ -64,4 +64,9 @@ We take the security of the Armaxcoin network and its users seriously. If you di
 - **PoW Algorithm Evolution:** Historical blocks 0..519 were mined using double-SHA256 (SHA-256d), and blocks 520..2499 used ArmaxHash v1 (Argon2id 2048 KiB, $t=2, p=1$; see `docs/CONSENSUS_AND_NETWORK.md`). Active mining from block #2500 onwards enforces **ArmaxHash v2 Stream-Fast** (chained BLAKE2b), engineered to eliminate DRAM memory churn and facilitate high-throughput CPU mining across commodity hardware and mobile/ARM devices without claiming permanent ASIC immunity.
 - **Early 51% Hashrate Vulnerability:** Low initial network hashrate during early testnet and launch phases leaves the blockchain vulnerable to 51% deep reorganization attacks. Reorganizations are strictly bounded by `MaxReorganizationDepth = 720` blocks.
 - **ARM Verification Performance:** ML-DSA-65 verification involves matrix-vector polynomial multiplication that imposes measurable CPU latency on constrained ARM single-board computers (Raspberry Pi / Orange Pi).
-- **Minimum Go Version:** Building from source strictly requires Go 1.27 or higher due to the standard library `crypto/mldsa` implementation and toolchain alignment (`go.mod`).
+- **Minimum Go Version:** Building from source strictly requires Go 1.27 or higher (`1.27.4+` recommended for `GO-2026-6859` remediation and `toolchain` alignment in `go.mod`).
+
+### 6. Desktop Wallet GUI v2 (`armgui`) Security Boundaries
+- **Loopback Isolation & Launch Authorization:** The local HTTP backend of `armgui` binds strictly to `127.0.0.1`. Access requires either a one-time `/auth/launch` single-use ticket + `HttpOnly`/`SameSite=Strict` cookie (Linux/WSL/macOS) or the WebView2-injected `X-Armx-Launch-Auth` request header + `X-Armx-GUI-Token` session token (Windows), rejecting unauthorized local browser/process requests with HTTP `403`. Mutating endpoints reject mismatched `Origin` / cross-site `Sec-Fetch-Site` headers and query-string tokens on `POST`.
+- **Startup Passphrase Gate & Idle Auto-Lock (Including Minimized Tray State):** Data endpoints remain locked (`423`/`401` gated) until the user unlocks the active keystore. Unlocked keys are held strictly in memory, automatically zeroized after 15 minutes of inactivity even when minimized to the Windows system tray, and wiped on shutdown. Windows tray tooltips and right-click status lines render only non-sensitive `Node` and `Miner` states — never passphrases, mnemonics, or wallet addresses.
+- **POSIX Keystore Permissions Fallback:** On Unix/WSL hosts, `armgui` tests directory `0600` writability (`isDirWritable`) before selecting the data directory, automatically falling back from Windows-mounted WSL paths (`/mnt/*`) to `~/.config/ArmaxCoin` so `peers.json` and keystores maintain strict POSIX `0600` permissions.

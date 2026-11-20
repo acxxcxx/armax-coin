@@ -1,6 +1,6 @@
 # Armaxcoin Mining Guide
 
-This guide details how to participate in Proof-of-Work (PoW) mining on the Armaxcoin network using the multi-threaded `armminer` CPU mining engine.
+This guide details how to participate in Proof-of-Work (PoW) CPU mining on the Armaxcoin network using the standalone `armminer` engine (integrated zero-alloc multi-threaded CPU + Stratum TCP/TLS) or the **CPU Miner** tab (`"Waiting for Sync"` protected) in Desktop Wallet GUI v2 (`armgui`).
 
 ---
 
@@ -12,10 +12,10 @@ Armaxcoin employs an evolutionary Proof-of-Work consensus timeline designed to t
 |---|---|---|
 | **Blocks 0 .. 519** | **SHA-256d** | Double SHA-256 block header hashing; legacy bootstrap phase |
 | **Blocks 520 .. 2499** | **ArmaxHash v1** | Network/header-derived BLAKE2b-512 prehash, Argon2id ($m=2048$ KiB, $t=2$, $p=1$), and BLAKE2b-256 finalization |
-| **Blocks 2500+ (Active)** | **ArmaxHash v2** | Stream-Fast chained **BLAKE2b-512 + BLAKE2b-256** PoW with domain separation; fixed-header hash benchmark reports 0 allocations/op, not end-to-end miner throughput |
+| **Blocks 2500+ (Active)** | **ArmaxHash v2** | Stream-Fast chained **BLAKE2b-512 + BLAKE2b-256** PoW with domain separation; integrated `V2JobHasher` stack prefix cache achieves 0 allocations/op |
 
 > [!NOTE]
-> For the complete canonical Proof-of-Work specification across all networks (Testnet and Mainnet profiles), see [docs/CONSENSUS_AND_NETWORK.md](CONSENSUS_AND_NETWORK.md). The unreleased Mainnet profile in code operates under standard Double-SHA256 (`SHA-256d`).
+> For the complete canonical Proof-of-Work specification across network profiles, see [docs/CONSENSUS_AND_NETWORK.md](CONSENSUS_AND_NETWORK.md). `core.MainnetLaunched` remains strictly `false` (invoking `-network mainnet` fails closed). Parameters currently in `MainnetProfile` (**ArmaxHash v2 Stream-Fast** from Block `#1+`, immutable SHA-256d Genesis `#0`, **Armax-ASERT-AW**, C1/C2/C6 timestamps, and `TxBinaryV1`) constitute a **provisional pre-launch staging configuration** for isolated `-local-mainnet` testing — not a finalized Mainnet launch baseline — and remain subject to change prior to launch freeze.
 
 ### Why ArmaxHash v2?
 ArmaxHash v1 used Argon2id (2048 KiB per hash, 2 iterations). The current code uses the `golang.org/x/crypto` Argon2id implementation; mining performance and memory-system effects depend on the machine and workload.
@@ -61,7 +61,9 @@ Copy your public Bech32 address (`armx1...`).
 
 ### Step 2: Ensure Node is Running
 
-The miner interacts with the local `armcoind` RPC daemon to fetch mining candidate block templates and submit completed nonces. Ensure your node is fully synced:
+The miner interacts with the local `armcoind` RPC daemon to fetch mining candidate block templates and submit completed nonces. Both `/mine` and `/getblocktemplate` remain gated behind `HTTP 503 Service Unavailable` until initial peer synchronization completes:
+- **`armgui` (CPU Miner tab):** Clicking Start while syncing enters **`"Waiting for Sync"`** mode (`WAITING FOR SYNC` badge and `#minerSyncBanner` progress bar), holding back `POST /mine` requests until sync finishes and starting automatically once `synced: true`. When paired with an older `v1.0.11` daemon lacking the `synced` field on `/stats`, `armgui` falls back cleanly to checking `peers_active >= 1`.
+- **`armminer`:** Automatically detects `HTTP 503` syncing responses (`errNodeSyncing`) and waits until the local node catches up to peer tips before hashing.
 
 ```bash
 ./armcoind -network testnet
@@ -92,19 +94,23 @@ When connecting to `armcoind`, `armminer` supports three authentication mechanis
 
 ---
 
-## 5. Performance & Thread Optimization
+## 5. Performance & Multi-Thread CPU Optimization
 
-- **Thread Selection:**
-  For optimal hashrate without system stutter, set `-threads` equal to the physical core count of your machine (e.g. `4` or `8`). Leaving 1 core free for system and node operations (`NumCPU - 1`) is recommended on dedicated mining desktops.
+- **Integrated Prefix-Caching Engine (`armaxhash.V2JobHasher`):**
+  Both `core.Blockchain.MineBlockContext` and `armminer` (solo RPC + Stratum v1) use the stack-allocated `armaxhash.V2JobHasher` (`NewV2JobHasher`, `UpdatePrefix`, `HashNonce`) with an inline `[768]byte` buffer to cache the immutable ArmaxHash v2 Stage-1 prefix across nonces (`0 B/op`, `0 allocs/op`, bit-identical with `HashV2`).
+- **64-Byte Cache-Line Worker Slots & Sliding-EMA Telemetry (`miner/cpu_optimizer.go`, `core/blockchain.go`):**
+  Per-thread counters use 64-byte cache-line padded `WorkerSlot` / `miningWorkerSlot` structs (`_ [56]byte`) and 1-second Sliding-EMA smoothing (`alpha = 0.3`), eliminating cross-core MESI cache-line false sharing during parallel hashing. Workers check cancellation via an isolated atomic `stopState` flag (every 256 hashes on fast PoW, every hash on Argon2id v1), and Stratum workers read target/job updates via lock-free `atomic.Pointer`.
+- **Contiguous Positive Nonce Partitions & Thread Selection (`GetOptimalCPUWorkerThreads`):**
+  Each worker receives a contiguous positive `int64` range (`startNonce + int64(workerID)*(1<<36)`, incrementing `b.Nonce++`), ensuring zero overlap and exact IEEE-754 `< 2^53` integer serialization compatibility with `v1.0.11`. When `-threads` is omitted in `armminer` or initialized in `armgui`, thread count defaults to physical CPU cores (`GetOptimalCPUWorkerThreads`), avoiding SMT/Hyper-Threading contention and leaving headroom for system and P2P tasks.
 - **Memory Footprint:**
   ArmaxHash v2 does not use the Argon2 memory-hard stage. Memory use of the complete miner and node depends on header construction, networking, and other runtime activity; the hash benchmark alone does not measure it.
 - **Thermal Management:**
-  Sustained CPU mining can increase power use and temperatures. Monitor the device and use an appropriate thread count and cooling setup.
-- **Clock Synchronization & Unified Block 20,000 Hard Fork (`v1.0.7+` / `v1.0.11`):**
-  From testnet block **20,000**, two consensus rules activate simultaneously: Proposal C6 narrows candidate block timestamps to at most **600 seconds (10 minutes)** ahead of the validating node's clock (down from the legacy 7,200s window), and `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`) expands 2 MB block capacity from **185** to **375 user ML-DSA-65 transactions**.
+  Sustained CPU mining can increase power use and temperatures. Monitor the device and use appropriate thread count settings and cooling.
+- **Clock Synchronization & Active Unified Block 20,000 Rules (`v1.0.11+` / `v1.0.12`):**
+  From testnet block **20,000** (active), Proposal C6 narrows candidate block timestamps to at most **600 seconds (10 minutes)** ahead of the validating node's clock (down from the legacy 7,200s window), and `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`) expands 2 MB block capacity from **185** to **375 user ML-DSA-65 transactions**.
   - `armminer` aligns candidate block timestamps to the node's reference template time when the local machine clock leads by > 60 seconds (`ClockSkewWarnSeconds`), while `armcoind` (`/getblocktemplate`) clamps candidate timestamps within `maxFutureLimit - minTemplateTimestampSafetyBuffer` (`540s` post-fork).
-  - If a candidate block timestamp approaches the 10-minute future ceiling, `futureLimitWaitWithMinTime` in `miner/miner.go` applies an **adaptive wait margin** (`v1.0.11`): **`inheritedTipSafetyMargin = 5` seconds** when clamping to an inherited forward-drifted parent (`blockTs <= minTs`, preventing honest miner starvation if competing miners mine `dt = 0` tips near `+600s`), vs **`futureLimitSafetyMargin = 30` seconds** when advancing under local clock skew (`blockTs > minTs`).
-  - **Operator Requirement:** All miners must upgrade to `v1.0.11` before Block `#20,000` and maintain active NTP clock synchronization (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Stratum and remote miners stamp with host time and are not compensated by local RPC hooks.
+  - If a candidate block timestamp approaches the 10-minute future ceiling, `futureLimitWaitWithMinTime` in `miner/miner.go` applies an **adaptive wait margin**: **`inheritedTipSafetyMargin = 5` seconds** when clamping to an inherited forward-drifted parent (`blockTs <= minTs`, preventing honest miner starvation if competing miners mine `dt = 0` tips near `+600s`), vs **`futureLimitSafetyMargin = 30` seconds** when advancing under local clock skew (`blockTs > minTs`).
+  - **Operator Requirement:** Maintain active NTP clock synchronization (`timedatectl set-ntp true` on Linux, `w32tm /resync` on Windows). Stratum and remote miners stamp with host time and are not compensated by local RPC hooks.
 
 ---
 
@@ -125,12 +131,16 @@ Verify that `"miner"` matches your address and `"merkle_root"` reflects the coin
 
 ---
 
-## 7. Pool & Stratum Support
+## 7. Pool & Stratum Support (`TCP` & `TLS`)
 
 - **Solo Mining Architecture:** The primary and verified testnet mining path is **solo mining** against the local `armcoind` daemon via HTTP RPC (`GET /getmininginfo`, `GET /getblocktemplate`, `POST /block/submit`). The node daemon itself does **not** host a Stratum server.
-- **Stratum v1 Client:** `armminer` includes a built-in native Stratum v1 TCP client (`stratum+tcp://`) supporting difficulty target negotiation, per-thread nonce partitioning, clean job handling, and multi-endpoint failover:
+- **Stratum v1 Client (`stratum+tcp://` & `stratum+ssl://` / `stratum+tls://`):** `armminer` includes a built-in native Stratum v1 client supporting both plaintext TCP and TLS 1.2+ pool endpoints, difficulty target negotiation, worker naming (`.worker`), per-thread nonce partitioning, clean job handling, and multi-endpoint failover:
   ```bash
-  ./armminer -pool stratum+tcp://pool.example.com:3333 -user worker1 -pass x -threads 4
+  # Plaintext Stratum TCP
+  ./armminer -pool stratum+tcp://pool.example.com:3333 -user <YOUR_ARMX_ADDRESS>.worker1 -pass x -threads 4
+
+  # Encrypted Stratum TLS
+  ./armminer -pool stratum+ssl://pool.example.com:3443 -user <YOUR_ARMX_ADDRESS>.worker1 -pass x -threads 4
   ```
   In v1.0.7 (`HIGH-05`), `set_difficulty` RPC parsing guards against `Inf` and `NaN` float values before integer conversion, preventing thread crashes during remote difficulty updates.
-- **Operational Boundary:** External Stratum mining pool software is operated independently outside this repository and has not been evaluated in live public staging. Node operators and miners should verify compatibility on isolated test setups before production deployment.
+- **Operational Boundary:** External Stratum mining pool software is operated independently outside this repository. Operators and miners should confirm TLS certificates and pool difficulty settings before sustained production deployment.
