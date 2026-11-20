@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf16"
+	"unsafe"
 
 	"github.com/acxxcxx/armax-coin/core"
 	"github.com/acxxcxx/armax-coin/wallet"
@@ -924,5 +926,321 @@ func TestSafeP2PDisplayFilter(t *testing.T) {
 		if ep, _ := obj["endpoint"].(string); strings.Contains(ep, "58539") {
 			t.Fatalf("found ephemeral peer in filtered obj output: %s", ep)
 		}
+	}
+}
+
+func TestGUIStatsResponseMaturityAndTicker(t *testing.T) {
+	payload := `{"height":19576,"blocks":19577,"coinbase_maturity":10,"network_id":"ARMX-TESTNET-1","ticker":"tARMX","peers_active":4}`
+	var st StatsResponse
+	if err := json.Unmarshal([]byte(payload), &st); err != nil {
+		t.Fatalf("failed to unmarshal stats: %v", err)
+	}
+	if st.CoinbaseMaturity != 10 || st.Ticker != "tARMX" || st.PeersActive != 4 || st.Height != 19576 {
+		t.Fatalf("unexpected decoded StatsResponse fields: %+v", st)
+	}
+}
+
+func TestGUISessionMinedModel(t *testing.T) {
+	m := &SessionMinedModel{
+		items: []SessionMinedBlock{
+			{
+				Height:        501,
+				Hash:          "0000000018cacfd0123456789abcdef0",
+				Reward:        60 * core.CoinUnit,
+				PeersAtMine:   5,
+				Confirmations: 7,
+				Maturity:      10,
+				Status:        MinedStatusConfirming,
+			},
+			{
+				Height:        502,
+				Hash:          "0000aaaa",
+				Reward:        60 * core.CoinUnit,
+				PeersAtMine:   0,
+				Confirmations: 0,
+				Maturity:      10,
+				Status:        MinedStatusOrphaned,
+			},
+		},
+	}
+
+	if m.RowCount() != 2 {
+		t.Fatalf("expected RowCount 2, got %d", m.RowCount())
+	}
+	if got := m.Value(0, 0); got != "#501" {
+		t.Errorf("col 0 = %v, want #501", got)
+	}
+	if got := m.Value(0, 1); got != "0000000018cacfd0..." {
+		t.Errorf("col 1 = %v", got)
+	}
+	if got := m.Value(0, 2); !strings.Contains(fmt.Sprint(got), "60.00000000") {
+		t.Errorf("col 2 = %v", got)
+	}
+	if got := m.Value(0, 3); got != "5" {
+		t.Errorf("col 3 = %v, want 5", got)
+	}
+	if got := m.Value(0, 4); got != "7/10" {
+		t.Errorf("col 4 = %v, want 7/10", got)
+	}
+	if got := m.Value(0, 5); got != string(MinedStatusConfirming) {
+		t.Errorf("col 5 = %v, want CONFIRMING", got)
+	}
+	if got := m.Value(1, 5); got != string(MinedStatusOrphaned) {
+		t.Errorf("row 1 col 5 = %v, want ORPHANED", got)
+	}
+	if got := m.Value(-1, 0); got != "" {
+		t.Errorf("out-of-bounds low expected empty, got %v", got)
+	}
+	if got := m.Value(9, 0); got != "" {
+		t.Errorf("out-of-bounds high expected empty, got %v", got)
+	}
+}
+
+func TestGUIFilterTxItems_TypeDateAndQuery(t *testing.T) {
+	items := []*TxItem{
+		{
+			Index:     1,
+			Type:      "Mined (Coinbase)",
+			Amount:    "60.00000000 tARMX",
+			Height:    "#100 (Mature)",
+			TxID:      "tx-coinbase-001",
+			Timestamp: "2026-11-15 10:00:00",
+			Record:    &TxHistoryRecord{BlockIndex: 100, Tx: core.Transaction{Sender: "SYSTEM"}},
+		},
+		{
+			Index:     2,
+			Type:      "Sent",
+			Amount:    "5.00000000 tARMX",
+			Height:    "Pending",
+			TxID:      "tx-sent-002",
+			Timestamp: "2026-11-17 12:30:00",
+			Record:    &TxHistoryRecord{BlockIndex: -1, Tx: core.Transaction{Sender: "armx1alice", Recipient: "armx1bob"}},
+		},
+		{
+			Index:     3,
+			Type:      "Received",
+			Amount:    "12.00000000 tARMX",
+			Height:    "#120 (Finalized)",
+			TxID:      "tx-recv-003",
+			Timestamp: "2026-11-19 08:15:00",
+			Record:    &TxHistoryRecord{BlockIndex: 120, Tx: core.Transaction{Sender: "armx1charlie", Recipient: "armx1alice"}},
+		},
+	}
+
+	if got := filterTxItems(items, "", "All", "", ""); len(got) != 3 {
+		t.Fatalf("All filter expected 3, got %d", len(got))
+	}
+	if got := filterTxItems(items, "", "Mined (Coinbase)", "", ""); len(got) != 1 || got[0].TxID != "tx-coinbase-001" {
+		t.Fatalf("Mined filter failed: %+v", got)
+	}
+	if got := filterTxItems(items, "", "Pending", "", ""); len(got) != 1 || got[0].TxID != "tx-sent-002" {
+		t.Fatalf("Pending filter failed: %+v", got)
+	}
+	if got := filterTxItems(items, "", "All", "2026-11-16", "2026-11-18"); len(got) != 1 || got[0].TxID != "tx-sent-002" {
+		t.Fatalf("Date range filter failed: %+v", got)
+	}
+	if got := filterTxItems(items, "charlie", "Received", "", ""); len(got) != 1 || got[0].TxID != "tx-recv-003" {
+		t.Fatalf("Combined text+type filter failed: %+v", got)
+	}
+}
+
+func TestGUIPeerInspector_FiltersEphemeralPeers(t *testing.T) {
+	netProfile := core.NetworkProfile{
+		P2PPort:      "19335",
+		DefaultSeeds: []string{"testnet-seed1.armax-coin.cloud:19335"},
+	}
+	raw := []byte(`[
+		{"endpoint":"198.51.100.25:58539", "is_active":true},
+		{"endpoint":"testnet-seed1.armax-coin.cloud:19335", "is_seed":true, "is_active":true},
+		{"endpoint":"198.51.100.30:19335", "is_active":true}
+	]`)
+
+	rows := parseSafePeerInspectorRows(raw, netProfile)
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 safe peer rows, got %d: %+v", len(rows), rows)
+	}
+	if rows[0].Role != "DNS Seed" || rows[1].Role != "Public Node" {
+		t.Errorf("unexpected peer roles: %+v", rows)
+	}
+
+	m := &PeerInspectorModel{items: rows}
+	if m.RowCount() != 2 || m.Value(0, 1) != "DNS Seed" || m.Value(1, 0) != "198.51.100.30:19335" {
+		t.Errorf("unexpected PeerInspectorModel values")
+	}
+}
+
+func TestGUIBIP21AndAddressBlocks(t *testing.T) {
+	addr := "armx1cdj242tzwrp5uutzyktj0p4jsyl0s06ahxfk3xzv0vqgnn438e7s2ps308"
+	uriNoAmt := buildBIP21PaymentURI(addr, "", "DesktopWallet")
+	if uriNoAmt != "armax:"+addr+"?label=DesktopWallet" {
+		t.Errorf("unexpected URI without amount: %s", uriNoAmt)
+	}
+	uriWithAmt := buildBIP21PaymentURI(addr, "12.5", "DesktopWallet")
+	if uriWithAmt != "armax:"+addr+"?amount=12.5&label=DesktopWallet" {
+		t.Errorf("unexpected URI with amount: %s", uriWithAmt)
+	}
+	blocks := formatAddress4CharBlocks("armx12345678")
+	if blocks != "armx  1234  5678" {
+		t.Errorf("unexpected 4-char blocks formatting: %q", blocks)
+	}
+}
+
+func TestWindowsICOIconParser(t *testing.T) {
+	h32 := createIconFromICOBytes(armaxLogoICO, 32, 32)
+	if h32 == 0 {
+		t.Fatalf("expected non-zero 32x32 HICON from embedded armax_logo.ico")
+	}
+	destroyHIcon(h32)
+
+	h16 := createIconFromICOBytes(armaxLogoICO, 16, 16)
+	if h16 == 0 {
+		t.Fatalf("expected non-zero 16x16 HICON from embedded armax_logo.ico")
+	}
+	destroyHIcon(h16)
+
+	if bad := createIconFromICOBytes([]byte{1, 2, 3}, 32, 32); bad != 0 {
+		t.Errorf("expected 0 HICON for truncated ICO bytes, got %v", bad)
+	}
+}
+
+func TestGUIExecuteConsoleCommand_GetMempoolInfoQueriesMempool(t *testing.T) {
+	mempoolHits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Network-ID", "ARMX-TESTNET-1")
+		switch r.URL.Path {
+		case "/stats":
+			_, _ = w.Write([]byte(`{"height":105,"network_id":"ARMX-TESTNET-1"}`))
+		case "/mempool":
+			mempoolHits++
+			_ = json.NewEncoder(w).Encode([]core.Transaction{{
+				Sender:    core.GenesisMiner,
+				Recipient: "armx1recipient000",
+				Amount:    100_000_000,
+				Fee:       11_000,
+				Nonce:     1,
+			}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	out := executeConsoleCommand("getmempoolinfo", srv.URL, "ARMX-TESTNET-1")
+	if mempoolHits != 1 {
+		t.Fatalf("expected executeConsoleCommand(getmempoolinfo) to query /mempool once, got %d (out=%s)", mempoolHits, out)
+	}
+	if !strings.Contains(out, "HTTP 200") || !strings.Contains(out, `"size":1`) || !strings.Contains(out, `"transactions"`) {
+		t.Fatalf("unexpected getmempoolinfo console output: %s", out)
+	}
+}
+
+func TestWindowsNotifyIconDataSize(t *testing.T) {
+	gotSize := unsafe.Sizeof(winNotifyIconDataW{})
+	if unsafe.Sizeof(uintptr(0)) == 8 {
+		if gotSize != 976 {
+			t.Fatalf("expected 64-bit winNotifyIconDataW size 976, got %d", gotSize)
+		}
+		var zero winNotifyIconDataW
+		checks := []struct {
+			name string
+			got  uintptr
+			want uintptr
+		}{
+			{"HWnd", unsafe.Offsetof(zero.HWnd), 8},
+			{"HIcon", unsafe.Offsetof(zero.HIcon), 32},
+			{"SzTip", unsafe.Offsetof(zero.SzTip), 40},
+			{"SzInfo", unsafe.Offsetof(zero.SzInfo), 304},
+			{"SzInfoTitle", unsafe.Offsetof(zero.SzInfoTitle), 820},
+			{"GuidItem", unsafe.Offsetof(zero.GuidItem), 952},
+			{"HBalloonIcon", unsafe.Offsetof(zero.HBalloonIcon), 968},
+		}
+		for _, c := range checks {
+			if c.got != c.want {
+				t.Errorf("64-bit winNotifyIconDataW.%s offset = %d, want %d", c.name, c.got, c.want)
+			}
+		}
+	} else if gotSize != 956 {
+		t.Fatalf("expected 32-bit winNotifyIconDataW size 956, got %d", gotSize)
+	}
+}
+
+func TestWindowsTrayHelpers_UTF16CopyAndStatusText(t *testing.T) {
+	// 1. Empty slice safety
+	copyUTF16Fixed(nil, "ignored")
+
+	// 2. Normal UTF-8 with em-dash + NUL termination
+	var tip [128]uint16
+	tip[0] = 0x1234
+	tip[127] = 0x5678
+	msg := "Armaxcoin Core — Desktop Wallet"
+	copyUTF16Fixed(tip[:], msg)
+	if tip[127] != 0 {
+		t.Fatalf("expected trailing elements cleared, got %x", tip[127])
+	}
+	end := 0
+	for end < len(tip) && tip[end] != 0 {
+		end++
+	}
+	decoded := string(utf16.Decode(tip[:end]))
+	if decoded != msg {
+		t.Fatalf("decoded UTF-16 = %q, want %q", decoded, msg)
+	}
+
+	// 3. Exact truncation with guaranteed NUL terminator
+	var small [6]uint16
+	copyUTF16Fixed(small[:], "Armaxcoin")
+	if small[5] != 0 {
+		t.Fatalf("expected NUL terminator at last slot, got %d", small[5])
+	}
+	if got := string(utf16.Decode(small[:5])); got != "Armax" {
+		t.Fatalf("truncated UTF-16 = %q, want %q", got, "Armax")
+	}
+
+	// 4. Tray status formatting (zero network I/O, no secret exposure)
+	origNode := getNodeBootstrapStatus()
+	origTip := atomic.LoadInt64(&lastTipHeight)
+	miningLock.Lock()
+	origActive := miningActive
+	miningLock.Unlock()
+	t.Cleanup(func() {
+		setNodeBootstrapStatus(origNode)
+		atomic.StoreInt64(&lastTipHeight, origTip)
+		miningLock.Lock()
+		miningActive = origActive
+		miningLock.Unlock()
+	})
+
+	setNodeBootstrapStatus(NodeBootstrapStatus{State: "starting"})
+	miningLock.Lock()
+	miningActive = false
+	miningLock.Unlock()
+	if got := buildTrayStatusText(); got != "Node: Starting | Miner: Idle" {
+		t.Errorf("unexpected status (starting/idle): %q", got)
+	}
+
+	setNodeBootstrapStatus(NodeBootstrapStatus{State: "online"})
+	miningLock.Lock()
+	miningActive = true
+	miningLock.Unlock()
+	if got := buildTrayStatusText(); got != "Node: Online | Miner: CPU Mining" {
+		t.Errorf("unexpected status (online/cpu): %q", got)
+	}
+
+	setNodeBootstrapStatus(NodeBootstrapStatus{State: ""})
+	atomic.StoreInt64(&lastTipHeight, 42)
+	miningLock.Lock()
+	miningActive = true
+	miningLock.Unlock()
+	if got := buildTrayStatusText(); got != "Node: Online | Miner: CPU Mining" {
+		t.Errorf("unexpected status (tip fallback/cpu): %q", got)
+	}
+
+	atomic.StoreInt64(&lastTipHeight, 0)
+	miningLock.Lock()
+	miningActive = false
+	miningLock.Unlock()
+	if got := buildTrayStatusText(); got != "Node: Offline | Miner: Idle" {
+		t.Errorf("unexpected status (offline/idle): %q", got)
 	}
 }
