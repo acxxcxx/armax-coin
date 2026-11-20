@@ -310,7 +310,7 @@ func TestLocalMainnet_MiningStorageRestartLifecycle(t *testing.T) {
 		t.Fatalf("Genesis hash mismatch: got %s, want %s", bc1.Chain[0].Hash, core.GenesisHash)
 	}
 
-	// Mine block #1 with SHA-256d
+	// Mine block #1 with ArmaxHash v2 (provisional locked Mainnet staging profile)
 	minerAddr := "armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd"
 	b1, err := bc1.MineBlockWithErr(minerAddr)
 	if err != nil {
@@ -318,6 +318,12 @@ func TestLocalMainnet_MiningStorageRestartLifecycle(t *testing.T) {
 	}
 	if b1.Index != 1 {
 		t.Fatalf("Expected mined block index 1, got %d", b1.Index)
+	}
+	if b1.PoWAlgorithm() != "armaxhash-v2" {
+		t.Fatalf("Expected Mainnet block #1 PoWAlgorithm 'armaxhash-v2', got %q", b1.PoWAlgorithm())
+	}
+	if daa := core.GetCurrentDAAEngineName(1); daa != "Armax-ASERT-AW" {
+		t.Fatalf("Expected Mainnet DAA engine 'Armax-ASERT-AW' at block #1, got %q", daa)
 	}
 	if err := bc1.SaveToFile(); err != nil {
 		t.Fatalf("SaveToFile failed: %v", err)

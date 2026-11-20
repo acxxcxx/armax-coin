@@ -171,4 +171,96 @@ func TestMineEndpoint_TimeoutAndCancellation(t *testing.T) {
 	if elapsed > 2*time.Second {
 		t.Errorf("Cancellation took too long to abort: %v", elapsed)
 	}
+
+	// 3. Immediate restart after client context cancellation must NOT get HTTP 409
+	core.SetTargetOverrideForTesting(easyTarget)
+	ctxRestart, cancelRestart := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelRestart()
+	reqRestart, err := http.NewRequestWithContext(ctxRestart, "POST", server.URL+"/mine", bytes.NewBuffer(payload))
+	if err != nil {
+		t.Fatalf("Failed to build restart request: %v", err)
+	}
+	reqRestart.Header.Set("Content-Type", "application/json")
+	reqRestart.Header.Set("X-Mine-Key", "test-secret-mine-key")
+	respRestart, err := client.Do(reqRestart)
+	if err != nil {
+		t.Fatalf("Immediate restart /mine after cancellation failed: %v", err)
+	}
+	bodyRestart, _ := io.ReadAll(respRestart.Body)
+	respRestart.Body.Close()
+	if respRestart.StatusCode != http.StatusOK {
+		t.Fatalf("Expected HTTP 200 on immediate /mine restart after cancel, got %d: %s", respRestart.StatusCode, string(bodyRestart))
+	}
+
+	// 4. POST /mine/stop auth guards & explicit abort of an active /mine request
+	reqStopGet := httptest.NewRequest(http.MethodGet, "/mine/stop", nil)
+	reqStopGet.Host = "127.0.0.1"
+	reqStopGet.Header.Set("X-Mine-Key", "test-secret-mine-key")
+	recStopGet := httptest.NewRecorder()
+	handler.ServeHTTP(recStopGet, reqStopGet)
+	if recStopGet.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("Expected 405 Method Not Allowed for GET /mine/stop, got %d", recStopGet.Code)
+	}
+
+	reqStopUnauth, _ := http.NewRequest(http.MethodPost, server.URL+"/mine/stop", nil)
+	respStopUnauth, err := client.Do(reqStopUnauth)
+	if err != nil {
+		t.Fatalf("Unauthenticated /mine/stop request failed: %v", err)
+	}
+	respStopUnauth.Body.Close()
+	if respStopUnauth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for unauthenticated POST /mine/stop, got %d", respStopUnauth.StatusCode)
+	}
+
+	core.SetTargetOverrideForTesting(hardTarget)
+	mineDoneCh := make(chan int, 1)
+	go func() {
+		ctxLong, cancelLong := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelLong()
+		rMine, _ := http.NewRequestWithContext(ctxLong, "POST", server.URL+"/mine", bytes.NewBuffer(payload))
+		rMine.Header.Set("Content-Type", "application/json")
+		rMine.Header.Set("X-Mine-Key", "test-secret-mine-key")
+		resMine, errMine := client.Do(rMine)
+		if errMine != nil {
+			mineDoneCh <- -1
+			return
+		}
+		_, _ = io.ReadAll(resMine.Body)
+		resMine.Body.Close()
+		mineDoneCh <- resMine.StatusCode
+	}()
+
+	// Wait briefly until activeMiningJob is held, then trigger POST /mine/stop
+	stopDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(stopDeadline) {
+		if func() bool {
+			activeMiningMu.Lock()
+			defer activeMiningMu.Unlock()
+			return activeMiningCancel != nil
+		}() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	reqStopAuth, _ := http.NewRequest(http.MethodPost, server.URL+"/mine/stop", nil)
+	reqStopAuth.Header.Set("X-Mine-Key", "test-secret-mine-key")
+	respStopAuth, err := client.Do(reqStopAuth)
+	if err != nil {
+		t.Fatalf("Authenticated POST /mine/stop failed: %v", err)
+	}
+	stopBody, _ := io.ReadAll(respStopAuth.Body)
+	respStopAuth.Body.Close()
+	if respStopAuth.StatusCode != http.StatusOK || !strings.Contains(string(stopBody), `"stopped"`) {
+		t.Fatalf("Expected 200 OK {status:stopped} from /mine/stop, got %d: %s", respStopAuth.StatusCode, string(stopBody))
+	}
+
+	select {
+	case code := <-mineDoneCh:
+		if code == http.StatusOK || code <= 0 {
+			t.Fatalf("Expected stopped /mine call to return HTTP 409 aborted, got %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("In-flight /mine did not abort promptly after POST /mine/stop")
+	}
 }

@@ -17,8 +17,8 @@ import (
 // Runs one mainnet node and one testnet node simultaneously with isolated data directories
 // and distinct ports, ensuring no DB collisions or port conflicts.
 func TestL1_3_ConcurrentMainnetAndTestnetNodes(t *testing.T) {
+	core.LockNetworkForTesting(t)
 	core.SetNetworkForTesting(true)
-	defer core.SetNetworkForTesting(true)
 	t.Setenv("ARMX_ALLOW_PRIVATE_PEERS", "1")
 
 	// Prepare distinct isolated data directories
@@ -32,7 +32,6 @@ func TestL1_3_ConcurrentMainnetAndTestnetNodes(t *testing.T) {
 	_ = core.SetNetwork("mainnet")
 	defer func() {
 		core.SetDBPath("")
-		_ = core.SetNetwork("mainnet")
 	}()
 	mainnetDBPath := filepath.Join(mainnetDir, core.DBFileName)
 	core.SetDBPath(mainnetDBPath)

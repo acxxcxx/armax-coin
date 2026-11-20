@@ -14,6 +14,9 @@ import (
 
 // TestC33_NetworkProfiles verifies the configuration of mainnet and testnet network profiles [C-33].
 func TestC33_NetworkProfiles(t *testing.T) {
+	core.LockNetworkForTesting(t)
+	core.SetNetworkForTesting(true)
+
 	// 1. Mainnet profile verification
 	if err := core.SetNetwork("mainnet"); err != nil {
 		t.Fatalf("failed to set mainnet profile: %v", err)
@@ -43,14 +46,13 @@ func TestC33_NetworkProfiles(t *testing.T) {
 	if testnet.RPCPort != core.TestnetRPCPort {
 		t.Errorf("expected testnet RPCPort '%s', got '%s'", core.TestnetRPCPort, testnet.RPCPort)
 	}
-
-	// Reset back to mainnet
-	_ = core.SetNetwork("mainnet")
 }
 
 // TestC33_MainnetRejectsTestnetP2PConnection verifies that a mainnet node rejects
 // incoming messages or queries sent from a testnet node/peer with mismatched NetworkID [C-33].
 func TestC33_MainnetRejectsTestnetP2PConnection(t *testing.T) {
+	core.LockNetworkForTesting(t)
+	core.SetNetworkForTesting(true)
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	t.Setenv("ARMX_ALLOW_PRIVATE_PEERS", "1")
 
@@ -71,6 +73,7 @@ func TestC33_MainnetRejectsTestnetP2PConnection(t *testing.T) {
 
 	port := getFreePort(t)
 	ps := NewPeerServer(port, bc)
+	defer ps.Stop()
 	go ps.StartServer()
 
 	time.Sleep(100 * time.Millisecond)

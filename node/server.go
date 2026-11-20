@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -187,7 +188,25 @@ func isAllowedOrigin(rawURL string) bool {
 	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
-var activeMiningJob int32
+var (
+	activeMiningJob    int32
+	activeMiningMu     sync.Mutex
+	activeMiningCancel context.CancelFunc
+	activeMiningCtx    context.Context
+	activeMiningDone   chan struct{}
+)
+
+// CancelActiveMining aborts any currently executing /mine RPC job, returning true if one was active.
+func CancelActiveMining() bool {
+	activeMiningMu.Lock()
+	cancel := activeMiningCancel
+	activeMiningMu.Unlock()
+	if cancel != nil {
+		cancel()
+		return true
+	}
+	return false
+}
 
 // writeJSONError safely serializes an error message into a valid JSON object [T10]
 func writeJSONError(w http.ResponseWriter, msg string, code int) {
@@ -198,6 +217,26 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) {
 		"error":   msg,
 		"message": msg,
 		"status":  "error",
+	})
+}
+
+func writeSyncUnavailableJSON(w http.ResponseWriter, st SyncStatus) {
+	msg := st.Reason
+	if msg == "" {
+		msg = "Node is still synchronizing blocks"
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":           "syncing",
+		"syncing":          st.Syncing,
+		"synced":           st.Synced,
+		"local_height":     st.LocalHeight,
+		"best_peer_height": st.BestPeerHeight,
+		"sync_progress":    st.SyncProgress,
+		"message":          fmt.Sprintf("%s; mining paused until sync completes", msg),
+		"error":            msg,
 	})
 }
 
@@ -233,7 +272,7 @@ func isMutatingEndpoint(path string, method string) bool {
 	if method == http.MethodPost || method == http.MethodPut || method == http.MethodDelete || method == http.MethodPatch {
 		return true
 	}
-	return path == "/mine"
+	return path == "/mine" || path == "/mine/stop"
 }
 
 // isAuthorizedMiner checks if caller has valid X-Mine-Key or valid RPC credentials
@@ -512,6 +551,155 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			Tx         core.Transaction `json:"tx"`
 		}
 
+		pagedMode := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "paged")
+		if pagedMode {
+			limit := 250
+			if lStr := strings.TrimSpace(r.URL.Query().Get("limit")); lStr != "" {
+				if lVal, err := strconv.Atoi(lStr); err == nil && lVal > 0 {
+					limit = lVal
+				}
+			}
+			if limit > 1000 {
+				limit = 1000
+			}
+
+			batchBlocks := 2000
+			if bStr := strings.TrimSpace(r.URL.Query().Get("batch_blocks")); bStr != "" {
+				if bVal, err := strconv.Atoi(bStr); err == nil && bVal > 0 {
+					batchBlocks = bVal
+				}
+			}
+			if batchBlocks > 5000 {
+				batchBlocks = 5000
+			}
+
+			cursorStr := strings.TrimSpace(r.URL.Query().Get("cursor_height"))
+			hasCursor := cursorStr != ""
+			var cursorVal int
+			if hasCursor {
+				parsed, err := strconv.Atoi(cursorStr)
+				if err != nil {
+					http.Error(w, `{"error":"Invalid cursor_height parameter"}`, http.StatusBadRequest)
+					return
+				}
+				cursorVal = parsed
+			}
+
+			minHeight := 0
+			if mhStr := strings.TrimSpace(r.URL.Query().Get("min_height")); mhStr != "" {
+				parsed, err := strconv.Atoi(mhStr)
+				if err != nil || parsed < 0 {
+					http.Error(w, `{"error":"Invalid min_height parameter"}`, http.StatusBadRequest)
+					return
+				}
+				minHeight = parsed
+			}
+
+			bc.Lock.RLock()
+			chainLen := len(bc.Chain)
+			chainHeight := 0
+			tipHash := ""
+			if chainLen > 0 {
+				chainHeight = chainLen - 1
+				tipHash = bc.Chain[chainHeight].Hash
+			}
+
+			records := []TxRecord{}
+			if chainLen == 0 || (hasCursor && cursorVal < 0) || (hasCursor && cursorVal < minHeight) || (!hasCursor && chainHeight < minHeight) {
+				// Even when synced up to tipHeight (min_height > chainHeight), emit matching pending mempool txs on page 1.
+				if !hasCursor || cursorVal >= chainHeight {
+					nowUnix := time.Now().Unix()
+					for _, tx := range bc.Mempool {
+						if core.MatchAddress(tx.Sender, address) || core.MatchAddress(tx.Recipient, address) {
+							records = append(records, TxRecord{
+								BlockIndex: -1,
+								Timestamp:  nowUnix,
+								Status:     "pending",
+								Tx:         tx,
+							})
+						}
+					}
+				}
+				bc.Lock.RUnlock()
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"records":            records,
+					"chain_height":       chainHeight,
+					"tip_hash":           tipHash,
+					"scanned_from":       chainHeight,
+					"scanned_to":         chainHeight,
+					"next_cursor_height": -1,
+					"has_more":           false,
+				})
+				return
+			}
+
+			scanStart := chainHeight
+			if hasCursor && cursorVal < scanStart {
+				scanStart = cursorVal
+			}
+
+			// Emit pending mempool transactions only on page 1 (when scanning from the tip).
+			if !hasCursor || cursorVal >= chainHeight {
+				nowUnix := time.Now().Unix()
+				for _, tx := range bc.Mempool {
+					if core.MatchAddress(tx.Sender, address) || core.MatchAddress(tx.Recipient, address) {
+						records = append(records, TxRecord{
+							BlockIndex: -1,
+							Timestamp:  nowUnix,
+							Status:     "pending",
+							Tx:         tx,
+						})
+					}
+				}
+			}
+
+			scanEnd := scanStart - batchBlocks + 1
+			if scanEnd < minHeight {
+				scanEnd = minHeight
+			}
+
+			lastScanned := scanStart
+			for i := scanStart; i >= scanEnd; i-- {
+				b := bc.Chain[i]
+				// Complete every matching transaction inside block i before checking limit
+				// so pagination strictly aligns on block boundaries and never skips intra-block txs.
+				for _, tx := range b.Transactions {
+					if core.MatchAddress(tx.Sender, address) || core.MatchAddress(tx.Recipient, address) {
+						records = append(records, TxRecord{
+							BlockIndex: b.Index,
+							Timestamp:  b.Timestamp,
+							Status:     "confirmed",
+							Tx:         tx,
+						})
+					}
+				}
+				lastScanned = i
+				if len(records) >= limit {
+					break
+				}
+			}
+			bc.Lock.RUnlock()
+
+			nextCursor := lastScanned - 1
+			hasMore := nextCursor >= minHeight
+			if !hasMore {
+				nextCursor = -1
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"records":            records,
+				"chain_height":       chainHeight,
+				"tip_hash":           tipHash,
+				"scanned_from":       scanStart,
+				"scanned_to":         lastScanned,
+				"next_cursor_height": nextCursor,
+				"has_more":           hasMore,
+			})
+			return
+		}
+
 		var history []TxRecord
 
 		bc.Lock.RLock()
@@ -587,6 +775,7 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		mempoolSize := len(bc.Mempool)
 		blockReward := bc.BlockReward
 		circulatingSupply := bc.GetCirculatingSupply()
+		maturity := bc.GetCoinbaseMaturity()
 		latest := bc.GetLatestBlockUnsafe()
 		bc.Lock.RUnlock()
 
@@ -621,8 +810,26 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		estNetHps := core.TargetToEstimatedNetworkHashrate(tipTarget)
 		estNetHpsFormatted := core.FormatHashrate(estNetHps)
 
+		syncing := false
+		synced := true
+		initialSyncDone := true
+		bestPeerHeight := height
+		syncProgress := 100.0
+		syncReason := ""
+		if peerServer != nil {
+			syncSt := peerServer.GetSyncStatus()
+			syncing = syncSt.Syncing
+			synced = syncSt.Synced
+			initialSyncDone = syncSt.InitialSyncDone
+			bestPeerHeight = syncSt.BestPeerHeight
+			syncProgress = syncSt.SyncProgress
+			syncReason = syncSt.Reason
+		}
+
 		statsPayload := map[string]interface{}{
 			"network_id":                    netID,
+			"ticker":                        core.TickerForNetworkID(netID),
+			"coinbase_maturity":             maturity,
 			"height":                        height,
 			"blocks":                        blocks,
 			"difficulty":                    tipDiff,
@@ -651,6 +858,12 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			"peers_candidates":              peersCandidates,
 			"peers_count":                   peersActive,
 			"mining_hashrate":               bc.GetMiningHashrate(),
+			"syncing":                       syncing,
+			"synced":                        synced,
+			"initial_sync_done":             initialSyncDone,
+			"best_peer_height":              bestPeerHeight,
+			"sync_progress":                 syncProgress,
+			"sync_reason":                   syncReason,
 		}
 		if driftSec, hasDrift := core.GetASERTScheduleDrift(bc.Chain, height); hasDrift {
 			statsPayload["asert_drift_seconds"] = driftSec
@@ -879,6 +1092,13 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 
 	// Endpoint: Standard mining pool getblocktemplate [R-07]
 	mux.HandleFunc("/getblocktemplate", func(w http.ResponseWriter, r *http.Request) {
+		if peerServer != nil {
+			syncSt := peerServer.GetSyncStatus()
+			if !syncSt.Synced {
+				writeSyncUnavailableJSON(w, syncSt)
+				return
+			}
+		}
 		bc.Lock.RLock()
 		latest := bc.GetLatestBlockUnsafe()
 		nextHeight := latest.Index + 1
@@ -1195,21 +1415,26 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			return
 		}
 
-		// Body bounds (16 KB)
+		// Body bounds (16 KB) and full EOF drain + Close so Go's HTTP/1.1 server
+		// starts background read immediately to detect client disconnect and cancel r.Context()
 		r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
 
 		miner := r.URL.Query().Get("miner")
 		var requestedThreads int
 		if r.Body != nil {
-			var body struct {
-				Miner   string `json:"miner"`
-				Threads int    `json:"threads"`
+			rawBody, readErr := io.ReadAll(r.Body)
+			_ = r.Body.Close()
+			if readErr == nil && len(rawBody) > 0 {
+				var body struct {
+					Miner   string `json:"miner"`
+					Threads int    `json:"threads"`
+				}
+				_ = json.Unmarshal(rawBody, &body)
+				if miner == "" {
+					miner = body.Miner
+				}
+				requestedThreads = body.Threads
 			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			if miner == "" {
-				miner = body.Miner
-			}
-			requestedThreads = body.Threads
 		}
 		if requestedThreads <= 0 {
 			if thStr := r.URL.Query().Get("threads"); thStr != "" {
@@ -1238,14 +1463,77 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 			return
 		}
 
-		// Serialize active mining jobs across concurrent requests [T10]
-		if !atomic.CompareAndSwapInt32(&activeMiningJob, 0, 1) {
+		// Reject mining while P2P node is still synchronizing so offline/unsynced miners
+		// do not waste work or relay stale blocks that cause public peers to ban their IP.
+		if peerServer != nil {
+			syncSt := peerServer.GetSyncStatus()
+			if !syncSt.Synced {
+				writeSyncUnavailableJSON(w, syncSt)
+				return
+			}
+		}
+
+		// Serialize active mining jobs across concurrent requests [T10].
+		// If a prior request's client context was just cancelled, wait briefly for its
+		// goroutine to unwind and clear activeMiningJob rather than returning spurious 409.
+		acquired := atomic.CompareAndSwapInt32(&activeMiningJob, 0, 1)
+		if !acquired {
+			activeMiningMu.Lock()
+			prevCtx := activeMiningCtx
+			prevDone := activeMiningDone
+			activeMiningMu.Unlock()
+
+			if prevDone == nil {
+				acquired = atomic.CompareAndSwapInt32(&activeMiningJob, 0, 1)
+			} else if prevCtx != nil {
+				if prevCtx.Err() == nil {
+					tWait := time.NewTimer(50 * time.Millisecond)
+					select {
+					case <-prevCtx.Done():
+					case <-prevDone:
+					case <-r.Context().Done():
+					case <-tWait.C:
+					}
+					tWait.Stop()
+				}
+				if prevCtx.Err() != nil {
+					tDrain := time.NewTimer(500 * time.Millisecond)
+					select {
+					case <-prevDone:
+					case <-r.Context().Done():
+					case <-tDrain.C:
+					}
+					tDrain.Stop()
+				}
+				acquired = atomic.CompareAndSwapInt32(&activeMiningJob, 0, 1)
+			}
+		}
+		if !acquired {
 			writeJSONError(w, "Another mining job is currently active", http.StatusConflict)
 			return
 		}
-		defer atomic.StoreInt32(&activeMiningJob, 0)
 
-		minedBlock, err := bc.MineBlockContext(r.Context(), miner, requestedThreads)
+		doneCh := make(chan struct{})
+		mineCtx, cancelMine := context.WithCancel(r.Context())
+		activeMiningMu.Lock()
+		activeMiningCancel = cancelMine
+		activeMiningCtx = mineCtx
+		activeMiningDone = doneCh
+		activeMiningMu.Unlock()
+		defer func() {
+			cancelMine()
+			activeMiningMu.Lock()
+			atomic.StoreInt32(&activeMiningJob, 0)
+			if activeMiningDone == doneCh {
+				activeMiningCancel = nil
+				activeMiningCtx = nil
+				activeMiningDone = nil
+			}
+			activeMiningMu.Unlock()
+			close(doneCh)
+		}()
+
+		minedBlock, err := bc.MineBlockContext(mineCtx, miner, requestedThreads)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
@@ -1257,15 +1545,72 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 		}
 
 		// Gossip newly mined block across P2P network
+		peersActive := 0
 		if peerServer != nil {
+			peersActive = peerServer.GetPeersActive()
 			go peerServer.RelayBlock(minedBlock, "")
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "success",
-			"message": "New block successfully mined!",
-			"block":   minedBlock,
+			"status":       "success",
+			"message":      "New block successfully mined!",
+			"block":        minedBlock,
+			"peers_active": peersActive,
+		})
+	})
+
+	// Endpoint: Explicitly abort an active /mine RPC job [T10]
+	mux.HandleFunc("/mine/stop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "HTTP method must be POST",
+			})
+			return
+		}
+
+		if origin := r.Header.Get("Origin"); origin != "" && !isAllowedOrigin(origin) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Forbidden: cross-origin requests to /mine/stop are prohibited",
+			})
+			return
+		}
+		if referer := r.Header.Get("Referer"); referer != "" && !isAllowedOrigin(referer) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Forbidden: cross-origin requests to /mine/stop are prohibited",
+			})
+			return
+		}
+
+		if !isAuthorizedMiner(r, cfg) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Armaxcoin RPC"`)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Unauthorized: valid RPC credentials or X-Mine-Key required to stop mining",
+			})
+			return
+		}
+
+		stopped := CancelActiveMining()
+		status := "idle"
+		if stopped {
+			status = "stopped"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": status,
+			"active": stopped,
 		})
 	})
 
@@ -1625,6 +1970,9 @@ func ShutdownServerSafely(server *http.Server, peerServer *PeerServer, limiter *
 		timeout = 5 * time.Second
 	}
 
+	// Abort any active PoW mining loop before draining HTTP handlers so shutdown does not stall.
+	CancelActiveMining()
+
 	var httpErr error
 	if server != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -1772,6 +2120,154 @@ func RunServerWithConfig(bc *core.Blockchain, cfg *Config) error {
 		return serveErr
 	}
 	return nil
+}
+
+// StartEmbeddedServer starts an embedded P2P and HTTP RPC daemon synchronously binding
+// its RPC listener before returning, while resolving DNS seed peers asynchronously so
+// desktop GUI launches never block on slow or offline DNS lookups.
+type EmbeddedNodeHandle struct {
+	server     *http.Server
+	peerServer *PeerServer
+	limiter    *IPRateLimiter
+	bc         *core.Blockchain
+	rpcAddr    string
+	doneCh     chan error
+	stopOnce   sync.Once
+}
+
+// RPCAddr returns the bound host:port of the embedded RPC listener.
+func (h *EmbeddedNodeHandle) RPCAddr() string {
+	if h == nil {
+		return ""
+	}
+	return h.rpcAddr
+}
+
+// Done returns a channel that receives once the HTTP RPC server exits.
+func (h *EmbeddedNodeHandle) Done() <-chan error {
+	if h == nil {
+		return nil
+	}
+	return h.doneCh
+}
+
+// CancelActiveMining aborts any currently running /mine RPC job on the embedded node.
+func (h *EmbeddedNodeHandle) CancelActiveMining() bool {
+	if h == nil {
+		return false
+	}
+	return CancelActiveMining()
+}
+
+// Shutdown gracefully drains HTTP handlers, stops P2P workers, flushes chain DB, and closes stores.
+func (h *EmbeddedNodeHandle) Shutdown(timeout time.Duration) (bool, error) {
+	if h == nil {
+		return true, nil
+	}
+	var drained bool
+	var shutdownErr error
+	h.stopOnce.Do(func() {
+		drained, shutdownErr = ShutdownServerSafely(h.server, h.peerServer, h.limiter, h.bc, timeout)
+	})
+	return drained, shutdownErr
+}
+
+// StartEmbeddedServer starts the P2P and HTTP RPC daemon for an embedded desktop wallet without
+// registering process-wide OS signal exit handlers or blocking on initial DNS seed resolution.
+func StartEmbeddedServer(bc *core.Blockchain, cfg *Config) (*EmbeddedNodeHandle, error) {
+	if err := ValidateRPCBind(cfg); err != nil {
+		return nil, fmt.Errorf("%w: FATAL RPC SECURITY REFUSAL: %v", errFatalStartup, err)
+	}
+	if cfg.RPCTLSCert != "" || cfg.RPCTLSKey != "" {
+		if cfg.RPCTLSCert == "" || cfg.RPCTLSKey == "" {
+			return nil, errors.New("both rpc_tls_cert and rpc_tls_key must be configured together")
+		}
+	}
+
+	if cfg.MiningThreads > 0 && bc.MiningThreads <= 0 {
+		bc.MiningThreads = cfg.MiningThreads
+	}
+
+	origSeeds := append([]string(nil), cfg.SeedPeers...)
+	cfgCopy := *cfg
+	cfgCopy.SeedPeers = nil
+
+	peerServer, serverCfg, err := InitServerFromConfig(bc, &cfgCopy)
+	if err != nil {
+		return nil, fmt.Errorf("%w: FATAL CONFIGURATION ERROR: %v", errFatalStartup, err)
+	}
+
+	limiter := newIPRateLimiter()
+	if err := InitRPCAuth(cfgCopy.RPCUser, cfgCopy.RPCPassword); err != nil {
+		if (cfgCopy.RPCUser == "" || cfgCopy.RPCPassword == "") && !AllowInsecureLocalhost {
+			peerServer.Stop()
+			limiter.Close()
+			return nil, fmt.Errorf("%w: FATAL RPC SECURITY ERROR: failed to write RPC cookie and no rpc_user/rpc_password configured: %v", errFatalStartup, err)
+		}
+		fmt.Printf("[RPC] Warning: failed to persist RPC auth cookie: %v\n", err)
+	}
+
+	handler := NewRPCHandler(bc, peerServer, limiter, serverCfg)
+
+	bindHost := cfgCopy.RPCBind
+	bindPort := cfgCopy.RPCPort
+	if h, p, splitErr := net.SplitHostPort(cfgCopy.RPCBind); splitErr == nil {
+		bindHost = h
+		if p != "" {
+			bindPort = p
+		}
+	}
+
+	ln, err := net.Listen("tcp", net.JoinHostPort(bindHost, bindPort))
+	if err != nil {
+		peerServer.Stop()
+		limiter.Close()
+		return nil, fmt.Errorf("failed to bind embedded RPC listener on %s:%s: %w", bindHost, bindPort, err)
+	}
+
+	boundAddr := ln.Addr().String()
+	server := &http.Server{
+		Addr:              boundAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	handle := &EmbeddedNodeHandle{
+		server:     server,
+		peerServer: peerServer,
+		limiter:    limiter,
+		bc:         bc,
+		rpcAddr:    boundAddr,
+		doneCh:     make(chan error, 1),
+	}
+
+	peerServer.MarkConfiguredSeeds(origSeeds)
+	go peerServer.StartServer()
+	if len(origSeeds) > 0 {
+		go peerServer.SetSeedPeers(origSeeds)
+	}
+
+	fmt.Printf("[OK] RPC Daemon active on %s | P2P Network active on port %s\n", boundAddr, cfgCopy.P2PPort)
+	go func() {
+		var serveErr error
+		if cfgCopy.RPCTLSCert != "" && cfgCopy.RPCTLSKey != "" {
+			serveErr = server.ServeTLS(ln, cfgCopy.RPCTLSCert, cfgCopy.RPCTLSKey)
+		} else {
+			serveErr = server.Serve(ln)
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			peerServer.Stop()
+			limiter.Close()
+			handle.doneCh <- serveErr
+			return
+		}
+		handle.doneCh <- nil
+	}()
+
+	return handle, nil
 }
 
 // StartServer starts the RPC Daemon HTTP server, Web Server, and P2P Network Engine (backward compatibility wrapper)

@@ -36,7 +36,7 @@ func TestSoak_FiveNodesChaos(t *testing.T) {
 	defer func() {
 		core.SetTargetOverrideForTesting(nil)
 		core.SetDBPath("")
-		_ = core.SetNetwork("mainnet")
+		_ = core.SetNetwork("testnet")
 	}()
 
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
@@ -432,7 +432,7 @@ func TestSoak_NoTargetOverride_LWMA300Blocks(t *testing.T) {
 	}
 	defer func() {
 		core.SetDBPath("")
-		_ = core.SetNetwork("mainnet")
+		_ = core.SetNetwork("testnet")
 	}()
 
 	minerAddr := core.GenesisMiner

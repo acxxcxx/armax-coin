@@ -23,12 +23,11 @@ func TestL1_1_NetworkLifecycle(t *testing.T) {
 
 	for _, netName := range networks {
 		t.Run("Network_"+netName, func(t *testing.T) {
+			core.LockNetworkForTesting(t)
+			core.SetNetworkForTesting(true)
 			if err := core.SetNetwork(netName); err != nil {
 				t.Fatalf("Failed to set network %s: %v", netName, err)
 			}
-			defer func() {
-				_ = core.SetNetwork("mainnet")
-			}()
 
 			t.Setenv("ARMX_DATA_DIR", t.TempDir())
 			t.Setenv("ARMX_ALLOW_PRIVATE_PEERS", "1")
@@ -43,34 +42,22 @@ func TestL1_1_NetworkLifecycle(t *testing.T) {
 			defer core.SetDBPath("")
 			bc := core.NewBlockchain(1)
 			bc.StoragePath = dbPath
+			closed := false
+			defer func() {
+				if !closed {
+					bc.Close()
+				}
+			}()
 
 			core.SetTargetOverrideForTesting(core.DifficultyToTarget(1))
 			defer core.SetTargetOverrideForTesting(nil)
 
 			miner := core.GenesisMiner
-			target := core.DifficultyToTarget(1)
 
 			// Mine 5 blocks
 			for i := 1; i <= 5; i++ {
-				prev := bc.GetLatestBlock()
-				tx := core.Transaction{
-					Sender:    "SYSTEM",
-					Recipient: miner,
-					Amount:    core.InitialReward,
-					Nonce:     int64(i),
-					Signature: "REWARD_SIG",
-				}
-				b := *core.NewBlock([]core.Transaction{tx}, prev.Hash, i, miner, target)
-				b.Timestamp = prev.Timestamp + int64(core.TargetBlockTimeSeconds) + 1
-				for {
-					b.Hash = b.CalculateHash()
-					if core.HashMeetsTarget(b.Hash, target) {
-						break
-					}
-					b.Nonce++
-				}
-				if !bc.ValidateAndAddBlock(b) {
-					t.Fatalf("[%s] Failed to add block #%d", netName, i)
+				if _, err := bc.MineBlockWithErr(miner); err != nil {
+					t.Fatalf("[%s] Failed to mine/add block #%d: %v", netName, i, err)
 				}
 			}
 
@@ -82,6 +69,7 @@ func TestL1_1_NetworkLifecycle(t *testing.T) {
 
 			// Close blockchain bbolt handle
 			bc.Close()
+			closed = true
 
 			// Check that no .invalid- files were created
 			entries, err := os.ReadDir(nodeDir)
@@ -113,6 +101,7 @@ func TestL1_1_NetworkLifecycle(t *testing.T) {
 			// Start P2P server on reopened primary node
 			portPrimary := getFreePort(t)
 			psPrimary := NewPeerServer(portPrimary, bcReopened)
+			defer psPrimary.Stop()
 			go psPrimary.StartServer()
 
 			// Create fresh node (IBD target)
@@ -126,6 +115,7 @@ func TestL1_1_NetworkLifecycle(t *testing.T) {
 
 			portFresh := getFreePort(t)
 			psFresh := NewPeerServer(portFresh, bcFresh)
+			defer psFresh.Stop()
 			go psFresh.StartServer()
 
 			time.Sleep(100 * time.Millisecond)

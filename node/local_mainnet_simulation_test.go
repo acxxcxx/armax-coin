@@ -146,6 +146,12 @@ func TestLocalMainnet_ThreeNodeFullSimulation(t *testing.T) {
 	if block1.Index != 1 {
 		t.Fatalf("Expected Node A height 1, got %d", block1.Index)
 	}
+	if block1.PoWAlgorithm() != "armaxhash-v2" {
+		t.Fatalf("Expected Mainnet simulation block #1 PoWAlgorithm 'armaxhash-v2', got %q", block1.PoWAlgorithm())
+	}
+	if daa := core.GetCurrentDAAEngineName(1); daa != "Armax-ASERT-AW" {
+		t.Fatalf("Expected Mainnet simulation DAA 'Armax-ASERT-AW', got %q", daa)
+	}
 	if err := bcA.SaveToFile(); err != nil {
 		t.Fatalf("Node A failed to persist state: %v", err)
 	}

@@ -106,7 +106,7 @@ func TestV1011_BackwardCompatibilityAtBlock15967(t *testing.T) {
 	srv := httptest.NewServer(NewRPCHandler(bc, nil, nil, nil))
 	defer srv.Close()
 
-	// 1. Verify daemon version "1.0.11" on /status and /stats telemetry at #15,966.
+	// 1. Verify active daemon version (core.Version) on /status and /stats telemetry at #15,966.
 	respStatus, err := http.Get(srv.URL + "/status")
 	if err != nil {
 		t.Fatalf("GET /status failed: %v", err)
@@ -117,8 +117,8 @@ func TestV1011_BackwardCompatibilityAtBlock15967(t *testing.T) {
 		t.Fatalf("decode /status failed: %v", err)
 	}
 	respStatus.Body.Close()
-	if statusPayload["version"] != "1.0.11" {
-		t.Fatalf("expected /status version 1.0.11, got %v", statusPayload["version"])
+	if statusPayload["version"] != core.Version {
+		t.Fatalf("expected /status version %s, got %v", core.Version, statusPayload["version"])
 	}
 	if statusPayload["network_id"] != core.TestnetProfile.NetworkID {
 		t.Fatalf("expected /status network_id %s, got %v", core.TestnetProfile.NetworkID, statusPayload["network_id"])

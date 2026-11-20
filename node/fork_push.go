@@ -32,7 +32,7 @@ func headerPoWHash(b core.Block) (string, bool) {
 
 	// Maximum allowable target ceiling (minimum network difficulty) [T3]
 	maxAllowedTarget := core.GetPowLimit()
-	if core.IsArmaxHashActive(b.Index) {
+	if core.IsAnyArmaxHashActive(b.Index) {
 		maxAllowedTarget = core.GetArmaxHashPowLimit()
 	}
 	if flag.Lookup("test.v") != nil && !core.GetActiveNetwork().IsMainnet {

@@ -37,13 +37,13 @@ const (
 	MaxBlockRangeResponseBytes = core.MaxBlockSize // >= MaxBlockSize (2,000,000 B), ensures always returning at least 1 block [P2-4]
 	SocketTimeoutDuration      = 20 * time.Second
 	PeersFile                  = "peers.json"
-	SyncChunkSize              = 250               // Maximum blocks per GET_BLOCK_RANGE request
-	MaxOrphanBlocks            = 100               // Maximum orphan blocks in buffer [N-17]
-	MaxOrphanBlocksPerPeer     = 10                // Maximum orphan blocks allowed per peer [N-17]
-	MaxOrphanTxs               = 500               // Maximum pending out-of-order transactions [N-17]
-	OrphanTxExpiry             = 10 * time.Minute  // Out-of-order tx expiration window [N-17]
-	DefaultBanDuration         = 12 * time.Hour    // Misbehavior ban duration (reduced from 24h to 12h) [v1.0.10]
-	MaxPeerInactivityDuration  = 2 * time.Hour     // Unresponsive non-seed peer eviction threshold [v1.0.10]
+	SyncChunkSize              = 250              // Maximum blocks per GET_BLOCK_RANGE request
+	MaxOrphanBlocks            = 100              // Maximum orphan blocks in buffer [N-17]
+	MaxOrphanBlocksPerPeer     = 10               // Maximum orphan blocks allowed per peer [N-17]
+	MaxOrphanTxs               = 500              // Maximum pending out-of-order transactions [N-17]
+	OrphanTxExpiry             = 10 * time.Minute // Out-of-order tx expiration window [N-17]
+	DefaultBanDuration         = 12 * time.Hour   // Misbehavior ban duration (reduced from 24h to 12h) [v1.0.10]
+	MaxPeerInactivityDuration  = 2 * time.Hour    // Unresponsive non-seed peer eviction threshold [v1.0.10]
 )
 
 // extractSubnet derives the /24 IPv4 or /48 IPv6 subnet prefix for Sybil/Eclipse attack mitigation
@@ -351,6 +351,7 @@ type PeerServer struct {
 	bannedIPs            map[string]time.Time         // [N-15] Active IP bans and expiry
 	skewStrikes          map[string][]time.Time       // [F-04] Timestamp strikes for minor clock skew
 	banFileMu            sync.Mutex                   // serializes writes of bans.json
+	banPersistWg         sync.WaitGroup               // tracks async persistBans writes for clean shutdown
 	whitelistLock        sync.RWMutex                 // [P2P Whitelist] guards whitelistIPs
 	whitelistIPs         map[string]struct{}          // [P2P Whitelist] Operator-whitelisted IP addresses (exempt from bans/rate-limits)
 	whitelistModTime     time.Time                    // [P2P Whitelist] last modified time of whitelist.json
@@ -381,12 +382,31 @@ type PeerServer struct {
 	//   Level 3: tofuLock      (sync.Mutex)   - serializes in-memory pending TOFU registration
 	//   Level 4: Lock          (sync.RWMutex) - protects in-memory peer maps and fields
 	//   Level 5: stopLock      (sync.Mutex)   - listener shutdown synchronization
+	syncStateMu        sync.RWMutex
+	bestPeerHeight     int
+	bestPeerCW         *big.Int
+	initialSyncDone    bool
+	lastSyncSuccess    time.Time
+	hasConfiguredSeeds bool
+
 	lifecycleLock sync.RWMutex
 	state         ServerLifecycleState
 	serverStarted bool          // Preserved for backwards compatibility, mirrors state == ServerStateRunning
 	serverDone    chan struct{} // Closed when StartServer accept loop and teardown fully exit
 	currentCycle  uint64
 	activeCycle   *serverCycle
+}
+
+// SyncStatus describes whether the P2P node is caught up enough to safely mine public blocks.
+type SyncStatus struct {
+	Syncing         bool    `json:"syncing"`
+	Synced          bool    `json:"synced"`
+	InitialSyncDone bool    `json:"initial_sync_done"`
+	LocalHeight     int     `json:"local_height"`
+	BestPeerHeight  int     `json:"best_peer_height"`
+	SyncProgress    float64 `json:"sync_progress"`
+	PeersActive     int     `json:"peers_active"`
+	Reason          string  `json:"sync_reason,omitempty"`
 }
 
 type pendingPin struct {
@@ -655,6 +675,21 @@ func (p *PeerServer) clearAllPeerUnreachable() {
 	p.unreachablePeers = nil
 }
 
+// MarkConfiguredSeeds records whether any non-empty seed endpoints were configured
+// before async DNS seeding begins, eliminating startup race windows in sync gating.
+func (p *PeerServer) MarkConfiguredSeeds(seeds []string) {
+	has := false
+	for _, s := range seeds {
+		if strings.TrimSpace(s) != "" {
+			has = true
+			break
+		}
+	}
+	p.syncStateMu.Lock()
+	p.hasConfiguredSeeds = has
+	p.syncStateMu.Unlock()
+}
+
 // SetSeedPeers records the configured seed list so the node can re-dial it after
 // losing connectivity. Seeds are protected from eviction and are re-added on demand.
 func (p *PeerServer) SetSeedPeers(seeds []string) {
@@ -676,6 +711,11 @@ func (p *PeerServer) SetSeedPeers(seeds []string) {
 	p.seedPeers = uniqueSeeds
 	p.seedRefreshGen++
 	p.seedMu.Unlock()
+
+	p.syncStateMu.Lock()
+	p.hasConfiguredSeeds = len(uniqueSeeds) > 0
+	p.syncStateMu.Unlock()
+
 	p.reseedPeers(true)
 }
 
@@ -1673,8 +1713,12 @@ func (p *PeerServer) AddOrphanBlock(b core.Block, peerIP string) bool {
 	if p.Blockchain != nil {
 		p.Blockchain.Lock.RLock()
 		if parentBlock, err := p.Blockchain.GetBlockByHash(b.PrevHash); err == nil && parentBlock != nil {
-			if b.Index == parentBlock.Index+1 {
-				expectedTarget := core.CalculateExpectedTargetForCandidate(p.Blockchain.Chain, b.Index, b.Timestamp)
+			if b.Index == parentBlock.Index+1 && b.Index > 0 {
+				chainPrefix := p.Blockchain.Chain
+				if b.Index <= len(chainPrefix) {
+					chainPrefix = chainPrefix[:b.Index]
+				}
+				expectedTarget := core.CalculateExpectedTargetForCandidate(chainPrefix, b.Index, b.Timestamp)
 				expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
 				if b.Target != expectedTargetHex || !core.HashMeetsTarget(calcHash, expectedTarget) {
 					p.Blockchain.Lock.RUnlock()
@@ -2247,6 +2291,7 @@ func (p *PeerServer) StopWithTimeout(timeout time.Duration) bool {
 // and terminates background tasks with default 5-second timeout [T-06, P1-A, v1.0.6].
 func (p *PeerServer) Stop() {
 	_ = p.StopWithTimeout(5 * time.Second)
+	p.banPersistWg.Wait()
 }
 
 var (
@@ -5508,6 +5553,144 @@ func (p *PeerServer) RelayTransaction(
 // lastDeepReorgWarn rate-limits the stale-branch error to once per 5 minutes (unix seconds).
 var lastDeepReorgWarn int64
 
+// updateObservedPeerTip records the highest peer chainwork/height seen across peers.
+func (p *PeerServer) updateObservedPeerTip(height int, cw *big.Int) {
+	if height < 0 {
+		return
+	}
+	p.syncStateMu.Lock()
+	defer p.syncStateMu.Unlock()
+	if cw != nil && cw.Sign() > 0 {
+		if p.bestPeerCW == nil || cw.Cmp(p.bestPeerCW) > 0 || (cw.Cmp(p.bestPeerCW) == 0 && height > p.bestPeerHeight) {
+			p.bestPeerCW = new(big.Int).Set(cw)
+			p.bestPeerHeight = height
+		}
+		return
+	}
+	if height > p.bestPeerHeight {
+		p.bestPeerHeight = height
+	}
+}
+
+func (p *PeerServer) markSyncCaughtUp(height int, cw *big.Int) {
+	p.syncStateMu.Lock()
+	p.initialSyncDone = true
+	p.lastSyncSuccess = time.Now()
+	if height > p.bestPeerHeight {
+		p.bestPeerHeight = height
+	}
+	if cw != nil && cw.Sign() > 0 && (p.bestPeerCW == nil || cw.Cmp(p.bestPeerCW) > 0) {
+		p.bestPeerCW = new(big.Int).Set(cw)
+	}
+	p.syncStateMu.Unlock()
+}
+
+func computeSyncProgress(localH, bestH int, synced bool) float64 {
+	if synced {
+		return 100.0
+	}
+	if bestH <= 0 || localH <= 0 {
+		return 0.0
+	}
+	if localH >= bestH {
+		return 99.9
+	}
+	pct := float64(localH) * 100.0 / float64(bestH)
+	if pct > 99.9 {
+		pct = 99.9
+	}
+	if pct < 0 {
+		pct = 0
+	}
+	return pct
+}
+
+// GetSyncStatus reports whether the node has completed peer synchronization and is safe to mine.
+func (p *PeerServer) GetSyncStatus() SyncStatus {
+	if p == nil {
+		return SyncStatus{Synced: true, InitialSyncDone: true, SyncProgress: 100.0}
+	}
+
+	localHeight := 0
+	if p.Blockchain != nil {
+		p.Blockchain.Lock.RLock()
+		localHeight = p.Blockchain.GetLatestBlockUnsafe().Index
+		p.Blockchain.Lock.RUnlock()
+	}
+
+	peersActive := p.GetPeersActive()
+	peersKnown := p.GetPeersKnown()
+
+	p.seedMu.RLock()
+	hasSeeds := len(p.seedPeers) > 0
+	p.seedMu.RUnlock()
+
+	p.syncMu.Lock()
+	activeSyncOps := len(p.syncingHosts)
+	p.syncMu.Unlock()
+
+	p.syncStateMu.RLock()
+	cfgSeeds := p.hasConfiguredSeeds
+	bestH := p.bestPeerHeight
+	initDone := p.initialSyncDone
+	p.syncStateMu.RUnlock()
+
+	if cfgSeeds {
+		hasSeeds = true
+	}
+
+	netID := p.GetNetworkID()
+	isPublicNet := netID == core.MainnetProfile.NetworkID || netID == core.TestnetProfile.NetworkID
+	requiresPeerSync := isPublicNet && !core.IsLocalMainnet() && (hasSeeds || peersKnown > 0 || peersActive > 0)
+
+	st := SyncStatus{
+		InitialSyncDone: initDone,
+		LocalHeight:     localHeight,
+		BestPeerHeight:  bestH,
+		PeersActive:     peersActive,
+	}
+	if st.BestPeerHeight < localHeight {
+		st.BestPeerHeight = localHeight
+	}
+
+	if !requiresPeerSync {
+		st.Syncing = activeSyncOps > 0
+		st.Synced = activeSyncOps == 0
+		if st.Synced {
+			st.SyncProgress = 100.0
+		} else {
+			st.SyncProgress = computeSyncProgress(localHeight, st.BestPeerHeight, false)
+			st.Reason = fmt.Sprintf("Synchronizing blockchain (#%d / #%d)...", localHeight, st.BestPeerHeight)
+		}
+		return st
+	}
+
+	if peersActive == 0 {
+		st.Syncing = true
+		st.Synced = false
+		st.SyncProgress = computeSyncProgress(localHeight, st.BestPeerHeight, false)
+		st.Reason = "Waiting for P2P peers to connect..."
+		return st
+	}
+
+	if !initDone || activeSyncOps > 0 || (bestH > 0 && localHeight+1 < bestH) {
+		st.Syncing = true
+		st.Synced = false
+		st.SyncProgress = computeSyncProgress(localHeight, st.BestPeerHeight, false)
+		if bestH > 0 {
+			st.Reason = fmt.Sprintf("Synchronizing blockchain (#%d / #%d)...", localHeight, bestH)
+		} else {
+			st.Reason = "Completing initial peer sync..."
+		}
+		return st
+	}
+
+	st.Syncing = false
+	st.Synced = true
+	st.SyncProgress = 100.0
+	return st
+}
+
 // SyncBestPeer discovers which peer has the highest chainwork and initiates sync only with that best peer [N-09, N-16]
 func (p *PeerServer) SyncBestPeer() {
 	if p.Blockchain == nil || p.isShuttingDown() {
@@ -5535,6 +5718,8 @@ func (p *PeerServer) SyncBestPeer() {
 	pushTargets := make(map[string]int) // peers with less chainwork than us -> their height
 	bestChainwork := new(big.Int).Set(localChainwork)
 	bestHeight := localLatest.Index
+	maxObservedHeight := localLatest.Index
+	maxObservedCW := new(big.Int).Set(localChainwork)
 
 	sem := make(chan struct{}, MaxSyncConcurrency)
 	var wg sync.WaitGroup
@@ -5591,6 +5776,10 @@ func (p *PeerServer) SyncBestPeer() {
 
 			mu.Lock()
 			succeeded++
+			if peerCW.Cmp(maxObservedCW) > 0 || (peerCW.Cmp(maxObservedCW) == 0 && hr.Height > maxObservedHeight) {
+				maxObservedCW = new(big.Int).Set(peerCW)
+				maxObservedHeight = hr.Height
+			}
 			if peerCW.Cmp(bestChainwork) > 0 || (peerCW.Cmp(bestChainwork) == 0 && hr.Height > bestHeight) {
 				bestChainwork = peerCW
 				bestHeight = hr.Height
@@ -5606,6 +5795,7 @@ func (p *PeerServer) SyncBestPeer() {
 
 	// If every peer failed, our own connectivity is the likely culprit: do not punish the peers.
 	if succeeded > 0 {
+		p.updateObservedPeerTip(maxObservedHeight, maxObservedCW)
 		for _, addr := range failedPeers {
 			if rerr := p.RecordPeerFailure(addr); rerr != nil {
 				core.LogDebug(core.LogCategoryNet, "Failed to persist peer store on failure for %s: %v", addr, rerr)
@@ -5618,6 +5808,9 @@ func (p *PeerServer) SyncBestPeer() {
 	if bestPeer != "" {
 		p.RequestChainSync(bestPeer)
 	} else {
+		if succeeded > 0 {
+			p.markSyncCaughtUp(maxObservedHeight, maxObservedCW)
+		}
 		// No peer is ahead of us. Offer our heavier chain to peers that lack it, since a peer behind
 		// NAT cannot be reached by their own catch-up dial.
 		for addr, h := range pushTargets {
@@ -5720,6 +5913,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 	if !ok {
 		peerChainwork = big.NewInt(0)
 	}
+	p.updateObservedPeerTip(hr.Height, peerChainwork)
 
 	// Peer is ahead if peerChainwork > localChainwork, or if chainwork equal but height higher
 	peerIsAhead := false
@@ -5784,6 +5978,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 		// 3. Fetch missing blocks in continuous bounded batches from ancestorHeight + 1 up to hr.Height
 		currentAncestor := ancestorHeight
 		syncPeer := peerAddress
+		syncCompletedCleanly := true
 
 		for currentAncestor < hr.Height {
 			var batchBlocks []core.Block
@@ -5924,6 +6119,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 			}
 
 			if len(batchBlocks) == 0 {
+				syncCompletedCleanly = false
 				break
 			}
 
@@ -5965,55 +6161,68 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 			p.processOrphanTxs()
 
 			if fetchFailed {
+				syncCompletedCleanly = false
 				break
 			}
 		}
-		return
-	} else if hr.Height < localLatest.Index {
-		// Remote peer is behind; stream missing blocks over a persistent connection [N-02]
-		fmt.Printf("[P2P] Remote peer %s is behind (Peer: #%d, Local: #%d). Streaming missing blocks...\n",
-			peerAddress, hr.Height, localLatest.Index)
-
-		conn, release, err := p.DialPeer(peerAddress, 15*time.Second)
-		if err != nil {
-			return
-		}
-		defer func() {
-			_ = conn.Close()
-			release()
-		}()
-
-		for from := hr.Height + 1; from <= localLatest.Index; from += SyncChunkSize {
-			to := from + SyncChunkSize - 1
-			if to > localLatest.Index {
-				to = localLatest.Index
-			}
-
+		if syncCompletedCleanly {
 			p.Blockchain.Lock.RLock()
-			var chunk []core.Block
-			if from < len(p.Blockchain.Chain) {
-				end := to
-				if end >= len(p.Blockchain.Chain) {
-					end = len(p.Blockchain.Chain) - 1
-				}
-				chunk = make([]core.Block, end-from+1)
-				copy(chunk, p.Blockchain.Chain[from:end+1])
-			}
+			tipIdx := p.Blockchain.GetLatestBlockUnsafe().Index
+			tipCW := p.Blockchain.GetTotalChainworkUnsafe()
 			p.Blockchain.Lock.RUnlock()
+			if tipIdx >= hr.Height-1 || (peerChainwork.Sign() > 0 && tipCW.Cmp(peerChainwork) >= 0) {
+				p.markSyncCaughtUp(hr.Height, peerChainwork)
+			}
+		}
+		return
+	} else {
+		p.markSyncCaughtUp(hr.Height, peerChainwork)
+		if hr.Height < localLatest.Index {
+			// Remote peer is behind; stream missing blocks over a persistent connection [N-02]
+			fmt.Printf("[P2P] Remote peer %s is behind (Peer: #%d, Local: #%d). Streaming missing blocks...\n",
+				peerAddress, hr.Height, localLatest.Index)
 
-			for _, blk := range chunk {
-				msgBytes, err := json.Marshal(Message{
-					NetworkID: p.GetNetworkID(),
-					Type:      "NEW_BLOCK",
-					Payload:   blk,
-				})
-				if err == nil {
-					_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-					if _, err := conn.Write(append(msgBytes, '\n')); err != nil {
-						return
-					}
+			conn, release, err := p.DialPeer(peerAddress, 15*time.Second)
+			if err != nil {
+				return
+			}
+			defer func() {
+				_ = conn.Close()
+				release()
+			}()
+
+			for from := hr.Height + 1; from <= localLatest.Index; from += SyncChunkSize {
+				to := from + SyncChunkSize - 1
+				if to > localLatest.Index {
+					to = localLatest.Index
 				}
-				time.Sleep(20 * time.Millisecond) // Pacing 50 msgs/s, well within NEW_BLOCK budget of 80/s [T1]
+
+				p.Blockchain.Lock.RLock()
+				var chunk []core.Block
+				if from < len(p.Blockchain.Chain) {
+					end := to
+					if end >= len(p.Blockchain.Chain) {
+						end = len(p.Blockchain.Chain) - 1
+					}
+					chunk = make([]core.Block, end-from+1)
+					copy(chunk, p.Blockchain.Chain[from:end+1])
+				}
+				p.Blockchain.Lock.RUnlock()
+
+				for _, blk := range chunk {
+					msgBytes, err := json.Marshal(Message{
+						NetworkID: p.GetNetworkID(),
+						Type:      "NEW_BLOCK",
+						Payload:   blk,
+					})
+					if err == nil {
+						_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+						if _, err := conn.Write(append(msgBytes, '\n')); err != nil {
+							return
+						}
+					}
+					time.Sleep(20 * time.Millisecond) // Pacing 50 msgs/s, well within NEW_BLOCK budget of 80/s [T1]
+				}
 			}
 		}
 		return

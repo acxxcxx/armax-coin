@@ -20,13 +20,11 @@ func TestIBD_ContinuousSyncPastOldLimit(t *testing.T) {
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	t.Setenv("ARMX_ALLOW_PRIVATE_PEERS", "1")
 
+	core.LockNetworkForTesting(t)
 	core.SetNetworkForTesting(true)
 	if err := core.SetNetwork("testnet"); err != nil {
 		t.Fatalf("SetNetwork(testnet) failed: %v", err)
 	}
-	defer func() {
-		_ = core.SetNetwork("mainnet")
-	}()
 
 	// Use easy target for fast test execution
 	easyTarget, _ := new(big.Int).SetString("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)

@@ -773,8 +773,8 @@ func TestTOFU_ProductionInit_SharedDataDir_IsolationAndStability(t *testing.T) {
 		}
 	}()
 
+	core.LockNetworkForTesting(t)
 	core.SetNetworkForTesting(true)
-	defer core.SetNetworkForTesting(true)
 
 	sharedDataDir := t.TempDir()
 	dirBcMain := t.TempDir()

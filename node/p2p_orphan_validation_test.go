@@ -191,7 +191,7 @@ func TestOrphanBlockArmaxHashFailureAndSentinelRejection(t *testing.T) {
 
 	// Enable ArmaxHash at height 10
 	core.SetArmaxHashActivationHeight(10)
-	defer core.SetArmaxHashActivationHeight(-1)
+	defer core.ResetArmaxHashActivationHeightOverride()
 
 	target := core.DifficultyToTarget(1)
 

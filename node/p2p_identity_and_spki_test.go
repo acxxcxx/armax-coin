@@ -95,4 +95,3 @@ func TestT11_InitNodeIdentityPersistentAcrossRestarts(t *testing.T) {
 		t.Fatal("Certificate DER bytes changed across restarts")
 	}
 }
-

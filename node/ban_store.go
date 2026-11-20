@@ -32,7 +32,11 @@ func (p *PeerServer) banIPLocked(ip string, expiry time.Time) {
 	wasBanned := time.Now().Before(p.bannedIPs[ip])
 	p.bannedIPs[ip] = expiry
 	if !wasBanned {
-		go p.persistBans()
+		p.banPersistWg.Add(1)
+		go func() {
+			defer p.banPersistWg.Done()
+			p.persistBans()
+		}()
 	}
 }
 

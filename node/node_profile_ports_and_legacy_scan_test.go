@@ -21,6 +21,9 @@ import (
 // (b) DefaultConfig and both profiles use correct values. DefaultConfig uses mainnet profile.
 // -network=testnet selects testnet profile.
 func TestP1_DefaultConfigAndProfiles(t *testing.T) {
+	core.LockNetworkForTesting(t)
+	core.SetNetworkForTesting(true)
+
 	// 1. Mainnet DefaultConfig
 	if err := core.SetNetwork("mainnet"); err != nil {
 		t.Fatalf("Failed to set mainnet: %v", err)
@@ -75,13 +78,12 @@ func TestP1_DefaultConfigAndProfiles(t *testing.T) {
 		t.Errorf("Expected testnet DefaultConfig to be credential-less (cookie-based), got user=%q, pass=%q, mine_key=%q",
 			cfgTest.RPCUser, cfgTest.RPCPassword, cfgTest.MineKey)
 	}
-
-	// Restore mainnet
-	_ = core.SetNetwork("mainnet")
 }
 
 // TestP1_ConfigPortOverride verifies that custom port/p2p config overrides profile defaults.
 func TestP1_ConfigPortOverride(t *testing.T) {
+	core.LockNetworkForTesting(t)
+	core.SetNetworkForTesting(true)
 	_ = core.SetNetwork("mainnet")
 	cfg := DefaultConfig()
 	cfg.RPCPort = "29332"
@@ -96,6 +98,8 @@ func TestP1_ConfigPortOverride(t *testing.T) {
 // (c) Socket test: run P2P and RPC servers with profile ports and verify listener binds to expected profile port.
 // If port is already in use by another process, t.Skip with a clear explanation.
 func TestP1_SocketListeners(t *testing.T) {
+	core.LockNetworkForTesting(t)
+	core.SetNetworkForTesting(true)
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	t.Setenv("ARMX_ALLOW_PRIVATE_PEERS", "1")
 

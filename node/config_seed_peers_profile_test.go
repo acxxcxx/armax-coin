@@ -11,6 +11,9 @@ import (
 // TestN20_ProfileBasedSeedPeers verifies [N-20]:
 // Seed peers are profile-aware (mainnet vs testnet) and configured from network profiles.
 func TestN20_ProfileBasedSeedPeers(t *testing.T) {
+	core.LockNetworkForTesting(t)
+	core.SetNetworkForTesting(true)
+
 	// 1. Test mainnet seeds
 	_ = core.SetNetwork("mainnet")
 	cfgMain := DefaultConfig()
@@ -30,7 +33,4 @@ func TestN20_ProfileBasedSeedPeers(t *testing.T) {
 	if cfgTest.P2PPort != core.TestnetP2PPort {
 		t.Fatalf("[N-20] Expected P2PPort %s on testnet, got %s", core.TestnetP2PPort, cfgTest.P2PPort)
 	}
-
-	// Restore mainnet
-	_ = core.SetNetwork("mainnet")
 }

@@ -16,6 +16,7 @@ func TestBanDuration12Hours(t *testing.T) {
 	dir := t.TempDir()
 
 	ps := NewPeerServer("0", nil, dir, "ARMX-TESTNET-1")
+	t.Cleanup(ps.banPersistWg.Wait)
 	testIP := "198.51.100.25"
 
 	start := time.Now()
@@ -310,4 +311,3 @@ func TestUnverifiedFailedPeerPruned(t *testing.T) {
 		t.Fatalf("expected peer %s to be evicted", unverifiedFailed)
 	}
 }
-
