@@ -21,10 +21,14 @@ go build -ldflags="-s -w" -o bin/armsend ./cli/armsend
 echo "[+] Compiling Wallet Manager CLI (bin/armwallet)..."
 go build -ldflags="-s -w" -o bin/armwallet ./cli/armwallet
 
+echo "[+] Compiling Desktop GUI Wallet (bin/armgui)..."
+go build -ldflags="-s -w" -o bin/armgui ./gui
+
 echo "=================================================="
 echo "[OK] ALL BINARIES SUCCESSFULLY COMPILED into bin/!"
 echo "    - bin/armcoind   : Daemon Node, P2P Engine & Web Server"
 echo "    - bin/armminer   : PoW Miner Client"
 echo "    - bin/armsend    : CLI Transaction Sender Tool"
 echo "    - bin/armwallet  : CLI Wallet Manager Tool"
+echo "    - bin/armgui     : Embedded WebView2 / Web Desktop GUI Wallet"
 echo "=================================================="

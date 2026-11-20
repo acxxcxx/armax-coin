@@ -92,24 +92,48 @@ func isForbiddenFileName(path string) (bool, string) {
 		return true, "SSH private or personal identity key file"
 	}
 
-	// Runtime daemon RPC authentication cookies
+	// Runtime daemon private configuration & RPC authentication cookies
+	if base == "armax.conf" {
+		return true, "Runtime node configuration file containing possible RPC credentials or mine keys (use armax.conf.example instead)"
+	}
 	if base == "armax.cookie" || ext == ".cookie" {
 		return true, "Runtime daemon RPC authentication cookie"
 	}
 
-	// Runtime peer discovery cache
+	// Runtime GUI session token files
+	if base == ".session" || ext == ".session" {
+		return true, "Runtime Desktop GUI session token file"
+	}
+
+	// Runtime peer discovery & ban stores
 	if base == "peers.json" {
 		return true, "Runtime peer discovery cache database"
 	}
+	if base == "bans.json" {
+		return true, "Runtime P2P peer ban store containing peer IP addresses"
+	}
 
-	// Wallet databases
-	if base == "wallet.json" {
+	// P2P TLS node identity & PEM/key private files (.ppk stays handled by PuTTY content rule)
+	if base == "p2ptls.pem" || ext == ".pem" || ext == ".key" {
+		return true, "TLS identity or private key file"
+	}
+
+	// Wallet databases & multi-wallet keystores
+	if base == "wallet.json" || base == "wallets.json" ||
+		strings.HasSuffix(base, "_wallet.json") ||
+		(strings.HasPrefix(base, "wallet_") && ext == ".json") ||
+		(strings.Contains(base, "keystore") && ext == ".json") {
 		return true, "Unencrypted or encrypted wallet credentials database"
 	}
 
 	// Blockchain databases and backup files
 	if ext == ".db" || strings.HasPrefix(ext, ".db.") || strings.Contains(base, "blockchain.db") {
 		return true, "Blockchain database or backup artifact"
+	}
+
+	// Compiled binaries and release archives
+	if ext == ".exe" || ext == ".dll" || ext == ".zip" || ext == ".tgz" || strings.HasSuffix(base, ".tar.gz") {
+		return true, "Compiled binary or release archive must not be committed to Git"
 	}
 
 	return false, ""
@@ -189,6 +213,22 @@ func scanFileForHygiene(relPath string, content []byte) ([]HygieneViolation, err
 	}
 	if bytes.IndexByte(content[:headerLen], 0) != -1 {
 		return violations, nil
+	}
+
+	// Detect Armax encrypted wallet keystore JSON structure regardless of filename
+	if ext == ".json" {
+		lowerContent := strings.ToLower(string(content))
+		if strings.Contains(lowerContent, `"argon2id"`) &&
+			strings.Contains(lowerContent, `"ciphertext"`) &&
+			(strings.Contains(lowerContent, `"kdf"`) || strings.Contains(lowerContent, `"nonce"`) || strings.Contains(lowerContent, `"salt"`)) {
+			violations = append(violations, HygieneViolation{
+				File:        relPath,
+				Line:        1,
+				Category:    CatCryptoSecret,
+				Description: "Encrypted Armax wallet keystore JSON content detected",
+				RedactedVal: "[REDACTED_WALLET_KEYSTORE_JSON]",
+			})
+		}
 	}
 
 	// 2. Line-by-Line Content Rules
@@ -414,17 +454,17 @@ func TestHygieneRules_DetectionAndRedaction(t *testing.T) {
 			expectedRedaction: ".env.local",
 		},
 		{
-			name:              "Allowed .env.example file",
-			path:              ".env.example",
-			content:           "PORT=8080\n",
-			expectViolation:   false,
+			name:            "Allowed .env.example file",
+			path:            ".env.example",
+			content:         "PORT=8080\n",
+			expectViolation: false,
 		},
 		{
-			name:              "Forbidden wallet.json file",
-			path:              "wallet.json",
-			content:           "{}",
-			expectViolation:   true,
-			expectedCategory:  CatForbiddenFile,
+			name:             "Forbidden wallet.json file",
+			path:             "wallet.json",
+			content:          "{}",
+			expectViolation:  true,
+			expectedCategory: CatForbiddenFile,
 		},
 		{
 			name:              "PEM RSA Private Key header",
@@ -475,10 +515,10 @@ func TestHygieneRules_DetectionAndRedaction(t *testing.T) {
 			expectedRedaction: "e3b0...b855 (len 64)",
 		},
 		{
-			name:              "Allowed dummy zero key",
-			path:              "key.go",
-			content:           `privkey := "0000000000000000000000000000000000000000000000000000000000000000"` + "\n",
-			expectViolation:   false,
+			name:            "Allowed dummy zero key",
+			path:            "key.go",
+			content:         `privkey := "0000000000000000000000000000000000000000000000000000000000000000"` + "\n",
+			expectViolation: false,
 		},
 		{
 			name:              "Personal Gmail email",
@@ -489,37 +529,129 @@ func TestHygieneRules_DetectionAndRedaction(t *testing.T) {
 			expectedRedaction: "john....com (len 23)",
 		},
 		{
-			name:              "Allowed RFC example email",
-			path:              "docs.md",
-			content:           "Send requests to alice@example.com for demonstrations.\n",
-			expectViolation:   false,
+			name:            "Allowed RFC example email",
+			path:            "docs.md",
+			content:         "Send requests to alice@example.com for demonstrations.\n",
+			expectViolation: false,
 		},
 		{
-			name:              "Windows personal directory path",
-			path:              "config.txt",
-			content:           `database_path = "C:\Users\JohnDoe\armax_coin\data"` + "\n",
+			name:             "Windows personal directory path",
+			path:             "config.txt",
+			content:          `database_path = "C:\Users\JohnDoe\armax_coin\data"` + "\n",
+			expectViolation:  true,
+			expectedCategory: CatLocalPath,
+		},
+		{
+			name:             "Unix personal directory path",
+			path:             "config.txt",
+			content:          `datadir=/home/johndoe/armax_coin/data` + "\n",
+			expectViolation:  true,
+			expectedCategory: CatLocalPath,
+		},
+		{
+			name:            "Allowed CI runner path",
+			path:            "ci.sh",
+			content:         `export HOME=/home/runner/work/armax` + "\n",
+			expectViolation: false,
+		},
+		{
+			name:             "macOS personal directory path",
+			path:             "config.txt",
+			content:          `datadir=/Users/johndoe/armax_coin/data` + "\n",
+			expectViolation:  true,
+			expectedCategory: CatLocalPath,
+		},
+		{
+			name:              "Forbidden armax.conf file",
+			path:              "armax.conf",
+			content:           "rpcuser=admin\n",
 			expectViolation:   true,
-			expectedCategory:  CatLocalPath,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "armax.conf",
 		},
 		{
-			name:              "Unix personal directory path",
-			path:              "config.txt",
-			content:           `datadir=/home/johndoe/armax_coin/data` + "\n",
+			name:            "Allowed armax.conf.example file",
+			path:            "armax.conf.example",
+			content:         "rpcport=19333\n",
+			expectViolation: false,
+		},
+		{
+			name:              "Forbidden bans.json file",
+			path:              "testnet/bans.json",
+			content:           "{}\n",
 			expectViolation:   true,
-			expectedCategory:  CatLocalPath,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "testnet/bans.json",
 		},
 		{
-			name:              "Allowed CI runner path",
-			path:              "ci.sh",
-			content:           `export HOME=/home/runner/work/armax` + "\n",
-			expectViolation:   false,
-		},
-		{
-			name:              "macOS personal directory path",
-			path:              "config.txt",
-			content:           `datadir=/Users/johndoe/armax_coin/data` + "\n",
+			name:              "Forbidden p2ptls.pem file",
+			path:              "p2ptls.pem",
+			content:           "{}",
 			expectViolation:   true,
-			expectedCategory:  CatLocalPath,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "p2ptls.pem",
+		},
+		{
+			name:              "Forbidden GUI .session file",
+			path:              "gui.session",
+			content:           "deadbeef\n",
+			expectViolation:   true,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "gui.session",
+		},
+		{
+			name:              "Forbidden named wallet keystore miner_wallet.json",
+			path:              "miner_wallet.json",
+			content:           "{}",
+			expectViolation:   true,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "miner_wallet.json",
+		},
+		{
+			name:              "Forbidden multi-wallet registry wallets.json",
+			path:              "wallets.json",
+			content:           "{}",
+			expectViolation:   true,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "wallets.json",
+		},
+		{
+			name:              "Forbidden faucet_keystore.json",
+			path:              "faucet_keystore.json",
+			content:           "{}",
+			expectViolation:   true,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "faucet_keystore.json",
+		},
+		{
+			name:              "Encrypted keystore JSON content under generic filename",
+			path:              "backup.json",
+			content:           `{"kdf":"argon2id","ciphertext":"0123456789abcdef","salt":"abcd"}` + "\n",
+			expectViolation:   true,
+			expectedCategory:  CatCryptoSecret,
+			expectedRedaction: "[REDACTED_WALLET_KEYSTORE_JSON]",
+		},
+		{
+			name:              "Forbidden compiled Windows executable",
+			path:              "armcoind.exe",
+			content:           "MZ",
+			expectViolation:   true,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "armcoind.exe",
+		},
+		{
+			name:              "Forbidden release archive",
+			path:              "armax-v1.0.12-linux-amd64.tar.gz",
+			content:           "gz",
+			expectViolation:   true,
+			expectedCategory:  CatForbiddenFile,
+			expectedRedaction: "armax-v1.0.12-linux-amd64.tar.gz",
+		},
+		{
+			name:            "Allowed Windows GUI syso resource",
+			path:            "gui/rsrc_windows_amd64.syso",
+			content:         "binary-resource-stub",
+			expectViolation: false,
 		},
 	}
 

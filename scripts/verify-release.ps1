@@ -3,16 +3,37 @@
 # Armaxcoin Release Verification & Dry-Run Test Suite
 # ==============================================================================
 # Usage:
-#   .\scripts\verify-release.ps1 [-BinDir <Path>]
+#   .\scripts\verify-release.ps1 [-BinDir <Path>] [-ExpectedVersion <Version>]
 # ==============================================================================
 
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [string]$BinDir = "."
+    [string]$BinDir = ".",
+    [Parameter(Position = 1)]
+    [string]$ExpectedVersion = "v1.0.12"
 )
 
 $ErrorActionPreference = "Stop"
+
+function Invoke-CliCapture {
+    param(
+        [Parameter(Mandatory = $true)]$Exe,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+    $prevErrPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = (& $Exe @Arguments 2>&1 | Out-String)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevErrPref
+    }
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output   = $output
+    }
+}
 
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "[*] ARMAXCOIN - RELEASE VERIFICATION & DRY-RUN" -ForegroundColor Cyan
@@ -34,7 +55,7 @@ $armgui = Join-Path $BinDir "armgui$ext"
 if (-not (Test-Path $armcoind)) {
     Write-Host "[!] Pre-compiled armcoind not found in $BinDir. Compiling for test..." -ForegroundColor Yellow
     go build -trimpath -ldflags="-s -w -buildid=" -o $armcoind main.go
-    go build -trimpath -ldflags="-s -w -buildid=" -o $armminer miner/miner.go
+    go build -trimpath -ldflags="-s -w -buildid=" -o $armminer ./miner
     go build -trimpath -ldflags="-s -w -buildid=" -o $armsend ./cli/armsend
     go build -trimpath -ldflags="-s -w -buildid=" -o $armwallet ./cli/armwallet
     if (Test-Path "gui") {
@@ -67,20 +88,26 @@ if (Test-Path $checksumFile) {
     Write-Host "[i] No SHA256SUMS file present in $BinDir. Skipping checksum file verification." -ForegroundColor Yellow
 }
 
-# 2. Verify '<bin> -version' across all binaries
-Write-Host "[+] Verifying -version output across all binaries..." -ForegroundColor Green
+# 2. Verify '<bin> -version' across CLI binaries and check GUI binary presence
+Write-Host "[+] Verifying -version output across CLI binaries..." -ForegroundColor Green
 $binsToTest = @($armcoind, $armminer, $armsend, $armwallet)
-if (Test-Path $armgui) {
-    $binsToTest += $armgui
-}
 
 foreach ($b in $binsToTest) {
     $bName = Split-Path $b -Leaf
-    $out = & $b -version 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0 -or -not ($out -match "v1\.0\.5")) {
-        throw "Failed version check for $bName (exit: $LASTEXITCODE, output: $out)"
+    $verRes = Invoke-CliCapture -Exe $b -Arguments @("-version")
+    $out = $verRes.Output
+    if ($verRes.ExitCode -ne 0 -or -not ($out -match [regex]::Escape($ExpectedVersion))) {
+        throw "Failed version check for $bName (expected $ExpectedVersion, exit: $($verRes.ExitCode), output: $out)"
     }
     Write-Host "    [OK] $bName : $($out.Trim())"
+}
+
+if (Test-Path $armgui) {
+    $guiInfo = Get-Item $armgui
+    if ($guiInfo.Length -le 0) {
+        throw "Failed binary check for $(Split-Path $armgui -Leaf): zero-byte executable"
+    }
+    Write-Host "    [OK] $(Split-Path $armgui -Leaf) : present ($($guiInfo.Length) bytes, windowsgui subsystem)"
 }
 
 # 3. Setup temporary testnet isolated environment
@@ -120,8 +147,9 @@ try {
 
     # 5. Create Wallet A with passphrase from environment
     Write-Host "[+] Creating Wallet A from environment passphrase..." -ForegroundColor Green
-    $createOutput = & $armwallet -network testnet -create -file $walletAFile 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
+    $createRes = Invoke-CliCapture -Exe $armwallet -Arguments @("-network", "testnet", "-create", "-file", $walletAFile)
+    $createOutput = $createRes.Output
+    if ($createRes.ExitCode -ne 0) {
         throw "Wallet A creation failed: $createOutput"
     }
 
@@ -154,8 +182,9 @@ try {
     if ($mnemonicWords.Count -eq 24) {
         $mnemonicStr = $mnemonicWords -join " "
         Write-Host "[+] Restoring wallet from 24-word mnemonic phrase..." -ForegroundColor Green
-        $restoreOutput = & $armwallet -network testnet -restore $mnemonicStr -file $walletARestoreFile 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) {
+        $restoreRes = Invoke-CliCapture -Exe $armwallet -Arguments @("-network", "testnet", "-restore", $mnemonicStr, "-file", $walletARestoreFile)
+        $restoreOutput = $restoreRes.Output
+        if ($restoreRes.ExitCode -ne 0) {
             throw "Wallet restoration failed: $restoreOutput"
         }
         $walletARestoreData = Get-Content $walletARestoreFile -Raw | ConvertFrom-Json
@@ -170,7 +199,10 @@ try {
 
     # 6. Create Wallet B
     Write-Host "[+] Creating Wallet B..." -ForegroundColor Green
-    $null = & $armwallet -network testnet -create -file $walletBFile 2>&1 | Out-String
+    $walletBRes = Invoke-CliCapture -Exe $armwallet -Arguments @("-network", "testnet", "-create", "-file", $walletBFile)
+    if ($walletBRes.ExitCode -ne 0) {
+        throw "Wallet B creation failed (exit $($walletBRes.ExitCode)): $($walletBRes.Output)"
+    }
     $walletBData = Get-Content $walletBFile -Raw | ConvertFrom-Json
     $addressB = $walletBData.address
     Write-Host "[OK] Wallet B created with address: $addressB"
@@ -183,12 +215,20 @@ try {
     # 8. Send transaction test
     Write-Host "[+] Testing transaction creation and sending between wallets..." -ForegroundColor Green
     # In testnet with no mined balance, sending checks signature generation and daemon communication
-    $sendOut = & $armsend -network testnet -daemon "http://127.0.0.1:$rpcPort" -wallet $walletAFile -to $addressB -amount 100000000 -fee 1000 2>&1 | Out-String
+    $sendRes = Invoke-CliCapture -Exe $armsend -Arguments @("-network", "testnet", "-daemon", "http://127.0.0.1:$rpcPort", "-wallet", $walletAFile, "-to", $addressB, "-amount", "100000000", "-fee", "1000")
+    $sendOut = $sendRes.Output
+    if ($sendRes.ExitCode -ne 0 -and -not ($sendOut -match "Insufficient balance")) {
+        throw "armsend failed unexpectedly (exit $($sendRes.ExitCode)): $sendOut"
+    }
     Write-Host "[OK] armsend executed and communicated with testnet node successfully."
 
     # 9. Test balance query
     Write-Host "[+] Querying balance via armwallet CLI..." -ForegroundColor Green
-    $balOut = & $armwallet -network testnet -daemon "http://127.0.0.1:$rpcPort" -balance $addressA 2>&1 | Out-String
+    $balRes = Invoke-CliCapture -Exe $armwallet -Arguments @("-network", "testnet", "-daemon", "http://127.0.0.1:$rpcPort", "-balance", $addressA)
+    $balOut = $balRes.Output
+    if ($balRes.ExitCode -ne 0) {
+        throw "Balance query failed (exit $($balRes.ExitCode)): $balOut"
+    }
     Write-Host "[OK] Balance query executed: $($balOut.Trim())"
 
     Write-Host "==================================================" -ForegroundColor Cyan

@@ -4,13 +4,13 @@
 # Armaxcoin Release Verification & Dry-Run Test Suite (Linux / macOS / ARM64)
 # ==============================================================================
 # Usage:
-#   ./scripts/verify-release.sh [BIN_DIR] [EXPECTED_VERSION]   (default: v1.0.11)
+#   ./scripts/verify-release.sh [BIN_DIR] [EXPECTED_VERSION]   (default: v1.0.12)
 # ==============================================================================
 
 set -euo pipefail
 
 BIN_DIR="${1:-.}"
-EXPECTED_VERSION="${2:-v1.0.11}"
+EXPECTED_VERSION="${2:-v1.0.12}"
 echo "=================================================="
 echo " ARMAXCOIN - RELEASE VERIFICATION & DRY-RUN"
 echo "=================================================="
@@ -20,17 +20,24 @@ ARMCOIND="${BIN_DIR}/armcoind"
 ARMMINER="${BIN_DIR}/armminer"
 ARMSEND="${BIN_DIR}/armsend"
 ARMWALLET="${BIN_DIR}/armwallet"
+ARMGUI="${BIN_DIR}/armgui"
 
 # If binaries are not pre-compiled, build them now
 if [ ! -f "${ARMCOIND}" ]; then
     echo "[!] Pre-compiled armcoind not found in ${BIN_DIR}. Compiling for test..."
     go build -trimpath -ldflags="-s -w -buildid=" -o "${ARMCOIND}" main.go
-    go build -trimpath -ldflags="-s -w -buildid=" -o "${ARMMINER}" miner/miner.go
+    go build -trimpath -ldflags="-s -w -buildid=" -o "${ARMMINER}" ./miner
     go build -trimpath -ldflags="-s -w -buildid=" -o "${ARMSEND}" ./cli/armsend
     go build -trimpath -ldflags="-s -w -buildid=" -o "${ARMWALLET}" ./cli/armwallet
+    if [ -d "gui" ]; then
+        go build -trimpath -ldflags="-s -w -buildid=" -o "${ARMGUI}" ./gui
+    fi
 fi
 
 chmod +x "${ARMCOIND}" "${ARMMINER}" "${ARMSEND}" "${ARMWALLET}"
+if [ -f "${ARMGUI}" ]; then
+    chmod +x "${ARMGUI}"
+fi
 
 # 1. Verify Checksums if SHA256SUMS exists
 if [ -f "${BIN_DIR}/SHA256SUMS" ]; then
@@ -43,7 +50,11 @@ fi
 
 # 2. Verify '<bin> -version' across all binaries
 echo "[+] Verifying -version output across binaries..."
-for bin in "${ARMCOIND}" "${ARMMINER}" "${ARMSEND}" "${ARMWALLET}"; do
+BINS_TO_CHECK=("${ARMCOIND}" "${ARMMINER}" "${ARMSEND}" "${ARMWALLET}")
+if [ -f "${ARMGUI}" ]; then
+    BINS_TO_CHECK+=("${ARMGUI}")
+fi
+for bin in "${BINS_TO_CHECK[@]}"; do
     out=$("${bin}" -version 2>&1 || true)
     if [[ ! "${out}" == *"${EXPECTED_VERSION}"* ]]; then
         echo "[-] Version check failed for ${bin}: ${out}"

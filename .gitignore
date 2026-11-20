@@ -90,5 +90,5 @@ soak/
 node_modules/
 contracts/node_modules/
 bridge/
-cmd/armx-bridge-relayer/
+cmd/
 contracts/

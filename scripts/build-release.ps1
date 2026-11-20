@@ -6,7 +6,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Version = "v1.0.11",
+    [string]$Version = "v1.0.12",
     [string]$OutputDir = "release_assets"
 )
 
@@ -63,7 +63,7 @@ foreach ($t in $targets) {
     if (-not (Test-Path (Join-Path $tempDist "armcoind$ext"))) { throw "Failed to build armcoind$ext for $os/$arch" }
 
     Write-Host "    -> armminer$ext"
-    go build -trimpath -ldflags "-s -w -buildid=" -o (Join-Path $tempDist "armminer$ext") miner/miner.go
+    go build -trimpath -ldflags "-s -w -buildid=" -o (Join-Path $tempDist "armminer$ext") ./miner
     if (-not (Test-Path (Join-Path $tempDist "armminer$ext"))) { throw "Failed to build armminer$ext for $os/$arch" }
 
     Write-Host "    -> armsend$ext"
@@ -74,7 +74,7 @@ foreach ($t in $targets) {
     go build -trimpath -ldflags "-s -w -buildid=" -o (Join-Path $tempDist "armwallet$ext") ./cli/armwallet
     if (-not (Test-Path (Join-Path $tempDist "armwallet$ext"))) { throw "Failed to build armwallet$ext for $os/$arch" }
 
-    # Desktop GUI Wallet (Win32 GUI on Windows, Web Desktop GUI on Linux/macOS)
+    # Desktop GUI Wallet (Embedded WebView2 Desktop GUI on Windows, Web Desktop GUI on Linux/macOS)
     if ($os -eq "windows" -and $arch -eq "amd64") {
         Write-Host "    -> armgui.exe (Windows Desktop GUI)"
         Copy-Item (Join-Path $root "gui/armgui.exe.manifest") $tempDist -ErrorAction SilentlyContinue

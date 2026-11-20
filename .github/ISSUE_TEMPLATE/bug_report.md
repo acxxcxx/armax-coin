@@ -24,8 +24,8 @@ Please check all that apply:
 
 ### Environment Details
 - **OS & Architecture:** [e.g., Ubuntu 24.04 x86_64, Windows 11 amd64, macOS 14.5 arm64]
-- **Go Version:** [e.g., `go version go1.27 darwin/arm64`]
-- **Binary Version / Git Commit:** [e.g., `v1.0.0` or output of `git rev-parse --short HEAD`]
+- **Go Version:** [e.g., `go version go1.27.4 darwin/arm64`]
+- **Binary Version / Git Commit:** [e.g., `v1.0.12` via `armcoind -version` / `armgui -version`, or `git rev-parse --short HEAD`]
 - **Active Network Profile:** [e.g., `ARMX-TESTNET-1`]
 
 ### Steps to Reproduce

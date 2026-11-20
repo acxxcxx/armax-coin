@@ -15,21 +15,22 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-echo "[+] Launching fresh Ubuntu 24.04 container with Go 1.27..."
+echo "[+] Launching fresh Ubuntu 24.04 container with Go 1.27.4..."
 docker run --rm -v "$(pwd):/build" -w /build ubuntu:24.04 bash -c '
     set -euo pipefail
     apt-get update && apt-get install -y curl git build-essential
-    echo "[+] Downloading official Go 1.27 toolchain..."
-    curl -fsSL https://go.dev/dl/go1.27.0.linux-amd64.tar.gz -o go.tar.gz
+    echo "[+] Downloading official Go 1.27.4 toolchain..."
+    curl -fsSL https://go.dev/dl/go1.27.4.linux-amd64.tar.gz -o go.tar.gz
     tar -C /usr/local -xzf go.tar.gz
     export PATH=/usr/local/go/bin:$PATH
     go version
 
     echo "[+] Running reproducible compilation on clean container..."
     go build -trimpath -ldflags="-s -w -buildid=" -o /tmp/armcoind main.go
-    go build -trimpath -ldflags="-s -w -buildid=" -o /tmp/armminer miner/miner.go
+    go build -trimpath -ldflags="-s -w -buildid=" -o /tmp/armminer ./miner
     go build -trimpath -ldflags="-s -w -buildid=" -o /tmp/armsend ./cli/armsend
     go build -trimpath -ldflags="-s -w -buildid=" -o /tmp/armwallet ./cli/armwallet
+    go build -trimpath -ldflags="-s -w -buildid=" -o /tmp/armgui ./gui
 
     echo "[+] Running release verification inside clean container..."
     ./scripts/verify-release.sh /tmp
