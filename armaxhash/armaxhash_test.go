@@ -546,3 +546,92 @@ func TestDifferentialTargetComparison(t *testing.T) {
 		}
 	}
 }
+
+func TestV2JobHasherBitIdentical(t *testing.T) {
+	prefix1 := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:",
+		benchCanonicalIndex, benchCanonicalTimestamp, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner))
+	prefix2 := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:",
+		benchCanonicalIndex+1, benchCanonicalTimestamp+120, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner))
+	suffix := []byte(":" + benchCanonicalTarget)
+
+	for _, netID := range []string{"ARMX-TESTNET-1", "ARMX-MAINNET-1", "ARMX-REGTEST-1"} {
+		jh, err := NewV2JobHasher(netID, prefix1, suffix)
+		if err != nil {
+			t.Fatalf("NewV2JobHasher(%s) failed: %v", netID, err)
+		}
+		for _, nonce := range []int64{0, 1, 7, 12345, -1, 1<<36 + 999999, (1 << 50) + 42} {
+			hdr := append(append([]byte(nil), prefix1...), strconv.AppendInt(nil, nonce, 10)...)
+			hdr = append(hdr, suffix...)
+			want, err := HashV2(hdr, netID)
+			if err != nil {
+				t.Fatalf("HashV2 failed: %v", err)
+			}
+			if got := jh.HashNonce(nonce); got != want {
+				t.Fatalf("V2JobHasher mismatch net=%s nonce=%d:\n got:  %x\n want: %x", netID, nonce, got, want)
+			}
+		}
+		if err := jh.UpdatePrefix(prefix2); err != nil {
+			t.Fatalf("UpdatePrefix failed: %v", err)
+		}
+		for _, nonce := range []int64{0, 42, 1<<36 + 123} {
+			hdr := append(append([]byte(nil), prefix2...), strconv.AppendInt(nil, nonce, 10)...)
+			hdr = append(hdr, suffix...)
+			want, err := HashV2(hdr, netID)
+			if err != nil {
+				t.Fatalf("HashV2 after UpdatePrefix failed: %v", err)
+			}
+			if got := jh.HashNonce(nonce); got != want {
+				t.Fatalf("V2JobHasher mismatch after UpdatePrefix net=%s nonce=%d:\n got:  %x\n want: %x", netID, nonce, got, want)
+			}
+		}
+	}
+	if _, err := NewV2JobHasher("", prefix1, suffix); err == nil {
+		t.Fatalf("expected error for empty networkID")
+	}
+	if _, err := NewV2JobHasher("ARMX-TESTNET-1", make([]byte, MaxHeaderSize+1), nil); err == nil {
+		t.Fatalf("expected error for oversized header")
+	}
+}
+
+func BenchmarkV2JobHasherCanonicalSingleCore(b *testing.B) {
+	prefixBytes := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:",
+		benchCanonicalIndex, benchCanonicalTimestamp, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner))
+	suffixBytes := []byte(":" + benchCanonicalTarget)
+
+	jh, err := NewV2JobHasher(benchCanonicalNetID, prefixBytes, suffixBytes)
+	if err != nil {
+		b.Fatal(err)
+	}
+	const startNonce = int64(10000000)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(prefixBytes) + 8 + len(suffixBytes)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = jh.HashNonce(startNonce + int64(i))
+	}
+}
+
+func BenchmarkV2JobHasherCanonicalParallel(b *testing.B) {
+	prefixBytes := []byte(fmt.Sprintf("%d:%d:%s:%s:%s:",
+		benchCanonicalIndex, benchCanonicalTimestamp, benchCanonicalPrevHash, benchCanonicalMerkleRoot, benchCanonicalMiner))
+	suffixBytes := []byte(":" + benchCanonicalTarget)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(prefixBytes) + 8 + len(suffixBytes)))
+	b.ResetTimer()
+
+	var workerSeq int64
+	b.RunParallel(func(pb *testing.PB) {
+		wid := atomic.AddInt64(&workerSeq, 1)
+		nonce := int64(10000000) + wid*(1<<36)
+		jh, err := NewV2JobHasher(benchCanonicalNetID, prefixBytes, suffixBytes)
+		if err != nil {
+			b.Fatal(err)
+		}
+		for pb.Next() {
+			nonce++
+			_ = jh.HashNonce(nonce)
+		}
+	})
+}

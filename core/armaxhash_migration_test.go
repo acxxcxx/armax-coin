@@ -32,10 +32,11 @@ func TestActivationHeightDeactivatedInvariant(t *testing.T) {
 
 	for _, deactVal := range deactivatedValues {
 		SetArmaxHashActivationHeight(deactVal)
+		SetArmaxHashV2ActivationHeight(deactVal)
 
 		for _, h := range testHeights {
-			if IsArmaxHashActive(h) {
-				t.Fatalf("CRITICAL CONTRADICTION: IsArmaxHashActive(%d) returned true when activation height is %d", h, deactVal)
+			if IsArmaxHashActive(h) || IsArmaxHashV2Active(h) {
+				t.Fatalf("CRITICAL CONTRADICTION: IsArmaxHashActive(%d)/IsArmaxHashV2Active(%d) returned true when activation height is %d", h, h, deactVal)
 			}
 
 			// Validate that Block.CalculateHash unconditionally computes SHA-256d
@@ -411,12 +412,13 @@ func TestCalculateHashSha256dWhenDeactivated(t *testing.T) {
 	_ = SetNetwork("testnet")
 
 	SetArmaxHashActivationHeight(-1)
+	SetArmaxHashV2ActivationHeight(-1)
 
 	testHeights := []int{0, 1, 5, 10, 50, 100, 1000, 500000}
 	target := DifficultyToTarget(1)
 
 	for _, h := range testHeights {
-		if IsArmaxHashActive(h) {
+		if IsArmaxHashActive(h) || IsArmaxHashV2Active(h) {
 			t.Fatalf("ArmaxHash must not be active at height %d when activation height is -1", h)
 		}
 

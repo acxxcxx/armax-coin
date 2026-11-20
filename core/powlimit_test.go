@@ -9,8 +9,8 @@ import (
 )
 
 func TestPowLimitPerNetwork(t *testing.T) {
+	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
-	defer SetNetworkForTesting(true)
 
 	// 1. Verify Mainnet PowLimit
 	if err := SetNetwork("mainnet"); err != nil {
@@ -69,7 +69,4 @@ func TestPowLimitPerNetwork(t *testing.T) {
 	if TargetToDifficulty(calculatedTarget) < 7 {
 		t.Fatalf("Testnet difficulty dropped below limit 7! Got difficulty %d", TargetToDifficulty(calculatedTarget))
 	}
-
-	// Restore mainnet
-	_ = SetNetwork("mainnet")
 }

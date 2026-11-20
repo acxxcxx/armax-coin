@@ -6,6 +6,7 @@ import (
 	"context"
 	cryptoRand "crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -368,12 +369,12 @@ func main() {
 		parsedDaemons = []string{"http://127.0.0.1:" + activeNet.RPCPort}
 	}
 
-	numThreads := *threadsPtr
-	if numThreads <= 0 {
-		numThreads = runtime.NumCPU()
-	}
+	numThreads, usingPhysicalDefault := GetOptimalCPUWorkerThreads(*threadsPtr)
 	if numThreads < 1 {
 		numThreads = 1
+	}
+	if usingPhysicalDefault {
+		fmt.Printf("[+] CPU Threads      : %d physical core(s) auto-selected from %d logical cores (override with -threads N)\n", numThreads, runtime.NumCPU())
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -564,13 +565,28 @@ func main() {
 		// 1. Fetch block template from daemon
 		tmpl, err := fetchBlockTemplate(client, activeDaemon, *keyPtr, *userPtr, *passPtr)
 		if err != nil {
+			if errors.Is(err, errNodeSyncing) {
+				fmt.Printf("[%s] [*] %v — waiting 3s for blockchain sync...\n", time.Now().Format("15:04:05"), err)
+				select {
+				case <-stopChan:
+					fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+					return
+				case <-time.After(3 * time.Second):
+				}
+				continue
+			}
 			fmt.Printf("[-] Failed to fetch block template from %s: %v\n", activeDaemon, err)
+			waitDur := 3 * time.Second
 			if len(parsedDaemons) > 1 {
 				currentDaemonIdx = (currentDaemonIdx + 1) % len(parsedDaemons)
 				fmt.Printf("[ Auto-Failover] Switching to next node: %s\n", parsedDaemons[currentDaemonIdx])
-				time.Sleep(1 * time.Second)
-			} else {
-				time.Sleep(3 * time.Second)
+				waitDur = 1 * time.Second
+			}
+			select {
+			case <-stopChan:
+				fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+				return
+			case <-time.After(waitDur):
 			}
 			continue
 		}
@@ -640,35 +656,54 @@ func main() {
 
 		roundCtx, cancelRound := context.WithCancel(context.Background())
 		solutionChan := make(chan core.Block, 1)
-		var roundHashes int64
+		slots := NewWorkerSlotManager(numThreads)
 		var wg sync.WaitGroup
 		var logErrOnce sync.Once
 
-		// Spawn worker goroutines partitioned across CPU threads
+		// Spawn worker goroutines partitioned across CPU threads with contiguous positive nonce ranges
 		targetBytes, targetValid := bigIntToTargetBytes32(targetInt)
 		powMode := resolveMinerPoWMode(candidateBlock.Index, algo)
 		netID := core.NetworkID()
+		const workerNonceSpan int64 = 1 << 36
+		const fastBatchLimit int64 = 8192
 
 		for i := 0; i < numThreads; i++ {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
+				if roundCtx.Err() != nil {
+					return
+				}
 				b := candidateBlock
-				b.Nonce = startNonce + int64(workerID)
-				stride := int64(numThreads)
+				b.Nonce = startNonce + int64(workerID)*workerNonceSpan
 				var localBatch int64
-				batchLimit := int64(4096)
+				batchLimit := fastBatchLimit
 				if powMode == powModeArmaxHashV1 { // ArmaxHash v1 memory-hard
 					batchLimit = 1
 				}
 
 				prefixBytes := buildHeaderPrefixBytes(&b)
 				suffixBytes := buildHeaderSuffixBytes(&b)
-				buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+				var v2Hasher armaxhash.V2JobHasher
+				var buf []byte
+				if powMode == powModeArmaxHashV2 {
+					var hErr error
+					v2Hasher, hErr = armaxhash.NewV2JobHasher(netID, prefixBytes, suffixBytes)
+					if hErr != nil {
+						logErrOnce.Do(func() {
+							fmt.Printf("[%s] [!] Hash init error on block #%d: %v\n",
+								time.Now().Format("15:04:05"), b.Index, hErr)
+						})
+						cancelRound()
+						return
+					}
+				} else {
+					buf = make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+				}
 
 				for {
 					if localBatch >= batchLimit {
-						atomic.AddInt64(&roundHashes, localBatch)
+						slots.AddHashes(workerID, uint64(localBatch))
 						localBatch = 0
 						select {
 						case <-roundCtx.Done():
@@ -687,24 +722,33 @@ func main() {
 							if !core.IsASERTActive(b.Index) {
 								b.Timestamp = curTime
 								prefixBytes = buildHeaderPrefixBytes(&b)
+								if powMode == powModeArmaxHashV2 {
+									_ = v2Hasher.UpdatePrefix(prefixBytes)
+								}
 							}
 						}
 					}
 
-					buf = appendCanonicalHeaderBytes(buf, prefixBytes, b.Nonce, suffixBytes)
-					hashBytes, err := computeHeaderDigestBytes(buf, netID, powMode)
-					if err != nil {
-						logErrOnce.Do(func() {
-							fmt.Printf("[%s] [!] Hash computation error on block #%d: %v (aborting round to prevent spinning)\n",
-								time.Now().Format("15:04:05"), b.Index, err)
-						})
-						cancelRound()
-						return
+					var hashBytes [32]byte
+					if powMode == powModeArmaxHashV2 {
+						hashBytes = v2Hasher.HashNonce(b.Nonce)
+					} else {
+						buf = appendCanonicalHeaderBytes(buf, prefixBytes, b.Nonce, suffixBytes)
+						var err error
+						hashBytes, err = computeHeaderDigestBytes(buf, netID, powMode)
+						if err != nil {
+							logErrOnce.Do(func() {
+								fmt.Printf("[%s] [!] Hash computation error on block #%d: %v (aborting round to prevent spinning)\n",
+									time.Now().Format("15:04:05"), b.Index, err)
+							})
+							cancelRound()
+							return
+						}
 					}
 					localBatch++
 					if targetValid && hashBytesMeetTarget32(&hashBytes, &targetBytes) {
 						b.Hash = hex.EncodeToString(hashBytes[:])
-						atomic.AddInt64(&roundHashes, localBatch)
+						slots.AddHashes(workerID, uint64(localBatch))
 						select {
 						case solutionChan <- b:
 						default:
@@ -712,12 +756,12 @@ func main() {
 						cancelRound()
 						return
 					}
-					b.Nonce += stride
+					b.Nonce++
 				}
 			}(i)
 		}
 
-		// Telemetry reporter: Prints live hashrate to miner console at configured statsinterval
+		// Telemetry reporter: Prints live sliding-EMA hashrate to miner console at configured statsinterval
 		go func() {
 			intervalSec := *statsIntervalPtr
 			if intervalSec <= 0 {
@@ -726,6 +770,8 @@ func main() {
 			ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
 			defer ticker.Stop()
 			roundStart := time.Now()
+			ema := NewSlidingEMA(0.3)
+			ema.Reset(0, roundStart)
 			for {
 				select {
 				case <-roundCtx.Done():
@@ -733,10 +779,11 @@ func main() {
 				case <-stopChan:
 					return
 				case <-ticker.C:
-					elapsed := time.Since(roundStart).Seconds()
+					nowTick := time.Now()
+					elapsed := nowTick.Sub(roundStart).Seconds()
+					h := slots.TotalHashes()
+					_, hps := ema.Update(h, nowTick)
 					if elapsed > 0 {
-						h := atomic.LoadInt64(&roundHashes)
-						hps := float64(h) / elapsed
 						rateStr := fmt.Sprintf("%.2f kH/s", hps/1000.0)
 						if hps >= 1_000_000.0 {
 							rateStr = fmt.Sprintf("%.2f MH/s", hps/1_000_000.0)
@@ -744,7 +791,7 @@ func main() {
 							rateStr = fmt.Sprintf("%.2f H/s", hps)
 						}
 						fmt.Printf("[%s] [ Mining] Block #%d | %d threads | %s (Total: %d hashes, %ds)\n",
-							time.Now().Format("15:04:05"), tmpl.Height, numThreads, rateStr, h, int(elapsed))
+							nowTick.Format("15:04:05"), tmpl.Height, numThreads, rateStr, h, int(elapsed))
 					}
 				}
 			}
@@ -816,9 +863,16 @@ func main() {
 			wg.Wait()
 		}
 
-		time.Sleep(time.Duration(*delayPtr) * time.Millisecond)
+		select {
+		case <-stopChan:
+			fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+			return
+		case <-time.After(time.Duration(*delayPtr) * time.Millisecond):
+		}
 	}
 }
+
+var errNodeSyncing = errors.New("node is still synchronizing blockchain")
 
 // fetchBlockTemplate queries the daemon for a new mining block candidate
 func fetchBlockTemplate(client *http.Client, daemonURL, key, user, pass string) (*BlockTemplate, error) {
@@ -838,6 +892,16 @@ func fetchBlockTemplate(client *http.Client, daemonURL, key, user, pass string) 
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		var syncErr struct {
+			Message string `json:"message"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&syncErr)
+		if syncErr.Message != "" {
+			return nil, fmt.Errorf("%w: %s", errNodeSyncing, syncErr.Message)
+		}
+		return nil, errNodeSyncing
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
@@ -887,12 +951,20 @@ func runRemoteMiningLoop(stopChan chan os.Signal, parsedDaemons []string, minerA
 	client := &http.Client{}
 	currentDaemonIdx := 0
 
-	for {
+	loopCtx, cancelLoop := context.WithCancel(context.Background())
+	defer cancelLoop()
+	go func() {
 		select {
 		case <-stopChan:
+			cancelLoop()
+		case <-loopCtx.Done():
+		}
+	}()
+
+	for {
+		if loopCtx.Err() != nil {
 			fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
 			return
-		default:
 		}
 
 		activeDaemon := parsedDaemons[currentDaemonIdx]
@@ -904,20 +976,18 @@ func runRemoteMiningLoop(stopChan chan os.Signal, parsedDaemons []string, minerA
 		}
 		postPayload, _ := json.Marshal(payload)
 
-		reqCtx, cancelReq := context.WithTimeout(context.Background(), 15*time.Minute)
-		go func() {
-			select {
-			case <-stopChan:
-				cancelReq()
-			case <-reqCtx.Done():
-			}
-		}()
+		reqCtx, cancelReq := context.WithTimeout(loopCtx, 15*time.Minute)
 
 		req, err := http.NewRequestWithContext(reqCtx, "POST", mineURL, bytes.NewBuffer(postPayload))
 		if err != nil {
 			cancelReq()
 			fmt.Printf("[-] Failed to create request: %v\n", err)
-			time.Sleep(2 * time.Second)
+			select {
+			case <-loopCtx.Done():
+				fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+				return
+			case <-time.After(2 * time.Second):
+			}
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -940,6 +1010,8 @@ func runRemoteMiningLoop(stopChan chan os.Signal, parsedDaemons []string, minerA
 				select {
 				case <-waitDone:
 					return
+				case <-loopCtx.Done():
+					return
 				case <-ticker.C:
 					elapsed := int(time.Since(startTime).Seconds())
 					fmt.Printf("[%s] [*] Mining in progress on daemon (waiting for PoW solution, %ds elapsed)...\n", time.Now().Format("15:04:05"), elapsed)
@@ -951,20 +1023,24 @@ func runRemoteMiningLoop(stopChan chan os.Signal, parsedDaemons []string, minerA
 		close(waitDone)
 		cancelReq()
 		if err != nil {
-			select {
-			case <-stopChan:
+			if loopCtx.Err() != nil {
 				fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
 				return
-			default:
 			}
 			fmt.Printf("[-] Daemon node %s is unreachable: %v\n", activeDaemon, err)
+			waitDur := 5 * time.Second
 			if len(parsedDaemons) > 1 {
 				currentDaemonIdx = (currentDaemonIdx + 1) % len(parsedDaemons)
 				fmt.Printf("[ Auto-Failover] Redirecting mining to healthy node: %s\n", parsedDaemons[currentDaemonIdx])
-				time.Sleep(1 * time.Second)
+				waitDur = 1 * time.Second
 			} else {
 				fmt.Println("[-] Retrying in 5 seconds...")
-				time.Sleep(5 * time.Second)
+			}
+			select {
+			case <-loopCtx.Done():
+				fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+				return
+			case <-time.After(waitDur):
 			}
 			continue
 		}
@@ -973,9 +1049,28 @@ func runRemoteMiningLoop(stopChan chan os.Signal, parsedDaemons []string, minerA
 		_ = json.NewDecoder(resp.Body).Decode(&result)
 		resp.Body.Close()
 
+		if loopCtx.Err() != nil {
+			fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+			return
+		}
+
 		if resp.StatusCode == http.StatusOK && result.Status == "success" {
 			timestamp := time.Now().Format("15:04:05")
 			fmt.Printf("[%s] [OK] Block mined on %s! Reward to: %s...\n", timestamp, activeDaemon, minerAddress[:12])
+		} else if resp.StatusCode == http.StatusServiceUnavailable {
+			timestamp := time.Now().Format("15:04:05")
+			msg := result.Message
+			if msg == "" {
+				msg = "Node is still synchronizing blocks"
+			}
+			fmt.Printf("[%s] [*] Waiting for sync on %s: %s\n", timestamp, activeDaemon, msg)
+			select {
+			case <-loopCtx.Done():
+				fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+				return
+			case <-time.After(3 * time.Second):
+			}
+			continue
 		} else {
 			if result.Message != "" {
 				fmt.Printf("[-] Mining notice from %s (HTTP %d): %s\n", activeDaemon, resp.StatusCode, result.Message)
@@ -984,7 +1079,12 @@ func runRemoteMiningLoop(stopChan chan os.Signal, parsedDaemons []string, minerA
 			}
 		}
 
-		time.Sleep(time.Duration(delayMs) * time.Millisecond)
+		select {
+		case <-loopCtx.Done():
+			fmt.Println("\n[!] Miner shutdown requested. Stopping cleanly...")
+			return
+		case <-time.After(time.Duration(delayMs) * time.Millisecond):
+		}
 	}
 }
 
@@ -1084,13 +1184,19 @@ func stratumRPCMethod(action string) string {
 	return strings.Join([]string{"min", "ing.", action}, "")
 }
 
-// isStratumURLList returns true if the raw URL string contains a pool TCP URI prefix.
+// isStratumURLList returns true if the raw URL string contains a pool TCP/TLS URI prefix.
 func isStratumURLList(raw string) bool {
 	lower := strings.ToLower(strings.TrimSpace(raw))
-	return strings.Contains(lower, stratumTCPPrefix()) || strings.Contains(lower, stratumSchemePrefix())
+	return strings.Contains(lower, stratumTCPPrefix()) ||
+		strings.Contains(lower, stratumSchemePrefix()) ||
+		strings.Contains(lower, "stratum+ssl://") ||
+		strings.Contains(lower, "stratum+tls://") ||
+		strings.Contains(lower, "ssl://") ||
+		strings.Contains(lower, "tls://")
 }
 
-// parseStratumPoolAddresses normalizes a comma-separated list of pool URLs into host:port endpoints.
+// parseStratumPoolAddresses normalizes a comma-separated list of pool URLs into host:port
+// or stratum+ssl://host:port endpoints (preserving TLS schemes for dialStratumEndpoint).
 func parseStratumPoolAddresses(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
 		return nil
@@ -1105,7 +1211,20 @@ func parseStratumPoolAddresses(raw string) []string {
 			continue
 		}
 		lower := strings.ToLower(trimmed)
-		if strings.HasPrefix(lower, tcpPref) {
+		tlsPrefix := ""
+		if strings.HasPrefix(lower, "stratum+ssl://") {
+			tlsPrefix = "stratum+ssl://"
+			trimmed = trimmed[len("stratum+ssl://"):]
+		} else if strings.HasPrefix(lower, "stratum+tls://") {
+			tlsPrefix = "stratum+ssl://"
+			trimmed = trimmed[len("stratum+tls://"):]
+		} else if strings.HasPrefix(lower, "ssl://") {
+			tlsPrefix = "stratum+ssl://"
+			trimmed = trimmed[len("ssl://"):]
+		} else if strings.HasPrefix(lower, "tls://") {
+			tlsPrefix = "stratum+ssl://"
+			trimmed = trimmed[len("tls://"):]
+		} else if strings.HasPrefix(lower, tcpPref) {
 			trimmed = trimmed[len(tcpPref):]
 		} else if strings.HasPrefix(lower, schemePref) {
 			trimmed = trimmed[len(schemePref):]
@@ -1118,12 +1237,45 @@ func parseStratumPoolAddresses(raw string) []string {
 		}
 		if trimmed != "" {
 			if _, _, err := net.SplitHostPort(trimmed); err != nil && !strings.Contains(trimmed, ":") {
-				trimmed = trimmed + ":3333"
+				if tlsPrefix != "" {
+					trimmed = trimmed + ":3334"
+				} else {
+					trimmed = trimmed + ":3333"
+				}
 			}
-			pools = append(pools, trimmed)
+			pools = append(pools, tlsPrefix+trimmed)
 		}
 	}
 	return pools
+}
+
+// dialStratumEndpoint connects to a Stratum pool over TLS 1.2+ (stratum+ssl:// / stratum+tls://)
+// or plain TCP (host:port).
+func dialStratumEndpoint(poolEndpoint string, timeout time.Duration) (net.Conn, error) {
+	trimmed := strings.TrimSpace(poolEndpoint)
+	lower := strings.ToLower(trimmed)
+	useTLS := false
+	for _, pref := range []string{"stratum+ssl://", "stratum+tls://", "ssl://", "tls://"} {
+		if strings.HasPrefix(lower, pref) {
+			trimmed = trimmed[len(pref):]
+			useTLS = true
+			break
+		}
+	}
+	if !useTLS {
+		for _, pref := range []string{stratumTCPPrefix(), stratumSchemePrefix(), "tcp://"} {
+			if strings.HasPrefix(lower, pref) {
+				trimmed = trimmed[len(pref):]
+				break
+			}
+		}
+	}
+	if useTLS {
+		return tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", trimmed, &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		})
+	}
+	return net.DialTimeout("tcp", trimmed, timeout)
 }
 
 // splitMinerWorker separates "<address>.<worker>" into base wallet address and worker name.
@@ -1349,9 +1501,9 @@ func deriveSessionNonceBase(extraNonce1 string) int64 {
 	return 0
 }
 
-// testStratumPoolConnection performs a dry-run TCP dial, mining.subscribe, and mining.authorize check.
+// testStratumPoolConnection performs a dry-run TCP/TLS dial, mining.subscribe, and mining.authorize check.
 func testStratumPoolConnection(poolHostPort, minerAddress, workerName, password string) error {
-	conn, err := net.DialTimeout("tcp", poolHostPort, 10*time.Second)
+	conn, err := dialStratumEndpoint(poolHostPort, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", poolHostPort, err)
 	}
@@ -1466,7 +1618,7 @@ func runStratumMiningLoop(stopChan <-chan os.Signal, pools []string, minerAddres
 // runStratumMiningSession executes a single Stratum v1 TCP session against poolHostPort.
 // If maxAcceptedShares > 0, the session returns nil once at least maxAcceptedShares shares are accepted by the pool (used for deterministic testing).
 func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddress, workerName, password string, numThreads, statsIntervalSec int, maxAcceptedShares int64) error {
-	conn, err := net.DialTimeout("tcp", poolHostPort, 10*time.Second)
+	conn, err := dialStratumEndpoint(poolHostPort, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial failed: %w", err)
 	}
@@ -1512,21 +1664,27 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 		return fmt.Errorf("authorize write error: %w", err)
 	}
 
+	type stratumTargetSnap struct {
+		diff  float64
+		bytes [32]byte
+		valid bool
+	}
+
 	var (
 		stateMu          sync.RWMutex
 		extraNonce1      string
 		activeJobID      string
 		jobSeq           int64
-		shareDiff                    = 1.0
-		shareTarget                  = floatDifficultyToTarget(1.0)
-		shareTargetBytes, targetInit = bigIntToTargetBytes32(shareTarget)
-		shareTargetValid             = targetInit
+		initTarget       = floatDifficultyToTarget(1.0)
+		initBytes, valid = bigIntToTargetBytes32(initTarget)
+		targetSnapshot   atomic.Pointer[stratumTargetSnap]
 		activeCancel     context.CancelFunc
 		workerWG         sync.WaitGroup
-		totalHashes      int64
+		slots            = NewWorkerSlotManager(numThreads)
 		acceptedShares   int64
 		rejectedShares   int64
 	)
+	targetSnapshot.Store(&stratumTargetSnap{diff: 1.0, bytes: initBytes, valid: valid})
 
 	sessionCtx, cancelSession := context.WithCancel(context.Background())
 	defer func() {
@@ -1556,24 +1714,20 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 	go func() {
 		ticker := time.NewTicker(time.Duration(statsIntervalSec) * time.Second)
 		defer ticker.Stop()
-		start := time.Now()
+		ema := NewSlidingEMA(0.3)
+		ema.Reset(0, time.Now())
 		for {
 			select {
 			case <-sessionCtx.Done():
 				return
 			case <-ticker.C:
-				elapsed := time.Since(start).Seconds()
-				if elapsed > 0 {
-					h := atomic.LoadInt64(&totalHashes)
-					acc := atomic.LoadInt64(&acceptedShares)
-					rej := atomic.LoadInt64(&rejectedShares)
-					stateMu.RLock()
-					curDiff := shareDiff
-					stateMu.RUnlock()
-					hps := float64(h) / elapsed
-					fmt.Printf("[%s] [Stratum] %.2f H/s | Diff: %.4f | Shares: %d accepted, %d rejected\n",
-						time.Now().Format("15:04:05"), hps, curDiff, acc, rej)
-				}
+				h := slots.TotalHashes()
+				acc := atomic.LoadInt64(&acceptedShares)
+				rej := atomic.LoadInt64(&rejectedShares)
+				curDiff := targetSnapshot.Load().diff
+				_, hps := ema.Update(h, time.Now())
+				fmt.Printf("[%s] [Stratum] %.2f H/s | Diff: %.4f | Shares: %d accepted, %d rejected\n",
+					time.Now().Format("15:04:05"), hps, curDiff, acc, rej)
 			}
 		}
 	}()
@@ -1599,8 +1753,8 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 		activeCancel = jobCancel
 		activeJobID = job.JobID
 		en1 := extraNonce1
-		curDiff := shareDiff
 		stateMu.Unlock()
+		curDiff := targetSnapshot.Load().diff
 
 		seqOffset := (atomic.AddInt64(&jobSeq, 1) - 1) << 20
 		baseNonce := deriveSessionNonceBase(en1) + seqOffset
@@ -1610,11 +1764,15 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 		var roundNonceCounter uint64
 		powMode := resolveMinerPoWMode(job.Height, job.PoWAlgo)
 		netID := core.NetworkID()
+		const fastBatchLimit int64 = 8192
 
 		for i := 0; i < numThreads; i++ {
 			workerWG.Add(1)
 			go func(workerID int) {
 				defer workerWG.Done()
+				if jobCtx.Err() != nil {
+					return
+				}
 				b := core.Block{
 					Index:      job.Height,
 					Timestamp:  job.Timestamp,
@@ -1625,7 +1783,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 					Nonce:      baseNonce + int64(workerID),
 				}
 				stride := int64(numThreads)
-				batchLimit := int64(256)
+				batchLimit := fastBatchLimit
 				if powMode == powModeArmaxHashV1 {
 					batchLimit = 1
 				}
@@ -1634,45 +1792,54 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 
 				prefixBytes := buildHeaderPrefixBytes(&b)
 				suffixBytes := buildHeaderSuffixBytes(&b)
-				buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+				var v2Hasher armaxhash.V2JobHasher
+				var buf []byte
+				if powMode == powModeArmaxHashV2 {
+					var hErr error
+					v2Hasher, hErr = armaxhash.NewV2JobHasher(netID, prefixBytes, suffixBytes)
+					if hErr != nil {
+						return
+					}
+				} else {
+					buf = make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
+				}
 
-				stateMu.RLock()
-				localTargetBytes := shareTargetBytes
-				localTargetValid := shareTargetValid
-				stateMu.RUnlock()
+				snap := targetSnapshot.Load()
+				localTargetBytes := snap.bytes
+				localTargetValid := snap.valid
 
 				for {
 					if localBatch >= batchLimit {
-						atomic.AddInt64(&totalHashes, localBatch)
+						slots.AddHashes(workerID, uint64(localBatch))
 						localBatch = 0
-						select {
-						case <-jobCtx.Done():
+						if jobCtx.Err() != nil {
 							return
-						default:
 						}
-						stateMu.RLock()
-						localTargetBytes = shareTargetBytes
-						localTargetValid = shareTargetValid
-						stateMu.RUnlock()
+						snap = targetSnapshot.Load()
+						localTargetBytes = snap.bytes
+						localTargetValid = snap.valid
 					}
 
-					buf = appendCanonicalHeaderBytes(buf, prefixBytes, b.Nonce, suffixBytes)
-					hashBytes, err := computeHeaderDigestBytes(buf, netID, powMode)
-					if err != nil {
-						return
+					var hashBytes [32]byte
+					if powMode == powModeArmaxHashV2 {
+						hashBytes = v2Hasher.HashNonce(b.Nonce)
+					} else {
+						buf = appendCanonicalHeaderBytes(buf, prefixBytes, b.Nonce, suffixBytes)
+						var err error
+						hashBytes, err = computeHeaderDigestBytes(buf, netID, powMode)
+						if err != nil {
+							return
+						}
 					}
 					localBatch++
 
 					if localTargetValid && hashBytesMeetTarget32(&hashBytes, &localTargetBytes) {
-						stateMu.RLock()
-						latestTargetBytes := shareTargetBytes
-						latestTargetValid := shareTargetValid
-						stateMu.RUnlock()
-						localTargetBytes = latestTargetBytes
-						localTargetValid = latestTargetValid
+						latestSnap := targetSnapshot.Load()
+						localTargetBytes = latestSnap.bytes
+						localTargetValid = latestSnap.valid
 
-						if latestTargetValid && hashBytesMeetTarget32(&hashBytes, &latestTargetBytes) {
-							atomic.AddInt64(&totalHashes, localBatch)
+						if latestSnap.valid && hashBytesMeetTarget32(&hashBytes, &latestSnap.bytes) {
+							slots.AddHashes(workerID, uint64(localBatch))
 							localBatch = 0
 							if jobCtx.Err() != nil {
 								return
@@ -1747,11 +1914,8 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 						newDiff, _ = strconv.ParseFloat(v, 64)
 					}
 					if newDiff > 0 && !math.IsInf(newDiff, 0) && !math.IsNaN(newDiff) {
-						stateMu.Lock()
-						shareDiff = newDiff
-						shareTarget = floatDifficultyToTarget(newDiff)
-						shareTargetBytes, shareTargetValid = bigIntToTargetBytes32(shareTarget)
-						stateMu.Unlock()
+						tBytes, tValid := bigIntToTargetBytes32(floatDifficultyToTarget(newDiff))
+						targetSnapshot.Store(&stratumTargetSnap{diff: newDiff, bytes: tBytes, valid: tValid})
 					}
 				}
 			case stratumRPCMethod("notify"):
@@ -1793,9 +1957,7 @@ func runStratumMiningSession(stopChan <-chan os.Signal, poolHostPort, minerAddre
 			if idInt > 2 {
 				if msg.Error == nil && msg.Result == true {
 					acc := atomic.AddInt64(&acceptedShares, 1)
-					stateMu.RLock()
-					curDiff := shareDiff
-					stateMu.RUnlock()
+					curDiff := targetSnapshot.Load().diff
 					fmt.Printf("[%s] [Stratum Share] Accepted (#%d) | Diff: %.4f\n", time.Now().Format("15:04:05"), acc, curDiff)
 					if maxAcceptedShares > 0 && acc >= maxAcceptedShares {
 						cancelSession()

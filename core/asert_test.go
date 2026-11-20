@@ -256,8 +256,8 @@ func TestTestnetProfileASERTActivationHeight13335(t *testing.T) {
 	if TestnetProfile.ASERTActivationHeight != 13335 {
 		t.Fatalf("expected TestnetProfile.ASERTActivationHeight == 13335, got %d", TestnetProfile.ASERTActivationHeight)
 	}
-	if MainnetProfile.ASERTActivationHeight != -1 {
-		t.Fatalf("expected MainnetProfile.ASERTActivationHeight == -1, got %d", MainnetProfile.ASERTActivationHeight)
+	if MainnetProfile.ASERTActivationHeight != 0 {
+		t.Fatalf("expected MainnetProfile.ASERTActivationHeight == 0, got %d", MainnetProfile.ASERTActivationHeight)
 	}
 }
 
@@ -540,4 +540,3 @@ func TestASERT_DriftCachePruning(t *testing.T) {
 		t.Fatalf("pruned vs baseline drift mismatch at tip: pruned=%d, baseline=%d (ok=%v)", driftPruned, driftBaseline, okBase)
 	}
 }
-

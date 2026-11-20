@@ -70,10 +70,8 @@ func TestAddress_HRPAndBech32Validation(t *testing.T) {
 // ARMX-TESTNET-1 in its SHA256d hash. When presented to a MAINNET node (netID = ARMX-MAINNET-1),
 // the transaction hash recalculates with ARMX-MAINNET-1, causing tx.Verify() to FAIL.
 func TestTransaction_CrossNetworkReplayProtection(t *testing.T) {
+	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
-	defer func() {
-		_ = SetNetwork("mainnet")
-	}()
 
 	// Initialize keypair
 	sk, _, err := pqsig.GenerateKey()

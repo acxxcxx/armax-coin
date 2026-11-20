@@ -116,7 +116,7 @@ func TargetToDifficultyRatio(target *big.Int, blockIndex int) float64 {
 		return 1.0
 	}
 	baseTarget := GetPowLimit()
-	if IsArmaxHashActive(blockIndex) {
+	if IsAnyArmaxHashActive(blockIndex) {
 		baseTarget = GetArmaxHashPowLimit()
 	}
 	if baseTarget == nil || baseTarget.Sign() <= 0 {
@@ -269,13 +269,13 @@ func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 	if nextIndex <= 0 {
 		return GetPowLimit()
 	}
-	// At the exact activation block of ArmaxHash, reset to ArmaxHashPowLimit to bootstrap smoothly into memory-hard mining
-	if act := GetArmaxHashActivationHeight(); act > 0 && int64(nextIndex) == act {
+	// At the exact activation block of ArmaxHash, reset to ArmaxHashPowLimit to bootstrap smoothly into ArmaxHash mining
+	if act := GetEffectiveArmaxHashActivationHeight(); act > 0 && int64(nextIndex) == act {
 		return GetArmaxHashPowLimit()
 	}
 	// Blocks 1..LWMAWindowSize inherit genesis target, avoiding bypass to MaxTarget (Difficulty 1) [C-31]
 	if len(chain) < LWMAWindowSize+1 || nextIndex < LWMAWindowSize+1 {
-		if IsArmaxHashActive(nextIndex) {
+		if IsAnyArmaxHashActive(nextIndex) {
 			return GetArmaxHashPowLimit()
 		}
 		if len(chain) > 0 {
@@ -296,7 +296,7 @@ func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 	sumTargets := big.NewInt(0)
 	maxSolveTime := 6 * TargetBlockTimeSeconds // 720 seconds
 
-	actHeight := GetArmaxHashActivationHeight()
+	actHeight := GetEffectiveArmaxHashActivationHeight()
 	isNextArmax := actHeight > 0 && int64(nextIndex) >= actHeight
 
 	// TEDR Model 3: Locate the last non-emergency target before or at the start of the window
@@ -388,7 +388,7 @@ func CalculateExpectedTarget(chain []Block, nextIndex int) *big.Int {
 	if len(chain) > 0 {
 		powFloor = chain[0].GetTarget()
 	}
-	if IsArmaxHashActive(nextIndex) {
+	if IsAnyArmaxHashActive(nextIndex) {
 		// When ArmaxHash is active, difficulty is allowed to drop to accommodate smaller miners
 		// while bounded by Difficulty 1
 		powFloor = DifficultyToTarget(1)

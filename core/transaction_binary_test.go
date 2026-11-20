@@ -529,6 +529,18 @@ func TestMainnetRemainLocked_WithGenesisASERTAndBinaryReady(t *testing.T) {
 	}
 	allowMainnetInTestsHook = oldAllowMainnetHook
 
+	if MainnetProfile.ArmaxHashActivationHeight != -1 {
+		t.Fatalf("expected MainnetProfile.ArmaxHashActivationHeight == -1, got %d", MainnetProfile.ArmaxHashActivationHeight)
+	}
+	if MainnetProfile.ArmaxHashV2ActivationHeight != 1 {
+		t.Fatalf("expected MainnetProfile.ArmaxHashV2ActivationHeight == 1, got %d", MainnetProfile.ArmaxHashV2ActivationHeight)
+	}
+	if MainnetProfile.ASERTActivationHeight != 0 {
+		t.Fatalf("expected MainnetProfile.ASERTActivationHeight == 0, got %d", MainnetProfile.ASERTActivationHeight)
+	}
+	if MainnetProfile.FutureTimestampLimitActivationHeight != 0 {
+		t.Fatalf("expected MainnetProfile.FutureTimestampLimitActivationHeight == 0, got %d", MainnetProfile.FutureTimestampLimitActivationHeight)
+	}
 	if MainnetProfile.BlockBinarySizeActivationHeight != 0 {
 		t.Fatalf("expected MainnetProfile.BlockBinarySizeActivationHeight == 0, got %d", MainnetProfile.BlockBinarySizeActivationHeight)
 	}
@@ -546,15 +558,40 @@ func TestMainnetRemainLocked_WithGenesisASERTAndBinaryReady(t *testing.T) {
 	EnableLocalMainnet()
 	defer DisableLocalMainnet()
 
-	SetASERTActivationHeight(0)
-	defer ResetASERTActivationHeightOverride()
+	ResetArmaxHashActivationHeightOverride()
+	ResetArmaxHashV2ActivationHeightOverride()
+	ResetASERTActivationHeightOverride()
+	ResetFutureTimestampLimitActivationHeightOverride()
+	ResetTimestampRulesActivationHeightOverride()
 	ResetBlockBinarySizeActivationHeightOverride()
-	defer ResetBlockBinarySizeActivationHeightOverride()
 	ResetASERTDriftCache()
 	defer ResetASERTDriftCache()
 
-	if !IsASERTActive(1) {
-		t.Fatalf("expected Mainnet ASERT to be active from block #1 when ASERTActivationHeight=0")
+	gen := GetMainnetGenesisBlock()
+	if gen.PoWAlgorithm() != "sha256d" {
+		t.Fatalf("expected Mainnet Genesis #0 PoWAlgorithm == sha256d, got %s", gen.PoWAlgorithm())
+	}
+	if err := ValidateGenesisBlock(&gen); err != nil {
+		t.Fatalf("expected ValidateGenesisBlock(&gen) == nil, got %v", err)
+	}
+
+	if IsArmaxHashActive(1) {
+		t.Fatalf("expected Mainnet IsArmaxHashActive(1) == false (v1 skipped)")
+	}
+	if !IsArmaxHashV2Active(1) || !IsAnyArmaxHashActive(1) {
+		t.Fatalf("expected Mainnet ArmaxHash v2 active at Block #1 without overrides")
+	}
+	if (&Block{Index: 1}).PoWAlgorithm() != "armaxhash-v2" {
+		t.Fatalf("expected Mainnet Block #1 PoWAlgorithm == armaxhash-v2")
+	}
+	if !IsASERTActive(1) || GetCurrentDAAEngineName(1) != "Armax-ASERT-AW" {
+		t.Fatalf("expected Mainnet ASERT to be natively active from block #1")
+	}
+	if MaxFutureTimestampSeconds(1) != FutureTimestampLimitSeconds {
+		t.Fatalf("expected Mainnet C6 600s limit from block #1, got %d", MaxFutureTimestampSeconds(1))
+	}
+	if !IsTimestampRulesActive(1) {
+		t.Fatalf("expected Mainnet C1/C2 timestamp rules active from block #1")
 	}
 	if IsAntiStallActive(1) || IsAntiStallActive(100000) {
 		t.Fatalf("Mainnet must permanently disable TEDR Anti-Stall even with ASERT active")
@@ -563,18 +600,29 @@ func TestMainnetRemainLocked_WithGenesisASERTAndBinaryReady(t *testing.T) {
 		t.Fatalf("expected Mainnet BlockBinarySize to be ready from Genesis #0")
 	}
 
-	gen := GetMainnetGenesisBlock()
 	anchorBlk, anchorTarget, err := ResolveASERTAnchor([]Block{gen}, 0)
 	if err != nil {
 		t.Fatalf("ResolveASERTAnchor on Mainnet Genesis #0 failed: %v", err)
 	}
-	if anchorBlk.Index != 0 || anchorBlk.Hash != gen.Hash || anchorTarget.Cmp(gen.GetTarget()) != 0 {
-		t.Fatalf("expected Mainnet ASERT anchor to be Genesis #0 (%s), got index=%d hash=%s", gen.Hash, anchorBlk.Index, anchorBlk.Hash)
+	armaxLimit := GetArmaxHashPowLimit()
+	if anchorBlk.Index != 0 || anchorBlk.Hash != gen.Hash || anchorTarget.Cmp(armaxLimit) != 0 {
+		t.Fatalf("expected Mainnet ASERT anchor to be Genesis #0 (%s) with ArmaxHashPowLimit (%064x), got index=%d hash=%s target=%064x",
+			gen.Hash, armaxLimit, anchorBlk.Index, anchorBlk.Hash, anchorTarget)
 	}
 
-	// Verify CalculateArmaxASERTTarget operates purely from Genesis #0 anchor without error
-	if tgt := CalculateArmaxASERTTarget([]Block{gen}, 1, gen.Timestamp+120); tgt == nil || tgt.Sign() <= 0 {
-		t.Fatalf("expected positive ASERT target for Mainnet block #1")
+	// Verify CalculateArmaxASERTTarget operates cleanly at ArmaxHashPowLimit scale for Block #1
+	tgt1 := CalculateArmaxASERTTarget([]Block{gen}, 1, gen.Timestamp+120)
+	if tgt1 == nil || tgt1.Cmp(armaxLimit) != 0 {
+		t.Fatalf("expected nominal Block #1 target to equal ArmaxHashPowLimit (%064x), got %064x", armaxLimit, tgt1)
+	}
+
+	// Verify validateBlockContext rejects a Block #1 whose hash is forged with legacy SHA-256d
+	cb := Transaction{Sender: "SYSTEM", Recipient: GenesisMiner, Amount: InitialReward, Nonce: 1, Signature: "REWARD_SIG"}
+	forged := NewBlock([]Transaction{cb}, gen.Hash, 1, GenesisMiner, tgt1)
+	forged.Timestamp = gen.Timestamp + 120
+	forged.Hash = forged.CalculateSha256dHash()
+	if err := validateBlockContext(forged, &gen, []Block{gen}, true); err == nil || !strings.Contains(err.Error(), "calculated hash mismatch") {
+		t.Fatalf("expected validateBlockContext to reject SHA-256d Block #1 on Mainnet, got: %v", err)
 	}
 
 	// Verify EffectiveTxSize & EffectiveBlockSize use BinarySize() from Genesis #0 on Mainnet
@@ -595,4 +643,3 @@ func TestMainnetRemainLocked_WithGenesisASERTAndBinaryReady(t *testing.T) {
 		t.Fatalf("expected Mainnet EffectiveBlockSize == BinarySize (%d), got %d", blk.BinarySize(), got)
 	}
 }
-

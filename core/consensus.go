@@ -5,11 +5,12 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
-	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.11]
-	Version = "1.0.11"
+	// Version defines the canonical software and consensus protocol release version [R-10, v1.0.12]
+	Version = "1.0.12"
 
 	// MaxReorganizationDepth defines the maximum depth of reorganization allowed (prevents deep 51% history overwrites, 720 blocks = ~1 day at 120s) [D-05]
 	MaxReorganizationDepth = 720
@@ -160,12 +161,48 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 		return fmt.Errorf("consensus network context error: %w", err)
 	}
 
+	activeNet := GetActiveNetwork()
+	var altProf NetworkProfile
+	useAltProfile := false
+	if chainNetID != activeNet.NetworkID {
+		if prof, ok := ProfileForNetworkID(chainNetID); ok {
+			altProf = prof
+			useAltProfile = true
+		}
+	}
+
 	// 0. Size constraints [C-04]
-	if effBlkSize := EffectiveBlockSize(b); effBlkSize > MaxBlockSize {
+	effBlkSize := EffectiveBlockSize(b)
+	if useAltProfile {
+		if altProf.BlockBinarySizeActivationHeight >= 0 && int64(b.Index) >= altProf.BlockBinarySizeActivationHeight {
+			if binSz := b.BinarySize(); binSz > 0 {
+				effBlkSize = binSz
+			} else {
+				effBlkSize = b.Size()
+			}
+		} else {
+			effBlkSize = b.Size()
+		}
+	}
+	if effBlkSize > MaxBlockSize {
 		return fmt.Errorf("block size %d exceeds MaxBlockSize (%d)", effBlkSize, MaxBlockSize)
 	}
 	for idx := range b.Transactions {
-		if txSize := EffectiveTxSize(&b.Transactions[idx], b.Index); txSize > MaxTxSize {
+		var txSize int
+		if useAltProfile {
+			if altProf.BlockBinarySizeActivationHeight >= 0 && int64(b.Index) >= altProf.BlockBinarySizeActivationHeight {
+				if binSz := b.Transactions[idx].BinarySize(); binSz > 0 {
+					txSize = binSz
+				} else {
+					txSize = b.Transactions[idx].Size()
+				}
+			} else {
+				txSize = b.Transactions[idx].Size()
+			}
+		} else {
+			txSize = EffectiveTxSize(&b.Transactions[idx], b.Index)
+		}
+		if txSize > MaxTxSize {
 			return fmt.Errorf("tx #%d size %d exceeds MaxTxSize (%d)", idx, txSize, MaxTxSize)
 		}
 	}
@@ -211,7 +248,12 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 	}
 
 	// 6. Block header hash verification
-	calcHash, err := b.CalculateHashWithError()
+	var calcHash string
+	if useAltProfile {
+		calcHash, err = b.CalculateHashWithErrorForProfile(altProf)
+	} else {
+		calcHash, err = b.CalculateHashWithError()
+	}
 	if err != nil {
 		return fmt.Errorf("block hash computation failed: %w", err)
 	}
@@ -219,8 +261,13 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 		return fmt.Errorf("calculated hash mismatch")
 	}
 
-	// 7. LWMA Difficulty and Numerical Target [C-09] (with TEDR anti-stall support)
-	expectedTarget := CalculateExpectedTargetForCandidate(chainHistory, b.Index, b.Timestamp)
+	// 7. LWMA / ASERT Difficulty and Numerical Target [C-09] (with TEDR anti-stall support)
+	var expectedTarget *big.Int
+	if useAltProfile {
+		expectedTarget = calculateExpectedTargetForProfile(altProf, chainHistory, b.Index, b.Timestamp)
+	} else {
+		expectedTarget = CalculateExpectedTargetForCandidate(chainHistory, b.Index, b.Timestamp)
+	}
 	expectedTargetHex := fmt.Sprintf("%064x", expectedTarget)
 	if b.Target != expectedTargetHex {
 		return fmt.Errorf("target mismatch (got %s, expected %s)", b.Target, expectedTargetHex)
@@ -234,17 +281,52 @@ func validateBlockContext(b *Block, prev *Block, chainHistory []Block, isHistori
 	}
 
 	// 8. Timestamp sanity checks [C-05, C-06, C-22, T13]:
-	// Wall-clock check (no future blocks > 2h) strictly enforced for real-time tip blocks, bypassed during historical replay
+	// Wall-clock check strictly enforced for real-time tip blocks, bypassed during historical replay
 	skipWallClock := len(isHistorical) > 0 && isHistorical[0]
 	if !skipWallClock {
-		if err := validateFutureTimestamp(b); err != nil {
-			return err
+		if useAltProfile {
+			now := time.Now().Unix()
+			limit := int64(LegacyFutureTimestampLimitSeconds)
+			if altProf.FutureTimestampLimitActivationHeight >= 0 && b.Index > 0 && int64(b.Index) >= altProf.FutureTimestampLimitActivationHeight {
+				limit = FutureTimestampLimitSeconds
+			}
+			maxFuture := now + limit
+			if b.Timestamp > maxFuture {
+				return &FutureTimestampError{
+					BlockHeight:    b.Index,
+					BlockTimestamp: b.Timestamp,
+					MaxAllowed:     maxFuture,
+					SkewSeconds:    b.Timestamp - maxFuture,
+				}
+			}
+		} else {
+			if err := validateFutureTimestamp(b); err != nil {
+				return err
+			}
 		}
 	}
 	// Median-Time-Past (MTP-11, or MTP-55 plus non-decreasing timestamps from the C1/C2 activation height)
 	// strictly verified for ALL blocks [C-05, C-06, C-22, C1, C2]
-	if err := validateBlockTimestampRules(b, prev, chainHistory); err != nil {
-		return err
+	if useAltProfile {
+		tsActive := altProf.TimestampRulesActivationHeight >= 0 && b.Index > 0 && int64(b.Index) >= altProf.TimestampRulesActivationHeight
+		window := LegacyMTPWindow
+		if tsActive {
+			window = ExtendedMTPWindow
+		}
+		mtp := CalculateMedianTimePastN(chainHistory, b.Index, window)
+		if b.Timestamp <= mtp {
+			if window == LegacyMTPWindow {
+				return fmt.Errorf("timestamp %d <= MedianTimePast %d", b.Timestamp, mtp)
+			}
+			return fmt.Errorf("timestamp %d <= MedianTimePast(MTP-%d) %d", b.Timestamp, window, mtp)
+		}
+		if tsActive && prev != nil && b.Timestamp < prev.Timestamp {
+			return fmt.Errorf("timestamp %d is earlier than parent timestamp %d (non-decreasing rule)", b.Timestamp, prev.Timestamp)
+		}
+	} else {
+		if err := validateBlockTimestampRules(b, prev, chainHistory); err != nil {
+			return err
+		}
 	}
 
 	// 9. Checkpoint validation

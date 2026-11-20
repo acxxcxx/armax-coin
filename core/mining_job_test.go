@@ -221,3 +221,84 @@ func TestMineBlockContextUnderASERT(t *testing.T) {
 		t.Fatalf("mined block target mismatch: got %s, want %s", minedBlock.Target, expectedTgtHex)
 	}
 }
+
+// TestMineBlockContextCancelledDoesNotCommitBlock verifies that when ctx is already cancelled
+// or expires while mining an impossible target, MineBlockContext returns context error promptly
+// and does not commit any block to the chain.
+func TestMineBlockContextCancelledDoesNotCommitBlock(t *testing.T) {
+	_ = SetNetwork("regtest")
+	defer func() { _ = SetNetwork("testnet") }()
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
+
+	bc := MustNewBlockchain(1)
+	defer bc.Close()
+
+	addr := "armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd"
+
+	// 1. Already-cancelled context must return context.Canceled without adding a block
+	canceledCtx, cancelNow := context.WithCancel(context.Background())
+	cancelNow()
+	if _, err := bc.MineBlockContext(canceledCtx, addr, 2); err == nil {
+		t.Fatalf("expected error from already-cancelled MineBlockContext")
+	}
+	if len(bc.Chain) != 1 {
+		t.Fatalf("expected chain length 1 after cancelled mining, got %d", len(bc.Chain))
+	}
+
+	// 2. Cancelling active workers on hard target must unwind promptly and leave chain unchanged
+	hardTarget, _ := new(big.Int).SetString("0000000000000000000000000000000000000000000000000000000000000001", 16)
+	oldHook := targetOverrideHook
+	targetOverrideHook = func() *big.Int { return new(big.Int).Set(hardTarget) }
+	defer func() { targetOverrideHook = oldHook }()
+
+	timeoutCtx, cancelTimeout := context.WithTimeout(context.Background(), 60*time.Millisecond)
+	defer cancelTimeout()
+
+	start := time.Now()
+	_, err := bc.MineBlockContext(timeoutCtx, addr, 2)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatalf("expected error when MineBlockContext times out on hard target")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("MineBlockContext took too long to abort after context cancellation: %v", elapsed)
+	}
+	if len(bc.Chain) != 1 {
+		t.Fatalf("expected chain length 1 after aborted mining, got %d", len(bc.Chain))
+	}
+}
+
+func TestMineBlockContextArmaxHashV2PositiveNonces(t *testing.T) {
+	_ = SetNetwork("regtest")
+	defer func() { _ = SetNetwork("testnet") }()
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
+
+	SetArmaxHashV2ActivationHeight(1)
+	defer ResetArmaxHashV2ActivationHeightOverride()
+
+	bc := MustNewBlockchain(1)
+	defer bc.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	for h := 1; h <= 2; h++ {
+		blk, err := bc.MineBlockContext(ctx, GenesisMiner, 4)
+		if err != nil {
+			t.Fatalf("MineBlockContext ArmaxHash v2 block #%d failed: %v", h, err)
+		}
+		if blk.Index != h {
+			t.Fatalf("expected block height #%d, got #%d", h, blk.Index)
+		}
+		if blk.Nonce <= 0 {
+			t.Fatalf("expected positive v1.0.11-compatible nonce, got %d", blk.Nonce)
+		}
+		if blk.PoWAlgorithm() != "armaxhash-v2" {
+			t.Fatalf("expected armaxhash-v2 algorithm, got %s", blk.PoWAlgorithm())
+		}
+		calc, err := blk.CalculateHashWithError()
+		if err != nil || calc != blk.Hash {
+			t.Fatalf("hash verification mismatch: calc=%s err=%v hash=%s", calc, err, blk.Hash)
+		}
+	}
+}

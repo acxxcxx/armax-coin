@@ -37,6 +37,35 @@ func TestParseStratumPoolAddresses(t *testing.T) {
 	}
 }
 
+func TestParseStratumTLSPoolAddresses(t *testing.T) {
+	for _, uri := range []string{
+		"stratum+ssl://pool.example.com:3443",
+		"stratum+tls://pool.example.com:3443",
+		"ssl://pool.example.com:3443",
+		"tls://pool.example.com:3443",
+	} {
+		if !isStratumURLList(uri) {
+			t.Fatalf("expected %q to be detected as Stratum TLS URL", uri)
+		}
+	}
+
+	pools := parseStratumPoolAddresses("stratum+ssl://pool.example.com, stratum+tls://pool2.example.com:3443, ssl://127.0.0.1:4444, tls://pool3.example.com")
+	want := []string{
+		"stratum+ssl://pool.example.com:3334",
+		"stratum+ssl://pool2.example.com:3443",
+		"stratum+ssl://127.0.0.1:4444",
+		"stratum+ssl://pool3.example.com:3334",
+	}
+	if len(pools) != len(want) {
+		t.Fatalf("expected %d TLS pools, got %d (%v)", len(want), len(pools), pools)
+	}
+	for i := range want {
+		if pools[i] != want[i] {
+			t.Errorf("pools[%d] = %q, want %q", i, pools[i], want[i])
+		}
+	}
+}
+
 func TestSplitMinerWorker(t *testing.T) {
 	addr, worker := splitMinerWorker("armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd.rig01")
 	if addr != "armx1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplwcdd" {

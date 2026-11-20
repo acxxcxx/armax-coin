@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +19,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/acxxcxx/armax-coin/armaxhash"
 	"github.com/acxxcxx/armax-coin/core"
 )
 
@@ -534,5 +539,59 @@ func TestMiner_AdaptiveInheritedTipWait(t *testing.T) {
 					c.blockTs, c.minTs, nodeNow, got, c.want)
 			}
 		})
+	}
+}
+
+func TestFetchBlockTemplate_Syncing503(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/getblocktemplate" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"syncing","message":"Synchronizing blockchain (#10 / #20558)...; mining paused until sync completes"}`))
+	}))
+	defer srv.Close()
+
+	_, err := fetchBlockTemplate(&http.Client{Timeout: 2 * time.Second}, srv.URL, "", "", "")
+	if !errors.Is(err, errNodeSyncing) {
+		t.Fatalf("expected errNodeSyncing on HTTP 503 /getblocktemplate, got: %v", err)
+	}
+}
+
+func TestMiner_V2JobHasherAndWorkerSlotsParity(t *testing.T) {
+	b := core.Block{
+		Index:      2501,
+		Timestamp:  1762668000,
+		PrevHash:   "0000000dc84202e63a340a2439625fbf9cea5cb7b84119f93d52cff39f63a68b",
+		MerkleRoot: "808a4007681dd123133bfe106b101d251ff0d2d023f600384394673bfc03768d",
+		Miner:      core.GenesisMiner,
+		Target:     "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+	}
+	prefix := buildHeaderPrefixBytes(&b)
+	suffix := buildHeaderSuffixBytes(&b)
+	netID := core.NetworkID()
+
+	jh, err := armaxhash.NewV2JobHasher(netID, prefix, suffix)
+	if err != nil {
+		t.Fatalf("NewV2JobHasher failed: %v", err)
+	}
+	for _, nonce := range []int64{1, 12345, (1 << 36) + 7} {
+		hdr := appendCanonicalHeaderBytes(nil, prefix, nonce, suffix)
+		want, err := computeHeaderDigestBytes(hdr, netID, powModeArmaxHashV2)
+		if err != nil {
+			t.Fatalf("computeHeaderDigestBytes failed: %v", err)
+		}
+		if got := jh.HashNonce(nonce); got != want {
+			t.Fatalf("V2JobHasher parity mismatch nonce=%d", nonce)
+		}
+	}
+
+	slots := NewWorkerSlotManager(4)
+	slots.AddHashes(0, 8192)
+	slots.AddHashes(3, 8192)
+	if slots.TotalHashes() != 16384 {
+		t.Fatalf("expected 16384 total hashes across padded slots, got %d", slots.TotalHashes())
 	}
 }

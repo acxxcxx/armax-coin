@@ -80,15 +80,14 @@ var (
 		PowLimitHex:                 GenesisTargetHex,
 		ArmaxHashPowLimitHex:        "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", // Difficulty 5 bootstrap
 		CoinbaseMaturity:            100,
-		ArmaxHashActivationHeight:   -1,
-		ArmaxHashV2ActivationHeight: -1,
-		// Mainnet has not launched, so the C1/C2 timestamp rules apply from the first block.
-		TimestampRulesActivationHeight: 0,
-		// Mainnet stays on the 2-hour rule until the limit is reviewed for launch.
-		FutureTimestampLimitActivationHeight: -1,
+		ArmaxHashActivationHeight:   -1, // Skip legacy Argon2id v1 on Mainnet; Genesis #0 stays immutable SHA-256d
+		ArmaxHashV2ActivationHeight: 1,  // ArmaxHash v2 Stream-Fast active from Block #1
+		// Mainnet remains strictly locked (MainnetLaunched = false); provisional pre-launch staging profile subject to change prior to launch freeze.
+		TimestampRulesActivationHeight:       0,
+		FutureTimestampLimitActivationHeight: 0,  // C6 10-minute (+600s) future-timestamp limit from Block #1
 		AntiStallActivationHeight:            -1, // Strictly disabled on Mainnet
-		ASERTActivationHeight:                -1, // Strictly disabled on Mainnet
-		BlockBinarySizeActivationHeight:      0,  // Ready from Genesis #0 on Mainnet (MainnetLaunched remains false)
+		ASERTActivationHeight:                0,  // Armax-ASERT-AW active from Block #1 (anchored to Genesis #0)
+		BlockBinarySizeActivationHeight:      0,  // TxBinaryV1 active from Genesis #0 on Mainnet (MainnetLaunched remains false)
 		Checkpoints: map[int]string{
 			0: GenesisHash,
 		},
@@ -183,16 +182,16 @@ var (
 const MainnetLaunched = false
 
 var (
-	netMu                               sync.RWMutex
-	ActiveNetwork                       = TestnetProfile // [L4-1] Testnet is default network profile
-	networkInitialized                  bool
-	allowNetworkResetHook               func() bool
-	allowMainnetInTestsHook             func() bool
-	networkIDOverrideHook               func() string
-	armaxHashActivationHeightOverride   *int64 // nil means use network profile or env
-	armaxHashV2ActivationHeightOverride *int64 // nil means use network profile or env
-	timestampRulesHeightOverride        *int64 // nil means use network profile
-	futureLimitHeightOverride           *int64 // nil means use network profile
+	netMu                                   sync.RWMutex
+	ActiveNetwork                           = TestnetProfile // [L4-1] Testnet is default network profile
+	networkInitialized                      bool
+	allowNetworkResetHook                   func() bool
+	allowMainnetInTestsHook                 func() bool
+	networkIDOverrideHook                   func() string
+	armaxHashActivationHeightOverride       *int64 // nil means use network profile or env
+	armaxHashV2ActivationHeightOverride     *int64 // nil means use network profile or env
+	timestampRulesHeightOverride            *int64 // nil means use network profile
+	futureLimitHeightOverride               *int64 // nil means use network profile
 	antiStallActivationHeightOverride       *int64 // nil means use network profile
 	asertActivationHeightOverride           *int64 // nil means use network profile
 	blockBinarySizeActivationHeightOverride *int64 // nil means use network profile
@@ -361,6 +360,47 @@ func IsArmaxHashV2Active(blockIndex int) bool {
 		return false
 	}
 	return int64(blockIndex) >= act
+}
+
+// IsAnyArmaxHashActive reports whether either ArmaxHash v1 or ArmaxHash v2 is active at blockIndex.
+func IsAnyArmaxHashActive(blockIndex int) bool {
+	return IsArmaxHashActive(blockIndex) || IsArmaxHashV2Active(blockIndex)
+}
+
+// GetEffectiveArmaxHashActivationHeight returns the earliest positive activation height
+// among ArmaxHash v1 and ArmaxHash v2, or -1 if neither PoW upgrade is active.
+func GetEffectiveArmaxHashActivationHeight() int64 {
+	v1 := GetArmaxHashActivationHeight()
+	v2 := GetArmaxHashV2ActivationHeight()
+	switch {
+	case v1 > 0 && v2 > 0:
+		if v1 <= v2 {
+			return v1
+		}
+		return v2
+	case v1 > 0:
+		return v1
+	case v2 > 0:
+		return v2
+	default:
+		return -1
+	}
+}
+
+// ProfileForNetworkID returns the immutable canonical NetworkProfile definition for netID.
+func ProfileForNetworkID(netID string) (NetworkProfile, bool) {
+	switch strings.ToUpper(strings.TrimSpace(netID)) {
+	case "ARMX-MAINNET-1", "MAINNET":
+		return MainnetProfile, true
+	case "ARMX-TESTNET-1", "TESTNET":
+		return TestnetProfile, true
+	case "ARMX-SOAK-1", "SOAK":
+		return SoakProfile, true
+	case "ARMX-REGTEST-1", "REGTEST":
+		return RegtestProfile, true
+	default:
+		return NetworkProfile{}, false
+	}
 }
 
 // GetAntiStallActivationHeight returns the block height where Option A Anti-Stall Emergency

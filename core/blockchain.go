@@ -919,13 +919,43 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 	bc.Lock.Unlock()
 
 	workerCtx, cancelWorkers := context.WithCancel(ctx)
-	defer cancelWorkers()
+	var stopState struct {
+		stopped atomic.Bool
+		_       [56]byte // isolate read-only stop flag from worker hash counter cache lines
+	}
+	stopWorkers := func() {
+		stopState.stopped.Store(true)
+		cancelWorkers()
+	}
+	defer stopWorkers()
+	go func() {
+		<-workerCtx.Done()
+		stopState.stopped.Store(true)
+	}()
 	defer bc.SetMiningHashrate(0)
+
+	const (
+		mineBatchFast   int64 = 8192
+		mineBatchArgon2 int64 = 16
+		workerNonceSpan int64 = 1 << 36
+	)
+
+	type miningWorkerSlot struct {
+		hashes uint64
+		_      [56]byte // 64-byte cache line padding to avoid cross-core false sharing
+	}
+	slots := make([]miningWorkerSlot, threads)
+	sumHashes := func() uint64 {
+		var total uint64
+		for i := range slots {
+			total += atomic.LoadUint64(&slots[i].hashes)
+		}
+		return total
+	}
 
 	resultChan := make(chan Block, 1)
 	errChan := make(chan error, threads)
 	var wg sync.WaitGroup
-	var totalHashes int64
 	var firstErr error
 	var errOnce sync.Once
 
@@ -939,7 +969,7 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 			case errChan <- err:
 			default:
 			}
-			cancelWorkers()
+			stopWorkers()
 		})
 	}
 
@@ -947,19 +977,37 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
+		const emaAlpha = 0.3
+		lastTick := startTime
+		var lastTotal uint64
+		var smoothedHps float64
+		var emaInit bool
 		for {
 			select {
 			case <-workerCtx.Done():
 				return
 			case <-ticker.C:
-				hashes := atomic.LoadInt64(&totalHashes)
-				elapsed := time.Since(startTime).Seconds()
-				if elapsed > 0 {
-					hps := float64(hashes) / elapsed
-					bc.SetMiningHashrate(hps)
-					if int(elapsed)%10 == 0 {
+				nowTick := time.Now()
+				curTotal := sumHashes()
+				dt := nowTick.Sub(lastTick).Seconds()
+				if dt > 0 {
+					var delta uint64
+					if curTotal >= lastTotal {
+						delta = curTotal - lastTotal
+					}
+					instantHps := float64(delta) / dt
+					if !emaInit || (smoothedHps == 0 && instantHps > 0) {
+						smoothedHps = instantHps
+						emaInit = true
+					} else {
+						smoothedHps = emaAlpha*instantHps + (1.0-emaAlpha)*smoothedHps
+					}
+					lastTotal = curTotal
+					lastTick = nowTick
+					bc.SetMiningHashrate(smoothedHps)
+					if elapsed := int(nowTick.Sub(startTime).Seconds()); elapsed > 0 && elapsed%10 == 0 {
 						fmt.Printf("[Mining] In progress for Block #%d: %d hashes (%.2f MH/s, %ds elapsed, %d threads)...\n",
-							newBlock.Index, hashes, hps/1_000_000.0, int(elapsed), threads)
+							newBlock.Index, curTotal, smoothedHps/1_000_000.0, elapsed, threads)
 					}
 				}
 			}
@@ -1012,18 +1060,20 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 
 	currentJob := buildJobLocked(activeJobVersion, now)
 
-	stride := int64(threads)
 	for w := 0; w < threads; w++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
+			if workerCtx.Err() != nil {
+				return
+			}
 
 			jobMu.RLock()
 			localJob := currentJob
 			jobMu.RUnlock()
 
 			b := newBlock
-			b.Nonce = startNonce + int64(workerID)
+			b.Nonce = startNonce + int64(workerID)*workerNonceSpan
 			b.Timestamp = localJob.MinTimestamp
 			b.Target = localJob.TargetHex
 			b.Difficulty = TargetToDifficulty(localJob.ExpectedTarget)
@@ -1033,48 +1083,54 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 			suffixBytes := localJob.SuffixBytes
 			targetBytes := localJob.TargetBytes
 
-			buf := make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
-
 			useArmaxHashV2 := IsArmaxHashV2Active(b.Index)
 			useArmaxHash := IsArmaxHashActive(b.Index)
 			netID := NetworkID()
-			batchLimit := int64(10000)
+			batchLimit := mineBatchFast
 			if !useArmaxHashV2 && useArmaxHash {
-				batchLimit = 20
+				batchLimit = mineBatchArgon2
+			}
+
+			var v2Hasher armaxhash.V2JobHasher
+			var buf []byte
+			if useArmaxHashV2 {
+				var err error
+				v2Hasher, err = armaxhash.NewV2JobHasher(netID, prefixBytes, suffixBytes)
+				if err != nil {
+					recordError(fmt.Errorf("mining hash computation failed: %w", err))
+					return
+				}
+			} else {
+				buf = make([]byte, 0, len(prefixBytes)+32+len(suffixBytes))
 			}
 
 			var localBatch int64
 
 			for {
-				select {
-				case <-workerCtx.Done():
+				if !useArmaxHashV2 && useArmaxHash && stopState.stopped.Load() {
 					return
-				default:
 				}
-
-				buf = buf[:0]
-				buf = append(buf, prefixBytes...)
-				buf = strconv.AppendInt(buf, b.Nonce, 10)
-				buf = append(buf, suffixBytes...)
 
 				var hashBytes [32]byte
 				if useArmaxHashV2 {
-					digest, err := armaxhash.HashV2(buf, netID)
-					if err != nil {
-						recordError(fmt.Errorf("mining hash computation failed: %w", err))
-						return
-					}
-					hashBytes = digest
-				} else if useArmaxHash {
-					digest, err := armaxhash.Hash(buf, netID)
-					if err != nil {
-						recordError(fmt.Errorf("mining hash computation failed: %w", err))
-						return
-					}
-					hashBytes = digest
+					hashBytes = v2Hasher.HashNonce(b.Nonce)
 				} else {
-					h1 := sha256.Sum256(buf)
-					hashBytes = sha256.Sum256(h1[:])
+					buf = buf[:0]
+					buf = append(buf, prefixBytes...)
+					buf = strconv.AppendInt(buf, b.Nonce, 10)
+					buf = append(buf, suffixBytes...)
+
+					if useArmaxHash {
+						digest, err := armaxhash.Hash(buf, netID)
+						if err != nil {
+							recordError(fmt.Errorf("mining hash computation failed: %w", err))
+							return
+						}
+						hashBytes = digest
+					} else {
+						h1 := sha256.Sum256(buf)
+						hashBytes = sha256.Sum256(h1[:])
+					}
 				}
 				localBatch++
 
@@ -1090,13 +1146,13 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 						tip := bc.GetLatestBlockUnsafe()
 						bc.Lock.RUnlock()
 						if tip.Hash == prevBlock.Hash && b.Timestamp >= localJob.MinTimestamp && b.Timestamp <= localJob.MaxTimestamp {
-							atomic.AddInt64(&totalHashes, localBatch)
+							atomic.AddUint64(&slots[workerID].hashes, uint64(localBatch))
 							b.Hash = hex.EncodeToString(hashBytes[:])
 							b.Target = localJob.TargetHex
 							b.Difficulty = TargetToDifficulty(localJob.ExpectedTarget)
 							select {
 							case resultChan <- b:
-								cancelWorkers()
+								stopWorkers()
 							default:
 							}
 							return
@@ -1104,11 +1160,19 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 					}
 				}
 
-				b.Nonce += stride
+				b.Nonce++
+
+				if (useArmaxHashV2 || !useArmaxHash) && localBatch&255 == 0 && stopState.stopped.Load() {
+					return
+				}
 
 				if localBatch >= batchLimit {
-					atomic.AddInt64(&totalHashes, localBatch)
+					atomic.AddUint64(&slots[workerID].hashes, uint64(localBatch))
 					localBatch = 0
+
+					if stopState.stopped.Load() || workerCtx.Err() != nil {
+						return
+					}
 
 					bc.Lock.RLock()
 					tip := bc.GetLatestBlockUnsafe()
@@ -1138,9 +1202,23 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 						copy(prefixBytes, localJob.PrefixBytes)
 						suffixBytes = localJob.SuffixBytes
 						targetBytes = localJob.TargetBytes
+						if useArmaxHashV2 {
+							var err error
+							v2Hasher, err = armaxhash.NewV2JobHasher(netID, prefixBytes, suffixBytes)
+							if err != nil {
+								recordError(fmt.Errorf("mining hash computation failed: %w", err))
+								return
+							}
+						}
 					} else if !IsASERTActive(prevBlock.Index+1) && curTime > b.Timestamp {
 						b.Timestamp = curTime
 						prefixBytes = []byte(fmt.Sprintf("%d:%d:%s:%s:%s:", b.Index, b.Timestamp, b.PrevHash, b.MerkleRoot, b.Miner))
+						if useArmaxHashV2 {
+							if err := v2Hasher.UpdatePrefix(prefixBytes); err != nil {
+								recordError(fmt.Errorf("mining hash computation failed: %w", err))
+								return
+							}
+						}
 					}
 				}
 			}
@@ -1150,7 +1228,7 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 	var winningBlock Block
 	select {
 	case err := <-errChan:
-		cancelWorkers()
+		stopWorkers()
 		wg.Wait()
 		return Block{}, err
 	case winningBlock = <-resultChan:
@@ -1160,10 +1238,10 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 		if raceHook != nil {
 			raceHook(recordError)
 		}
-		cancelWorkers()
+		stopWorkers()
 		wg.Wait()
 	case <-ctx.Done():
-		cancelWorkers()
+		stopWorkers()
 		wg.Wait()
 		if firstErr != nil {
 			return Block{}, firstErr
@@ -1171,10 +1249,13 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 		return Block{}, ctx.Err()
 	}
 
-	// Check error after all workers have stopped and before the block is processed.
-	// Do not accept or validate the mined block if the mining round registered an error.
+	// Check error and cancellation after all workers have stopped and before the block is processed.
+	// Do not accept or validate the mined block if the mining round registered an error or was cancelled.
 	if firstErr != nil {
 		return Block{}, firstErr
+	}
+	if err := ctx.Err(); err != nil {
+		return Block{}, err
 	}
 
 	if !bc.ValidateAndAddBlock(winningBlock) {

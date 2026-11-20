@@ -75,18 +75,28 @@ func (b *Block) CalculateSha256dHash() string {
 	return hex.EncodeToString(h2[:])
 }
 
-// CalculateArmaxHash computes the ArmaxHash v1 block header digest.
+// CalculateArmaxHash computes the ArmaxHash v1 block header digest for the active network.
 func (b *Block) CalculateArmaxHash() (string, error) {
-	digest, err := armaxhash.Hash(b.HeaderBytes(), NetworkID())
+	return b.CalculateArmaxHashForNetwork(NetworkID())
+}
+
+// CalculateArmaxHashForNetwork computes the ArmaxHash v1 block header digest for a specific network ID.
+func (b *Block) CalculateArmaxHashForNetwork(netID string) (string, error) {
+	digest, err := armaxhash.Hash(b.HeaderBytes(), netID)
 	if err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(digest[:]), nil
 }
 
-// CalculateArmaxHashV2 computes the ArmaxHash v2 (Stream-Fast Chained BLAKE2b) block header digest.
+// CalculateArmaxHashV2 computes the ArmaxHash v2 (Stream-Fast Chained BLAKE2b) block header digest for the active network.
 func (b *Block) CalculateArmaxHashV2() (string, error) {
-	digest, err := armaxhash.HashV2(b.HeaderBytes(), NetworkID())
+	return b.CalculateArmaxHashV2ForNetwork(NetworkID())
+}
+
+// CalculateArmaxHashV2ForNetwork computes the ArmaxHash v2 block header digest for a specific network ID.
+func (b *Block) CalculateArmaxHashV2ForNetwork(netID string) (string, error) {
+	digest, err := armaxhash.HashV2(b.HeaderBytes(), netID)
 	if err != nil {
 		return "", err
 	}
@@ -104,6 +114,18 @@ func (b *Block) CalculateHashWithError() (string, error) {
 	}
 	if IsArmaxHashActive(b.Index) {
 		return b.CalculateArmaxHash()
+	}
+	return b.CalculateSha256dHash(), nil
+}
+
+// CalculateHashWithErrorForProfile evaluates the block header hash against an explicit NetworkProfile
+// without reading global ActiveNetwork state.
+func (b *Block) CalculateHashWithErrorForProfile(prof NetworkProfile) (string, error) {
+	if prof.ArmaxHashV2ActivationHeight > 0 && b.Index > 0 && int64(b.Index) >= prof.ArmaxHashV2ActivationHeight {
+		return b.CalculateArmaxHashV2ForNetwork(prof.NetworkID)
+	}
+	if prof.ArmaxHashActivationHeight > 0 && b.Index > 0 && int64(b.Index) >= prof.ArmaxHashActivationHeight {
+		return b.CalculateArmaxHashForNetwork(prof.NetworkID)
 	}
 	return b.CalculateSha256dHash(), nil
 }

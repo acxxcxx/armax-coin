@@ -66,4 +66,3 @@ func TestUndoHistoryConcurrentReadWriteRace(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
-

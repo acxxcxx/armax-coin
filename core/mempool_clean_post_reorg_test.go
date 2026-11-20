@@ -12,8 +12,8 @@ import (
 // TestF6_CleanMempoolPostReorgValidation tests that CleanMempoolLocked thoroughly re-validates
 // deduplication, canonical self-transfers (AddressToHex), nonces, and balances against the active state [F6, F6-PERF].
 func TestF6_CleanMempoolPostReorgValidation(t *testing.T) {
+	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
-	defer SetNetworkForTesting(false)
 	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	_ = SetNetwork("regtest")
 

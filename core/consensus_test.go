@@ -5,14 +5,15 @@ package core
 import (
 	"fmt"
 	"math/big"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestGenesisBlockIntegrity(t *testing.T) {
+	LockNetworkForTesting(t)
 	SetNetworkForTesting(true)
 	_ = SetNetwork("mainnet")
-	defer func() { _ = SetNetwork("mainnet") }()
 
 	// 1. Verify Mainnet Genesis Block calculated directly from content [P2-0f, P2-6]
 	genMain := GetMainnetGenesisBlock()
@@ -63,13 +64,20 @@ func TestGenesisBlockIntegrity(t *testing.T) {
 }
 
 func TestInfiniteMintingPrevention(t *testing.T) {
+	LockNetworkForTesting(t)
+	SetNetworkForTesting(true)
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
+	_ = SetNetwork("regtest")
+
 	bc := &Blockchain{
 		Chain:       []Block{GetGenesisBlock()},
 		Difficulty:  1,
 		Mempool:     []Transaction{},
 		BlockReward: InitialReward,
 		State:       NewStateManager(),
+		StoragePath: filepath.Join(t.TempDir(), "blockchain.db"),
 	}
+	defer bc.Close()
 	_ = bc.State.VerifyAndApplyBlock(&bc.Chain[0], InitialReward)
 
 	minerAddr := newTestAccount(t, "miner").Address
@@ -120,6 +128,11 @@ func TestInfiniteMintingPrevention(t *testing.T) {
 }
 
 func TestStateBalanceAndNonceEnforcement(t *testing.T) {
+	LockNetworkForTesting(t)
+	SetNetworkForTesting(true)
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
+	_ = SetNetwork("regtest")
+
 	bc := &Blockchain{
 		Chain:            []Block{GetGenesisBlock()},
 		Difficulty:       1,
@@ -127,7 +140,9 @@ func TestStateBalanceAndNonceEnforcement(t *testing.T) {
 		BlockReward:      InitialReward,
 		State:            NewStateManager(),
 		CoinbaseMaturity: 1,
+		StoragePath:      filepath.Join(t.TempDir(), "blockchain.db"),
 	}
+	defer bc.Close()
 	_ = bc.State.VerifyAndApplyBlock(&bc.Chain[0], InitialReward, 1)
 
 	acc := newTestAccount(t, "miner")
@@ -293,14 +308,12 @@ func mineTestBlock(t *testing.T, b *Block, target *big.Int) {
 }
 
 func TestConsensusEnforcesLWMA(t *testing.T) {
+	LockNetworkForTesting(t)
+	SetNetworkForTesting(true)
+	t.Setenv("ARMX_DATA_DIR", t.TempDir())
 	if err := SetNetwork("regtest"); err != nil {
 		t.Fatalf("SetNetwork(regtest): %v", err)
 	}
-	t.Cleanup(func() {
-		if err := SetNetwork("testnet"); err != nil {
-			t.Errorf("restore testnet: %v", err)
-		}
-	})
 
 	genesis := GetGenesisBlock()
 	bc := &Blockchain{
@@ -309,7 +322,9 @@ func TestConsensusEnforcesLWMA(t *testing.T) {
 		Mempool:     []Transaction{},
 		BlockReward: InitialReward,
 		State:       NewStateManager(),
+		StoragePath: filepath.Join(t.TempDir(), "blockchain.db"),
 	}
+	defer bc.Close()
 
 	if err := bc.State.VerifyAndApplyBlock(&bc.Chain[0], InitialReward); err != nil {
 		t.Fatalf("apply genesis state: %v", err)

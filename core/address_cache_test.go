@@ -44,4 +44,3 @@ func TestAddressToHexCached_BoundedCapacity(t *testing.T) {
 		t.Fatalf("cache evicted too aggressively: got %d", cachedCount)
 	}
 }
-

@@ -70,6 +70,27 @@ func TestConsensusParametersFrozen(t *testing.T) {
 	if MainnetProfile.TimestampRulesActivationHeight != 0 {
 		t.Fatalf("Mainnet timestamp rules activation height mismatch: got %d", MainnetProfile.TimestampRulesActivationHeight)
 	}
+	if MainnetLaunched {
+		t.Fatalf("MainnetLaunched must remain false prior to launch")
+	}
+	if MainnetProfile.ArmaxHashActivationHeight != -1 {
+		t.Fatalf("Mainnet ArmaxHash v1 height mismatch: got %d, want -1", MainnetProfile.ArmaxHashActivationHeight)
+	}
+	if MainnetProfile.ArmaxHashV2ActivationHeight != 1 {
+		t.Fatalf("Mainnet ArmaxHash v2 height mismatch: got %d, want 1", MainnetProfile.ArmaxHashV2ActivationHeight)
+	}
+	if MainnetProfile.ASERTActivationHeight != 0 {
+		t.Fatalf("Mainnet ASERT height mismatch: got %d, want 0", MainnetProfile.ASERTActivationHeight)
+	}
+	if MainnetProfile.FutureTimestampLimitActivationHeight != 0 {
+		t.Fatalf("Mainnet FutureTimestampLimit height mismatch: got %d, want 0", MainnetProfile.FutureTimestampLimitActivationHeight)
+	}
+	if MainnetProfile.BlockBinarySizeActivationHeight != 0 {
+		t.Fatalf("Mainnet BlockBinarySize height mismatch: got %d, want 0", MainnetProfile.BlockBinarySizeActivationHeight)
+	}
+	if MainnetProfile.AntiStallActivationHeight != -1 {
+		t.Fatalf("Mainnet AntiStall height mismatch: got %d, want -1", MainnetProfile.AntiStallActivationHeight)
+	}
 
 	// 5. Testnet Network Profile & Ports
 	if TestnetProfile.NetworkID != "ARMX-TESTNET-1" {

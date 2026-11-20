@@ -1,6 +1,8 @@
 package core
 
 import (
+	"encoding/hex"
+	"flag"
 	"fmt"
 	"math/big"
 	"sync"
@@ -49,13 +51,13 @@ func FloorDiv(a, b int64) int64 {
 // ComputeASERTFromDrift calculates the 256-bit target using the exact canonical aserti3-2d
 // fixed-point polynomial algorithm:
 //
-//   exponent = FloorDiv(driftSeconds * 65536, tau)
-//   shifts = exponent >> 16
-//   fraction = exponent & 0xffff
-//   factor = 65536 + ((1957664074821 * fraction + 971821376 * fraction^2 + 5127 * fraction^3 + 2^47) >> 48)
-//   target = (anchorTarget * factor) >> 16
-//   if shifts >= 0: target <<= shifts
-//   if shifts < 0:  target >>= (-shifts)
+//	exponent = FloorDiv(driftSeconds * 65536, tau)
+//	shifts = exponent >> 16
+//	fraction = exponent & 0xffff
+//	factor = 65536 + ((1957664074821 * fraction + 971821376 * fraction^2 + 5127 * fraction^3 + 2^47) >> 48)
+//	target = (anchorTarget * factor) >> 16
+//	if shifts >= 0: target <<= shifts
+//	if shifts < 0:  target >>= (-shifts)
 func ComputeASERTFromDrift(anchorTarget *big.Int, driftSeconds int64) *big.Int {
 	if anchorTarget == nil || anchorTarget.Sign() <= 0 {
 		return DifficultyToTarget(1)
@@ -134,6 +136,12 @@ func ResolveASERTAnchor(chain []Block, activationHeight int) (anchorBlock Block,
 	}
 
 	anchorBlock = chain[anchorIdx]
+
+	// When ASERT activates at Genesis #0 alongside a PoW switch at Block #1 (e.g. Mainnet
+	// immutable SHA-256d Genesis -> ArmaxHash v2), anchor to the ArmaxHash bootstrap target.
+	if anchorIdx == 0 && !IsAnyArmaxHashActive(0) && IsAnyArmaxHashActive(1) && anchorBlock.Hash == GenesisHash {
+		return anchorBlock, GetArmaxHashPowLimit(), nil
+	}
 
 	// Determine if anchor block was an emergency block
 	isEmergency := false
@@ -251,7 +259,7 @@ func CalculateArmaxASERTTarget(chain []Block, nextIndex int, candidateTimestamp 
 	}
 
 	powLimit := GetArmaxHashPowLimit()
-	if !IsArmaxHashActive(nextIndex) && anchorTarget.Cmp(powLimit) > 0 {
+	if !IsAnyArmaxHashActive(nextIndex) && anchorTarget.Cmp(powLimit) > 0 {
 		powLimit = GetPowLimit()
 	}
 	minDrift, maxDrift := ComputeDriftBounds(anchorTarget, powLimit)
@@ -346,4 +354,252 @@ func CalculateArmaxASERTTarget(chain []Block, nextIndex int, candidateTimestamp 
 	}
 
 	return target
+}
+
+func parseTargetHexOrFallback(hexStr string, fallback *big.Int) *big.Int {
+	if len(hexStr) == 64 {
+		if raw, err := hex.DecodeString(hexStr); err == nil {
+			return new(big.Int).SetBytes(raw)
+		}
+	}
+	return new(big.Int).Set(fallback)
+}
+
+func isArmaxHashActiveForProfile(prof NetworkProfile, blockIndex int) bool {
+	if blockIndex < 0 {
+		return false
+	}
+	if prof.ArmaxHashActivationHeight > 0 && int64(blockIndex) >= prof.ArmaxHashActivationHeight {
+		return true
+	}
+	return prof.ArmaxHashV2ActivationHeight > 0 && int64(blockIndex) >= prof.ArmaxHashV2ActivationHeight
+}
+
+func effectiveArmaxHashActForProfile(prof NetworkProfile) int64 {
+	v1, v2 := prof.ArmaxHashActivationHeight, prof.ArmaxHashV2ActivationHeight
+	switch {
+	case v1 > 0 && v2 > 0:
+		if v1 <= v2 {
+			return v1
+		}
+		return v2
+	case v1 > 0:
+		return v1
+	case v2 > 0:
+		return v2
+	default:
+		return -1
+	}
+}
+
+func isEmergencyForProfile(prof NetworkProfile, curr, prev *Block, armaxLimitHex string) bool {
+	if prof.IsMainnet || curr == nil || prev == nil || prof.AntiStallActivationHeight <= 0 {
+		return false
+	}
+	if curr.Index < 0 || int64(curr.Index) < prof.AntiStallActivationHeight {
+		return false
+	}
+	return (curr.Timestamp-prev.Timestamp) > TestnetStallThresholdSeconds && curr.Target == armaxLimitHex
+}
+
+func stepEffectiveDriftForProfile(prof NetworkProfile, prevDrift int64, prevBlock, currBlock *Block, minDrift, maxDrift int64, armaxLimitHex string) int64 {
+	var stepDrift int64
+	if prevBlock != nil && isEmergencyForProfile(prof, currBlock, prevBlock, armaxLimitHex) {
+		stepDrift = TEDRBoostDriftSeconds - TargetBlockTimeSeconds
+	} else if prevBlock != nil {
+		dt := currBlock.Timestamp - prevBlock.Timestamp
+		if dt > MaxASERTBlockInterval {
+			dt = MaxASERTBlockInterval
+		}
+		if dt < -MaxASERTBlockInterval {
+			dt = -MaxASERTBlockInterval
+		}
+		stepDrift = dt - TargetBlockTimeSeconds
+	}
+	nextDrift := prevDrift + stepDrift
+	if nextDrift > maxDrift {
+		nextDrift = maxDrift
+	}
+	if nextDrift < minDrift {
+		nextDrift = minDrift
+	}
+	return nextDrift
+}
+
+// calculateExpectedTargetForProfile computes the expected 256-bit target strictly against prof
+// without reading or mutating global ActiveNetwork state. Used when validating blocks on a
+// chain whose network identity differs from the caller's global ActiveNetwork.
+func calculateExpectedTargetForProfile(prof NetworkProfile, chain []Block, nextIndex int, candidateTimestamp int64) *big.Int {
+	basePowLimit := parseTargetHexOrFallback(prof.PowLimitHex, DifficultyToTarget(1))
+	armaxLimit := parseTargetHexOrFallback(prof.ArmaxHashPowLimitHex, DifficultyToTarget(3))
+	armaxLimitHex := fmt.Sprintf("%064x", armaxLimit)
+	isEmergencyCand := func(prevTs, candTs int64, idx int) bool {
+		return !prof.IsMainnet && prof.AntiStallActivationHeight > 0 && idx >= 0 &&
+			int64(idx) >= prof.AntiStallActivationHeight && (candTs-prevTs) > TestnetStallThresholdSeconds
+	}
+
+	if prof.ASERTActivationHeight >= 0 && nextIndex > 0 && int64(nextIndex) >= prof.ASERTActivationHeight {
+		actHeight := int(prof.ASERTActivationHeight)
+		anchorIdx := actHeight - 1
+		if anchorIdx < 0 {
+			anchorIdx = 0
+		}
+		if len(chain) <= anchorIdx {
+			return new(big.Int).Set(armaxLimit)
+		}
+
+		anchorBlock := chain[anchorIdx]
+		var anchorTarget *big.Int
+		if anchorIdx == 0 && !isArmaxHashActiveForProfile(prof, 0) && isArmaxHashActiveForProfile(prof, 1) && anchorBlock.Hash == GenesisHash {
+			anchorTarget = new(big.Int).Set(armaxLimit)
+		} else {
+			for i := anchorIdx; i >= 0; i-- {
+				var prevB *Block
+				if i > 0 {
+					prevB = &chain[i-1]
+				}
+				if !isEmergencyForProfile(prof, &chain[i], prevB, armaxLimitHex) {
+					if t := chain[i].GetTarget(); t != nil && t.Sign() > 0 {
+						anchorTarget = new(big.Int).Set(t)
+						break
+					}
+				}
+			}
+			if anchorTarget == nil {
+				anchorTarget = new(big.Int).Set(armaxLimit)
+			}
+		}
+
+		powLimit := new(big.Int).Set(armaxLimit)
+		if !isArmaxHashActiveForProfile(prof, nextIndex) && anchorTarget.Cmp(powLimit) > 0 {
+			powLimit = new(big.Int).Set(basePowLimit)
+		}
+		minDrift, maxDrift := ComputeDriftBounds(anchorTarget, powLimit)
+
+		tip := chain[len(chain)-1]
+		startHeight := actHeight
+		if startHeight < 1 {
+			startHeight = 1
+		}
+		var effDrift int64
+		if len(chain) > startHeight {
+			for i := startHeight; i < len(chain); i++ {
+				effDrift = stepEffectiveDriftForProfile(prof, effDrift, &chain[i-1], &chain[i], minDrift, maxDrift, armaxLimitHex)
+			}
+		}
+		candBlock := &Block{Index: nextIndex, Timestamp: candidateTimestamp}
+		candDrift := stepEffectiveDriftForProfile(prof, effDrift, &tip, candBlock, minDrift, maxDrift, armaxLimitHex)
+		normalTarget := ComputeASERTFromDrift(anchorTarget, candDrift)
+		if normalTarget.Sign() <= 0 {
+			normalTarget = big.NewInt(1)
+		}
+		if normalTarget.Cmp(powLimit) > 0 {
+			normalTarget.Set(powLimit)
+		}
+		if isEmergencyCand(tip.Timestamp, candidateTimestamp, nextIndex) && normalTarget.Cmp(armaxLimit) <= 0 {
+			return new(big.Int).Set(armaxLimit)
+		}
+		return normalTarget
+	}
+
+	if targetOverrideHook != nil && !prof.IsMainnet && flag.Lookup("test.v") != nil {
+		if override := targetOverrideHook(); override != nil {
+			return override
+		}
+	}
+	if len(chain) > 0 && isEmergencyCand(chain[len(chain)-1].Timestamp, candidateTimestamp, nextIndex) {
+		return new(big.Int).Set(armaxLimit)
+	}
+	if nextIndex <= 0 {
+		return new(big.Int).Set(basePowLimit)
+	}
+	actHeight := effectiveArmaxHashActForProfile(prof)
+	if actHeight > 0 && int64(nextIndex) == actHeight {
+		return new(big.Int).Set(armaxLimit)
+	}
+	if len(chain) < LWMAWindowSize+1 || nextIndex < LWMAWindowSize+1 {
+		if isArmaxHashActiveForProfile(prof, nextIndex) {
+			return new(big.Int).Set(armaxLimit)
+		}
+		if len(chain) > 0 {
+			return chain[0].GetTarget()
+		}
+		return new(big.Int).Set(basePowLimit)
+	}
+	if len(chain) < nextIndex {
+		nextIndex = len(chain)
+	}
+	window := chain[nextIndex-(LWMAWindowSize+1) : nextIndex]
+	subWindowLen := len(window)
+	var weightedSolveTimes int64
+	sumTargets := big.NewInt(0)
+	maxSolveTime := 6 * TargetBlockTimeSeconds
+	isNextArmax := actHeight > 0 && int64(nextIndex) >= actHeight
+
+	var lastNormalTarget *big.Int
+	for k := nextIndex - (LWMAWindowSize + 1); k >= 0 && k < len(chain); k-- {
+		var prevK *Block
+		if k > 0 {
+			prevK = &chain[k-1]
+		}
+		if !isEmergencyForProfile(prof, &chain[k], prevK, armaxLimitHex) {
+			lastNormalTarget = chain[k].GetTarget()
+			break
+		}
+	}
+	if lastNormalTarget == nil || lastNormalTarget.Sign() <= 0 {
+		lastNormalTarget = new(big.Int).Set(armaxLimit)
+	}
+
+	for i := 1; i < subWindowLen; i++ {
+		prev := window[i-1]
+		curr := window[i]
+		isEm := isEmergencyForProfile(prof, &curr, &prev, armaxLimitHex)
+		solveTime := curr.Timestamp - prev.Timestamp
+		if isEm {
+			solveTime = maxSolveTime
+		} else if solveTime > maxSolveTime {
+			solveTime = maxSolveTime
+		} else if solveTime < -maxSolveTime {
+			solveTime = -maxSolveTime
+		}
+		weightedSolveTimes += int64(i) * solveTime
+		var currTarget *big.Int
+		if isEm {
+			currTarget = new(big.Int).Set(lastNormalTarget)
+		} else {
+			currTarget = curr.GetTarget()
+			lastNormalTarget = currTarget
+		}
+		if isNextArmax && int64(curr.Index) < actHeight {
+			currTarget = new(big.Int).Set(armaxLimit)
+		}
+		sumTargets.Add(sumTargets, currTarget)
+	}
+
+	n := int64(subWindowLen - 1)
+	expectedWeight := (n * (n + 1) / 2) * TargetBlockTimeSeconds
+	if weightedSolveTimes < expectedWeight/4 {
+		weightedSolveTimes = expectedWeight / 4
+	} else if weightedSolveTimes > expectedWeight*4 {
+		weightedSolveTimes = expectedWeight * 4
+	}
+	avgTarget := new(big.Int).Div(sumTargets, big.NewInt(n))
+	nextTarget := new(big.Int).Mul(avgTarget, big.NewInt(weightedSolveTimes))
+	nextTarget.Div(nextTarget, big.NewInt(expectedWeight))
+
+	powFloor := new(big.Int).Set(basePowLimit)
+	if len(chain) > 0 {
+		powFloor = chain[0].GetTarget()
+	}
+	if isArmaxHashActiveForProfile(prof, nextIndex) {
+		powFloor = DifficultyToTarget(1)
+	}
+	if nextTarget.Cmp(big.NewInt(1)) < 0 {
+		nextTarget.Set(big.NewInt(1))
+	}
+	if nextTarget.Cmp(powFloor) > 0 {
+		nextTarget.Set(powFloor)
+	}
+	return nextTarget
 }

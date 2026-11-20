@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/blake2b"
@@ -251,4 +252,95 @@ func EqualDigest(a, b []byte) bool {
 // String returns the lowercase hexadecimal representation of a digest.
 func String(digest [OutputSize]byte) string {
 	return fmt.Sprintf("%x", digest[:])
+}
+
+// V2JobHasher pre-computes the invariant ArmaxHash v2 domain prefix and block header prefix
+// once per mining job/worker so tight PoW loops avoid copying the static prefix on every nonce.
+// Store V2JobHasher as a local variable per goroutine (not shared across goroutines).
+// Produces digests 100% bit-identical to HashV2.
+type V2JobHasher struct {
+	staticEnd int
+	prefixEnd int
+	inlineCap bool
+	suffix    []byte
+	inlineBuf [768]byte
+	heapBuf   []byte
+}
+
+// NewV2JobHasher initializes a reusable single-buffer ArmaxHash v2 hasher for a job
+// whose serialized header matches prefixBytes + strconv.AppendInt(nonce) + suffixBytes.
+func NewV2JobHasher(networkID string, prefixBytes, suffixBytes []byte) (V2JobHasher, error) {
+	var h V2JobHasher
+	if len(networkID) == 0 || len(networkID) > 255 {
+		return h, ErrInvalidNet
+	}
+	if len(prefixBytes)+len(suffixBytes) > MaxHeaderSize {
+		return h, ErrHeaderTooLarge
+	}
+	const domainV2 = "ARMX-POW-V2\x00"
+	netLen := len(networkID)
+	staticEnd := len(domainV2) + 2 + netLen
+	capNeeded := staticEnd + len(prefixBytes) + 24 + len(suffixBytes)
+
+	h.staticEnd = staticEnd
+	h.suffix = append([]byte(nil), suffixBytes...)
+
+	var buf []byte
+	if capNeeded <= len(h.inlineBuf) {
+		h.inlineCap = true
+		buf = h.inlineBuf[:0]
+	} else {
+		buf = make([]byte, 0, capNeeded)
+	}
+	buf = append(buf, domainV2...)
+	buf = append(buf, VersionV2, byte(netLen))
+	buf = append(buf, networkID...)
+	buf = append(buf, prefixBytes...)
+	h.prefixEnd = len(buf)
+	if !h.inlineCap {
+		h.heapBuf = buf
+	}
+	return h, nil
+}
+
+// UpdatePrefix refreshes the header prefix (before the nonce) without reallocating when possible.
+func (h *V2JobHasher) UpdatePrefix(prefixBytes []byte) error {
+	if len(prefixBytes)+len(h.suffix) > MaxHeaderSize {
+		return ErrHeaderTooLarge
+	}
+	needed := h.staticEnd + len(prefixBytes) + 24 + len(h.suffix)
+	var buf []byte
+	if h.inlineCap && needed <= len(h.inlineBuf) {
+		buf = h.inlineBuf[:h.staticEnd]
+	} else if !h.inlineCap && needed <= cap(h.heapBuf) {
+		buf = h.heapBuf[:h.staticEnd]
+	} else {
+		buf = make([]byte, h.staticEnd, needed)
+		if h.inlineCap {
+			copy(buf, h.inlineBuf[:h.staticEnd])
+		} else {
+			copy(buf, h.heapBuf[:h.staticEnd])
+		}
+		h.inlineCap = false
+	}
+	buf = append(buf, prefixBytes...)
+	h.prefixEnd = len(buf)
+	if !h.inlineCap {
+		h.heapBuf = buf
+	}
+	return nil
+}
+
+// HashNonce evaluates the ArmaxHash v2 32-byte digest for the prepared header and nonce.
+func (h *V2JobHasher) HashNonce(nonce int64) [OutputSize]byte {
+	var b []byte
+	if h.inlineCap {
+		b = h.inlineBuf[:h.prefixEnd]
+	} else {
+		b = h.heapBuf[:h.prefixEnd]
+	}
+	b = strconv.AppendInt(b, nonce, 10)
+	b = append(b, h.suffix...)
+	d1 := blake2b.Sum512(b)
+	return blake2b.Sum256(d1[:])
 }

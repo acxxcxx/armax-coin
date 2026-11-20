@@ -21,7 +21,10 @@ func TestFutureTimestampLimit_ProfileDefaults(t *testing.T) {
 	if TestnetProfile.FutureTimestampLimitActivationHeight != 20000 {
 		t.Fatalf("testnet fork height: got %d, want 20000", TestnetProfile.FutureTimestampLimitActivationHeight)
 	}
-	for _, p := range []NetworkProfile{MainnetProfile, SoakProfile, RegtestProfile} {
+	if MainnetProfile.FutureTimestampLimitActivationHeight != 0 {
+		t.Fatalf("mainnet must enforce 10-minute rule from Block #1 (height 0), got %d", MainnetProfile.FutureTimestampLimitActivationHeight)
+	}
+	for _, p := range []NetworkProfile{SoakProfile, RegtestProfile} {
 		if p.FutureTimestampLimitActivationHeight >= 0 {
 			t.Fatalf("%s must keep the 2-hour rule (negative height), got %d", p.Name, p.FutureTimestampLimitActivationHeight)
 		}
