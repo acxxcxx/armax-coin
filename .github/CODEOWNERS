@@ -1,0 +1,34 @@
+# ==============================================================================
+# Armaxcoin Core — Repository Code Owners
+# ==============================================================================
+# Default fallback owner for all repository files
+* @acxxcxx
+
+# Consensus, block/transaction validation, genesis, chain parameters & ML-DSA-65
+/core/ @acxxcxx
+/core/pqsig/ @acxxcxx
+
+# Proof-of-Work hashing (ArmaxHash v1 Argon2id & v2 BLAKE2b / V2JobHasher)
+/armaxhash/ @acxxcxx
+
+# P2P networking, TLS 1.3 / TOFU identity, sync gate, and JSON-RPC daemon
+/node/ @acxxcxx
+/main.go @acxxcxx
+
+# Wallet keystore encryption (Argon2id + AES-256-GCM), BIP-39 & CLI signers
+/wallet/ @acxxcxx
+/cli/ @acxxcxx
+
+# Standalone CPU miner, thread optimizer & Stratum TCP/TLS client
+/miner/ @acxxcxx
+
+# Desktop Wallet GUI v2 (WebView2, System Tray & loopback auth boundaries)
+/gui/ @acxxcxx
+
+# Build, release, verification scripts, CI/CD workflows & security policies
+/scripts/ @acxxcxx
+/.github/ @acxxcxx
+/hygiene_test.go @acxxcxx
+/go.mod @acxxcxx
+/go.sum @acxxcxx
+/SECURITY.md @acxxcxx
