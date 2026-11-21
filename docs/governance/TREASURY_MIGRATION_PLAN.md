@@ -281,7 +281,7 @@ flowchart LR
 ```
 
 - **Phase 0 — Testnet Soak (Current — Duration TBA):** Continue open-ended public testnet operation (duration **TBA / undetermined** until all Mainnet readiness gates and open independent security reviews conclude). Maintain immutable block and pool logs. Finalize Dual-Lock and event-based eligibility specifications under this preliminary plan. No mainnet distributions or consensus changes occur during this phase.
-- **Phase 1 — Mainnet Preparation:** Complete open independent security review and testing across consensus, ArmaxHash v2, Armax-ASERT-AW, `TxBinaryV1`, ML-DSA-65, node, and wallet, with findings tracked openly and all known Critical/High issues resolved prior to activation (optional commercial audits as funding permits). Finalize treasury custody policies. Reconcile testnet mining records.
+- **Phase 1 — Mainnet Preparation:** Complete open independent security review and testing across consensus, ArmaxHash v2, Armax-ASERT-AW, `TxBinaryV1`, ML-DSA-65, node, and wallet, with findings tracked via responsible disclosure (private handling for exploitable vulnerabilities until remediation, public documentation for non-sensitive and resolved issues) and all known Critical/High issues resolved prior to activation (optional commercial audits as funding permits). Finalize treasury custody policies. Reconcile testnet mining records.
 - **Phase 2 — Mainnet Launch:** Mainnet launches under verified consensus rules. Treasury begins receiving legitimate mined rewards up to the policy cap.
 - **Phase 3 — Testnet Miner Migration:** Announce snapshot cutoff. Reconcile solo and pool rewards. Open Mainnet address registration. Disburse migration allocations from `treasury_migration`.
 - **Phase 4 — Liquidity Launch:** Subject any bridge and token contracts to the same open independent security review before holding real funds. Provision initial AMM liquidity gradually.
@@ -298,7 +298,7 @@ flowchart LR
 | Reorganization or invalid block inclusion | Medium | Evaluate solely canonical longest chain after maturity finality |
 | Sybil / duplicate claims | Medium | Unique claim identifier, cryptographic signature challenge, and public registry |
 | Valid claims exceed 300,000 ARMX budget | Medium | Halt finalization; submit to governance review without retroactive ratio cuts |
-| Bridge security exploits | Critical | Open independent review before holding real funds, openly tracked findings, optional commercial audits as funding permits, and strict rate limits |
+| Bridge security exploits | Critical | Open independent review before holding real funds, responsible-disclosure finding tracking, optional commercial audits as funding permits, and strict rate limits |
 | Impermanent loss or liquidity drain | High | Phased deployment with continuous depth and volatility monitoring |
 | Treasury mismanagement | Critical | Segregated sector wallets, cold storage, multi-party approvals, and public ledger |
 

@@ -34,7 +34,9 @@ test may be used to waive a gate.
    state transition logic, ArmaxHash v2, difficulty adjustment (`Armax-ASERT-AW`),
    `TxBinaryV1` size accounting, NIST FIPS 204 ML-DSA-65 signature verification,
    storage recovery, P2P, RPC, and wallet code is public for peer review and
-   adversarial testing, findings are tracked openly, and all known Critical and
+   adversarial testing, security findings are tracked through the responsible disclosure
+   process (exploitable vulnerabilities handled privately until remediation;
+   non-sensitive and resolved findings documented publicly), and all known Critical and
    High-severity issues must be resolved and verifiable before Mainnet
    activation. Any future bridge or contract will go through the same open
    independent review before holding real funds; paid commercial audits are not
