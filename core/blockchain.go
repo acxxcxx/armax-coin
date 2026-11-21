@@ -848,6 +848,29 @@ type MiningJob struct {
 	SuffixBytes    []byte
 }
 
+// MaxMiningThreadsCap is the absolute upper bound on concurrent CPU mining workers.
+const MaxMiningThreadsCap = 256
+
+func maxAllowedMiningThreadsForCPU(numCPU int) int {
+	if numCPU < 1 {
+		return 1
+	}
+	if numCPU > MaxMiningThreadsCap/4 {
+		return MaxMiningThreadsCap
+	}
+	limit := numCPU * 4
+	if limit > MaxMiningThreadsCap {
+		return MaxMiningThreadsCap
+	}
+	return limit
+}
+
+// MaxAllowedMiningThreads returns a safe upper bound on concurrent mining workers,
+// bounded within [1, MaxMiningThreadsCap] to prevent excessive memory and goroutine allocation.
+func MaxAllowedMiningThreads() int {
+	return maxAllowedMiningThreadsForCPU(runtime.NumCPU())
+}
+
 // MineBlockContext mines a new block including miner reward, transaction fees, and mempool transactions
 // with context cancellation and stale-block detection support.
 func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string, threadCount ...int) (Block, error) {
@@ -915,6 +938,9 @@ func (bc *Blockchain) MineBlockContext(ctx context.Context, minerAddress string,
 	}
 	if threads < 1 {
 		threads = 1
+	}
+	if maxThreads := MaxAllowedMiningThreads(); threads > maxThreads {
+		threads = maxThreads
 	}
 	bc.Lock.Unlock()
 

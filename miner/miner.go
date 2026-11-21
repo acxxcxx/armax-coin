@@ -1099,7 +1099,11 @@ func runMinerBenchmark() {
 	dummyBlock := core.GetGenesisBlock()
 	dummyBlock.Index = 13052
 	if act := core.GetArmaxHashV2ActivationHeight(); act > int64(dummyBlock.Index) {
-		dummyBlock.Index = int(act) + 100
+		if act <= math.MaxInt32-100 {
+			dummyBlock.Index = int(act) + 100
+		} else {
+			dummyBlock.Index = math.MaxInt32
+		}
 	}
 	dummyBlock.Timestamp = 1762668000
 	dummyBlock.Target = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"

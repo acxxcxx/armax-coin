@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 )
@@ -248,10 +249,11 @@ func ASERTDriftCacheLen() int {
 // CalculateArmaxASERTTarget evaluates the Armax-ASERT-AW consensus target for a candidate block
 // at nextIndex with candidateTimestamp on top of chain.
 func CalculateArmaxASERTTarget(chain []Block, nextIndex int, candidateTimestamp int64) *big.Int {
-	actHeight := int(GetASERTActivationHeight())
-	if actHeight < 0 || nextIndex <= 0 {
+	rawAct := GetASERTActivationHeight()
+	if rawAct < 0 || rawAct > math.MaxInt32 || nextIndex <= 0 {
 		return CalculateExpectedTarget(chain, nextIndex)
 	}
+	actHeight := int(rawAct)
 
 	_, anchorTarget, err := ResolveASERTAnchor(chain, actHeight)
 	if err != nil {

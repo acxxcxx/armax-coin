@@ -1,6 +1,7 @@
 package node
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -167,12 +168,33 @@ func GetRPCAuthCookiePath() string {
 	return filepath.Join(targetDir, "armax.cookie")
 }
 
+var (
+	constantTimeCompareKeyOnce sync.Once
+	constantTimeCompareKey     [32]byte
+)
+
+func getConstantTimeCompareKey() []byte {
+	constantTimeCompareKeyOnce.Do(func() {
+		if _, err := rand.Read(constantTimeCompareKey[:]); err != nil {
+			panic(fmt.Errorf("crypto/rand failed to initialize RPC auth HMAC key: %w", err))
+		}
+	})
+	return constantTimeCompareKey[:]
+}
+
 // constantTimeCompare performs a secure, timing-attack-resistant string equality comparison
-// without leaking string length via early termination or comparison length
+// without leaking string length via early termination or comparison length.
 func constantTimeCompare(a, b string) bool {
-	hA := sha256.Sum256([]byte(a))
-	hB := sha256.Sum256([]byte(b))
-	return subtle.ConstantTimeCompare(hA[:], hB[:]) == 1
+	key := getConstantTimeCompareKey()
+	macA := hmac.New(sha256.New, key)
+	_, _ = macA.Write([]byte(a))
+	sumA := macA.Sum(nil)
+
+	macB := hmac.New(sha256.New, key)
+	_, _ = macB.Write([]byte(b))
+	sumB := macB.Sum(nil)
+
+	return subtle.ConstantTimeCompare(sumA, sumB) == 1
 }
 
 // InitRPCAuth initializes authentication credentials and writes armax.cookie file.

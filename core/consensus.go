@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strings"
@@ -728,7 +729,12 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 		clonedState = NewStateManager()
 	}
 
-	prefixChain := make([]Block, ancestorIndex+1, ancestorIndex+1+len(newBlocks))
+	if len(newBlocks) > math.MaxInt-(ancestorIndex+1) {
+		bc.Lock.RUnlock()
+		return fmt.Errorf("candidate chain length overflow")
+	}
+	prefixCap := ancestorIndex + 1 + len(newBlocks)
+	prefixChain := make([]Block, ancestorIndex+1, prefixCap)
 	copy(prefixChain, bc.Chain[:ancestorIndex+1])
 	bc.Lock.RUnlock()
 
@@ -858,6 +864,11 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 		}
 	}
 
+	if ancestorIndex < 0 || len(newBlocks) > math.MaxInt-(ancestorIndex+1) {
+		return fmt.Errorf("candidate chain length overflow")
+	}
+	nextChainLen := ancestorIndex + 1 + len(newBlocks)
+
 	// Snapshot current in-memory state before mutating so we can roll back cleanly if disk persistence fails
 	prevChain := bc.Chain
 	prevState := bc.State
@@ -884,7 +895,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 	}
 
 	// Replace active chain and state atomically using a fresh slice backing array
-	nextChain := make([]Block, ancestorIndex+1+len(newBlocks))
+	nextChain := make([]Block, nextChainLen)
 	copy(nextChain, bc.Chain[:ancestorIndex+1])
 	copy(nextChain[ancestorIndex+1:], newBlocks)
 	bc.Chain = nextChain

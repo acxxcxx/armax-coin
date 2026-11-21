@@ -1436,10 +1436,19 @@ func NewRPCHandler(bc *core.Blockchain, peerServer *PeerServer, limiter *IPRateL
 				requestedThreads = body.Threads
 			}
 		}
-		if requestedThreads <= 0 {
+		if requestedThreads == 0 {
 			if thStr := r.URL.Query().Get("threads"); thStr != "" {
-				requestedThreads, _ = strconv.Atoi(thStr)
+				parsed, convErr := strconv.Atoi(thStr)
+				if convErr != nil {
+					writeJSONError(w, "Invalid threads parameter: must be an integer", http.StatusBadRequest)
+					return
+				}
+				requestedThreads = parsed
 			}
+		}
+		if requestedThreads < 0 || requestedThreads > core.MaxAllowedMiningThreads() {
+			writeJSONError(w, fmt.Sprintf("Invalid threads parameter %d: must be between 0 and %d", requestedThreads, core.MaxAllowedMiningThreads()), http.StatusBadRequest)
+			return
 		}
 
 		if miner == "" {

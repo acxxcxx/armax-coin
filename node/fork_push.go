@@ -277,11 +277,20 @@ func (p *PeerServer) pushChainToPeer(peerAddress string, peerHeight int) {
 		p.Blockchain.Lock.RUnlock()
 		return
 	}
-	end := tip
-	if end-fp.AncestorHeight > MaxPushBlocks {
-		end = fp.AncestorHeight + MaxPushBlocks
+	count := tip - fp.AncestorHeight
+	if count <= 0 {
+		p.Blockchain.Lock.RUnlock()
+		return
 	}
-	pending := make([]core.Block, end-fp.AncestorHeight)
+	if count > MaxPushBlocks {
+		count = MaxPushBlocks
+	}
+	end := fp.AncestorHeight + count
+	if fp.AncestorHeight+1 < 0 || end >= len(p.Blockchain.Chain) {
+		p.Blockchain.Lock.RUnlock()
+		return
+	}
+	pending := make([]core.Block, count)
 	copy(pending, p.Blockchain.Chain[fp.AncestorHeight+1:end+1])
 	p.Blockchain.Lock.RUnlock()
 
