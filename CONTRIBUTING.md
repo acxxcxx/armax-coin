@@ -37,7 +37,7 @@ All contributors and community participants are expected to adhere to our [Code 
 ### Clone & Build
 
 ```bash
-git clone https://github.com/acxxcxx/armax-coin.git
+git clone https://github.com/armaxcoincore/armax-coin.git
 cd armax-coin
 
 # Verify Go toolchain

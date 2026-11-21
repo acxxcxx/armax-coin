@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // captureStdout captures stdout during the execution of fn.

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestRegtest_ProfileAndGenesisIsolation verifies that regtest does not share NetworkID or Genesis with mainnet/testnet [L4-8]

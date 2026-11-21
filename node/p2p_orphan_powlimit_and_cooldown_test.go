@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestT3_OrphanLooseTargetRejected verifies that an orphan block with an attacker-crafted

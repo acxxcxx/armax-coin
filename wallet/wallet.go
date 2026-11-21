@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // Wallet represents an Armaxcoin quantum-safe account backed by NIST FIPS 204 ML-DSA-65 [P2-3]

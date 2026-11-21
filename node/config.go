@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 type Config struct {

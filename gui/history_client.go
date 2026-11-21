@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // PagedHistoryRecord matches the JSON payload returned by node /history and /api/history.

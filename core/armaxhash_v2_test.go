@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/armaxhash"
+	"github.com/armaxcoincore/armax-coin/armaxhash"
 )
 
 // TestArmaxHashV2ActivationLogic verifies that the three PoW eras (SHA-256d, ArmaxHash v1, ArmaxHash v2)

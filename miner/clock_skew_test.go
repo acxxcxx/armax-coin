@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 func TestClockOffsetFromTemplate(t *testing.T) {

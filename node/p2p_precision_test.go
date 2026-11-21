@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestP2PMessagePrecision verifies that 64-bit integer values > 2^53 (e.g. Stratum nonces,

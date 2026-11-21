@@ -27,8 +27,8 @@ Every official release tag (`v*`) publishes pre-compiled archive packages accomp
 ### Verification on Linux / macOS
 ```bash
 # Download archive and checksum file
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.12/armax-v1.0.12-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.12/SHA256SUMS
+curl -LO https://github.com/armaxcoincore/armax-coin/releases/download/v1.0.12/armax-v1.0.12-linux-amd64.tar.gz
+curl -LO https://github.com/armaxcoincore/armax-coin/releases/download/v1.0.12/SHA256SUMS
 
 # Verify integrity using sha256sum
 sha256sum --check --ignore-missing SHA256SUMS
@@ -101,7 +101,7 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.12-windows-amd64.zip"
   - **Verification:** Full automated test suite passes (`go test -tags testhooks ./...` 100% green; `contracts/` npm test 11/11 passing).
 
 - **Previous Maintenance Release (`v1.0.6`):**
-  - **Release Tag:** [`v1.0.6`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.6)
+  - **Release Tag:** [`v1.0.6`](https://github.com/armaxcoincore/armax-coin/releases/tag/v1.0.6)
   - **Status:** Public Open Testnet -- Node Maintenance, Data Race Hardening & Storage Isolation
   - **Target Architectures:**
     - `armax-v1.0.6-linux-amd64.tar.gz` (Linux 64-bit x86)
@@ -111,7 +111,7 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.12-windows-amd64.zip"
   - **Verification:** Validated with race detection, staticcheck, govulncheck, and cryptographic SHA256SUMS aggregation.
 
 - **Previous Hard-Fork Release (`v1.0.5`):**
-  - **Release Tag:** [`v1.0.5`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.5)
+  - **Release Tag:** [`v1.0.5`](https://github.com/armaxcoincore/armax-coin/releases/tag/v1.0.5)
   - **Status:** Public Open Testnet -- Display Ticker (tARMX), CLI Hardening & Release Prep (C1/C2 Hard Fork at Block #8,000)
   - **Target Architectures:**
     - `armax-v1.0.5-linux-amd64.tar.gz` (Linux 64-bit x86)
@@ -121,19 +121,19 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.12-windows-amd64.zip"
   - **Verification:** Automatically validated via GitHub Actions with race detection, staticcheck, govulncheck, and cryptographic SHA256SUMS aggregation.
 
 - **Previous Maintenance Release (`v1.0.4`):**
-  - **Release Tag:** [`v1.0.4`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.4)
+  - **Release Tag:** [`v1.0.4`](https://github.com/armaxcoincore/armax-coin/releases/tag/v1.0.4)
   - **Status:** Public Open Testnet -- Structured Diagnostics & Consensus Hardening
 
 - **Previous Maintenance Release (`v1.0.3`):**
-  - **Release Tag:** [`v1.0.3`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.3)
+  - **Release Tag:** [`v1.0.3`](https://github.com/armaxcoincore/armax-coin/releases/tag/v1.0.3)
   - **Status:** Public Open Testnet -- ArmaxHash v2 Stream-Fast & Hardening
 
 - **Previous Maintenance Release (`v1.0.1`):**
-  - **Release Tag:** [`v1.0.1`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.1)
+  - **Release Tag:** [`v1.0.1`](https://github.com/armaxcoincore/armax-coin/releases/tag/v1.0.1)
   - **Status:** Public Open Testnet -- BIP-35 Mempool Sync & Outbound NAT Support
 
 - **Initial Open Testnet Release (`v1.0.0`):**
-  - **Release Tag:** [`v1.0.0`](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.0)
+  - **Release Tag:** [`v1.0.0`](https://github.com/armaxcoincore/armax-coin/releases/tag/v1.0.0)
   - **Status:** Initial Public Open Testnet Release
 
 ---
@@ -165,7 +165,7 @@ This checklist defines the formal verification gates required before tagging, pa
 - [x] **Release Packaging:** Verified `build-all.ps1` / `build-release.ps1` or `.github/workflows/release.yml` produces stripped binaries with SHA256 checksums.
 
 ### 6.4 Documentation & Public Information Verification
-- [x] **Canonical Module & Naming:** `go.mod` declares `module github.com/acxxcxx/armax-coin` and documentation consistently refers to `armax-coin`.
+- [x] **Canonical Module & Naming:** `go.mod` declares `module github.com/armaxcoincore/armax-coin` and documentation consistently refers to `armax-coin`.
 - [x] **Documentation Set Present & Synchronized:** `README.md`, `docs/architecture/WHITEPAPER.md`, `SECURITY.md`, `CHANGELOG.md`, `docs/releases/RELEASE_NOTES.md`, `docs/releases/v1.0.12.md`, `docs/governance/TREASURY_MIGRATION_PLAN.md`, `docs/TESTNET.md`, `docs/MINING_GUIDE.md`, `docs/NODE_OPERATIONS.md`, and `docs/CONSENSUS_AND_NETWORK.md`.
 - [x] **Experimental Disclaimers:** Visible notices that testnet coins (`tARMX`) have no economic value and mainnet remains locked.
 

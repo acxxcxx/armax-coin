@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // fundAccount funds an account in the blockchain state

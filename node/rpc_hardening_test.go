@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 func setupTestServer(t *testing.T) (*core.Blockchain, http.Handler) {

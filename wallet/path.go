@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 const WalletFileName = "wallet.json"

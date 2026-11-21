@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestL1_2_CrossNetworkP2PRejection verifies [L1-2]:

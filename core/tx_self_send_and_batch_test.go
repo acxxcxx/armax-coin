@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // TestC19_SelfSendRejectedInTxVerify tests that a transaction where Sender == Recipient is rejected by Verify()

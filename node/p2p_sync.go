@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // NetworkID returns the active network profile's NetworkID dynamically [L1-2]

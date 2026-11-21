@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestCLI_NetworkFlagSelection tests CLI binary execution for -network flag [L3-8, L4-1]

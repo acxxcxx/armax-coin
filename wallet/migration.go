@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // LegacyDefaultPassphraseHex contains the hex bytes for the obsolete default desktop wallet passphrase.

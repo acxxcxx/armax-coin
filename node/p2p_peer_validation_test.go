@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 func TestInboundPeerRequiresIdentityAndNetworkHandshake(t *testing.T) {

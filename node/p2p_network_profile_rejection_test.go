@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestC33_NetworkProfiles verifies the configuration of mainnet and testnet network profiles [C-33].

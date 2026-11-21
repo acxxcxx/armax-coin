@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/armaxhash"
+	"github.com/armaxcoincore/armax-coin/armaxhash"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/blake2b"

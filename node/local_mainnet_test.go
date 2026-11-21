@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestLocalMainnet_ExplicitActivationOnly verifies that Mainnet CANNOT be activated

@@ -20,16 +20,16 @@
 [*] [b]Official Website & Web Portal:[/b] [url=https://armax-coin.cloud]https://armax-coin.cloud[/url]
 [*] [b]Testnet Blockchain Explorer:[/b] [url=https://armax-coin.cloud/explorer]https://armax-coin.cloud/explorer[/url]
 [*] [b]Testnet Mining Pool:[/b] [url=https://pool.armax-coin.cloud]https://pool.armax-coin.cloud[/url]
-[*] [b]Source Code Repository:[/b] [url=https://github.com/acxxcxx/armax-coin]https://github.com/acxxcxx/armax-coin[/url]
-[*] [b]Releases & Assets:[/b] [url=https://github.com/acxxcxx/armax-coin/releases]https://github.com/acxxcxx/armax-coin/releases[/url]
-[*] [b]Git Tag Reference:[/b] [url=https://github.com/acxxcxx/armax-coin/tree/v1.0.12]refs/tags/v1.0.12[/url]
-[*] [b]v1.0.12 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.12.md]docs/releases/v1.0.12.md[/url]
-[*] [b]v1.0.11 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.11.md]docs/releases/v1.0.11.md[/url]
-[*] [b]v1.0.10 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.10.md]docs/releases/v1.0.10.md[/url]
-[*] [b]v1.0.9 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.9.md]docs/releases/v1.0.9.md[/url]
-[*] [b]v1.0.8 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.8.md]docs/releases/v1.0.8.md[/url]
-[*] [b]v1.0.7 Release Notes:[/b] [url=https://github.com/acxxcxx/armax-coin/blob/main/docs/releases/v1.0.7.md]docs/releases/v1.0.7.md[/url]
-[*] [b]Documentation Suite:[/b] [url=https://github.com/acxxcxx/armax-coin#authoritative-documentation-index]Documentation Index[/url]
+[*] [b]Source Code Repository:[/b] [url=https://github.com/armaxcoincore/armax-coin]https://github.com/armaxcoincore/armax-coin[/url]
+[*] [b]Releases & Assets:[/b] [url=https://github.com/armaxcoincore/armax-coin/releases]https://github.com/armaxcoincore/armax-coin/releases[/url]
+[*] [b]Git Tag Reference:[/b] [url=https://github.com/armaxcoincore/armax-coin/tree/v1.0.12]refs/tags/v1.0.12[/url]
+[*] [b]v1.0.12 Release Notes:[/b] [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/releases/v1.0.12.md]docs/releases/v1.0.12.md[/url]
+[*] [b]v1.0.11 Release Notes:[/b] [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/releases/v1.0.11.md]docs/releases/v1.0.11.md[/url]
+[*] [b]v1.0.10 Release Notes:[/b] [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/releases/v1.0.10.md]docs/releases/v1.0.10.md[/url]
+[*] [b]v1.0.9 Release Notes:[/b] [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/releases/v1.0.9.md]docs/releases/v1.0.9.md[/url]
+[*] [b]v1.0.8 Release Notes:[/b] [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/releases/v1.0.8.md]docs/releases/v1.0.8.md[/url]
+[*] [b]v1.0.7 Release Notes:[/b] [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/releases/v1.0.7.md]docs/releases/v1.0.7.md[/url]
+[*] [b]Documentation Suite:[/b] [url=https://github.com/armaxcoincore/armax-coin#authoritative-documentation-index]Documentation Index[/url]
 [*] [b]License:[/b] MIT Open Source License
 [/list]
 
@@ -151,7 +151,7 @@ Get-Content .\SHA256SUMS | Select-String "armax-v1.0.12-windows-amd64.zip"
 
 [b]Step 1 -- Clone the Repository & Compile:[/b]
 [code]
-git clone https://github.com/acxxcxx/armax-coin.git
+git clone https://github.com/armaxcoincore/armax-coin.git
 cd armax-coin
 
 # Verify Go toolchain
@@ -210,7 +210,7 @@ By default, [tt]armcoind[/tt] starts in testnet mode, discovers peers via DNS se
 [hr]
 
 [b][size=14pt]Community & Contributions[/size][/b]
-We invite node operators, miners, developers, and security researchers to join and test the experimental testnet. Contributions are voluntary and credited in [url=https://github.com/acxxcxx/armax-coin/blob/main/CONTRIBUTORS.md]CONTRIBUTORS.md[/url]. Testnet coins have no monetary value, and no airdrops or financial rewards are promised.
+We invite node operators, miners, developers, and security researchers to join and test the experimental testnet. Contributions are voluntary and credited in [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/community/CONTRIBUTORS.md]docs/community/CONTRIBUTORS.md[/url]. Testnet coins have no monetary value, and no airdrops or financial rewards are promised.
 [list]
 [*] [b]Responsible Security Reporting:[/b] Please report security vulnerabilities responsibly via GitHub Private Vulnerability Reporting on the repository ([b]Security[/b] -> [b]Advisories[/b] -> [b]Report a vulnerability[/b]).
 [/list]

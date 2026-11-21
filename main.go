@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/node"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/node"
+	"github.com/armaxcoincore/armax-coin/wallet"
 )
 
 func main() {
@@ -793,6 +793,6 @@ func main() {
 	fmt.Printf("  Circulating   : %d / %d %s\n", bc.GetCirculatingSupply()/core.CoinUnit, core.MaxSupply/core.CoinUnit, core.ActiveTicker())
 	fmt.Println("==================================================")
 	fmt.Println("Tip: Run as full daemon with optional background miner:")
-	fmt.Printf("  go run main.go -daemon -port %s -p2p %s -mine\n", core.MainnetRPCPort, core.MainnetP2PPort)
+	fmt.Printf("  go run main.go -daemon -rpcport %s -p2pport %s -mine\n", core.MainnetRPCPort, core.MainnetP2PPort)
 	fmt.Println("==================================================")
 }

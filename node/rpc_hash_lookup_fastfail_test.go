@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestT9_FastFailNonexistentTxAndBlockHashes verifies that queries for nonexistent

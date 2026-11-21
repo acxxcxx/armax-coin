@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestDaemonVersionFlag verifies that armcoind returns correct release version

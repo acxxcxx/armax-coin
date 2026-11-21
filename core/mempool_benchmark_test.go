@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // BenchmarkCleanMempoolLocked_5000Tx benchmarks CleanMempoolLocked execution time

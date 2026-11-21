@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestFutureTimestampErrorType verifies that core.FutureTimestampError correctly

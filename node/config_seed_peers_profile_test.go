@@ -5,7 +5,7 @@ package node
 import (
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestN20_ProfileBasedSeedPeers verifies [N-20]:

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestIBD_ContinuousSyncPastOldLimit verifies that Initial Block Download (IBD)

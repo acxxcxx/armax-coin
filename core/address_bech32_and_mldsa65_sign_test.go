@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // TestP2_AddressFormatAndPayloadLen verifies P2-2 address rules:

@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // TestBlockAndTransactionConcurrentCacheRace verifies that concurrent Size() invocations

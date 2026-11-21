@@ -1,4 +1,4 @@
-module github.com/acxxcxx/armax-coin
+module github.com/armaxcoincore/armax-coin
 
 go 1.27.0
 

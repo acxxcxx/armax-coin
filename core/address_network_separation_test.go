@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // TestAddress_HRPAndBech32Validation verifies Section C.1 & C.2:

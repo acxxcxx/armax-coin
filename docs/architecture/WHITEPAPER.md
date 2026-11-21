@@ -172,7 +172,7 @@ To accommodate consumer hardware, commodity desktop CPUs, and cache-constrained 
 To maintain accurate difficulty retargeting and prevent artificial difficulty manipulation via timewarp attacks, Armaxcoin enforces progressive timestamp validation rules across historical testnet milestones:
 1. **Median Time Past 11 (Blocks $0 \le H < 8000$):** Block timestamps must exceed the median of the previous 11 blocks ($\text{Timestamp} > \text{MTP-11}$).
 2. **Median Time Past 55 & Monotonicity (Blocks $H \ge 8000$):** Under hard fork proposals C1 and C2, block timestamps must strictly exceed the median of the previous 55 blocks ($\text{Timestamp} > \text{MTP-55}$) and must not be earlier than the immediate parent block ($\text{Timestamp}_H \ge \text{Timestamp}_{H-1}$).
-3. **Scheduled Future-Timestamp Tightening & Binary Block Sizing (Blocks $H \ge 20000$):** Under Proposal C6 (`v1.0.7+` / `v1.0.11`), the maximum allowed forward drift against the validating node's local wall clock is narrowed from **7,200 seconds (2 hours)** to **600 seconds (10 minutes)** (paired with an adaptive `5s`/`30s` miner inherited-tip safety margin in `v1.0.11`), while canonical `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`, raising 2 MB block capacity from `185` to **375 user ML-DSA-65 transactions**) activates simultaneously at Block `#20,000`. Historical re-indexing skips the wall-clock check, ensuring stored blocks remain permanently valid.
+3. **Active Future-Timestamp Tightening & Binary Block Sizing (Blocks $H \ge 20000$):** Under Proposal C6 (`v1.0.7+` / `v1.0.11`), the maximum allowed forward drift against the validating node's local wall clock is narrowed from **7,200 seconds (2 hours)** to **600 seconds (10 minutes)** (paired with an adaptive `5s`/`30s` miner inherited-tip safety margin in `v1.0.11`), while canonical `TxBinaryV1` binary block size accounting (`BlockBinarySizeActivationHeight = 20000`, raising 2 MB block capacity from `185` to **375 user ML-DSA-65 transactions**) activates simultaneously at Block `#20,000`. Historical re-indexing skips the wall-clock check, ensuring stored blocks remain permanently valid.
 
 ---
 
@@ -327,7 +327,7 @@ A rigorous blockchain design requires transparency regarding operational boundar
 
 1. **Quantum-Resistant Digital Signatures (NIST FIPS 204, ML-DSA-65):** User transactions employ module-lattice signatures resistant to Shor's algorithm. However, this does not eliminate all quantum attack vectors: PoW hashing (ArmaxHash v2 BLAKE2b and historical SHA-256d) remains subject to quadratic Grover speedups ($\approx 128\text{-bit}$ effective quantum security).
 2. **P2P Transport Security:** Traffic is encrypted with TLS 1.3 using a persistent, self-signed ECDSA P-256 node identity stored in `p2ptls.pem`. TOFU pins the remote certificate public-key fingerprint after first contact; identity is not verified through a PKI/CA, so the initial contact remains vulnerable to an active man-in-the-middle unless fingerprints are distributed out-of-band.
-3. **Mainnet Readiness & Verification:** Protocol readiness, network stabilization, and operational release criteria are tracked under formal verification gates (see [Mainnet Readiness Checklist](docs/MAINNET_READINESS.md)).
+3. **Mainnet Readiness & Verification:** Protocol readiness, network stabilization, and operational release criteria are tracked under formal verification gates (see [Mainnet Readiness Checklist](../MAINNET_READINESS.md)).
 4. **Reorganization Policy (720 Blocks):** The node rejects reorganizations deeper than 720 blocks. Reorganizations within that limit remain possible, so the limit is not transaction finality. A partition beyond the limit may require coordinated operator recovery.
 5. **RPC Daemon Isolation:** The RPC daemon (`armcoind`) binds strictly to loopback (`127.0.0.1`). Exposing the RPC port to public interfaces without strong authentication introduces severe security risks.
 6. **Key Management & Signing Architecture:** Key generation, keystore management, and post-quantum signing are performed exclusively by the local client tools (`armwallet`, `armsend`, `armgui`). No private keys are generated, stored, or processed in web browsers; public web interfaces and explorers are read-only and broadcast-only.
@@ -339,4 +339,4 @@ A rigorous blockchain design requires transparency regarding operational boundar
 ---
 
 ## 12. Open-Source License
-Armaxcoin is released under the permissive [MIT License](LICENSE).
+Armaxcoin is released under the permissive [MIT License](../../LICENSE).

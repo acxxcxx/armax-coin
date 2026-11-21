@@ -3,7 +3,7 @@ package node
 import (
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 func TestRoutingTable(t *testing.T) {

@@ -243,6 +243,6 @@ const (
 | **Phase 1** | Block #8,000 | v1.0.5 (Active) | C1 (MTP-55), C2 (Monotonic Time) |
 | **Phase 2** | No activation proposed | Audited / Draft | C3 (ML-DSA-65 Encoding and Cross-Network Replay Audit), C5 (Reorg Depth Policy, local node policy, draft only) |
 | **Phase 3 (Draft Only)** | Unratified draft (`#25,000` example) | Q3 2027 (Draft Only) | C4 (Transaction Expiry Height / TTL — unimplemented design draft) |
-| **Unified Block 20,000 Fork** | Block #20,000 (testnet) | **Scheduled (`v1.0.7+` / `v1.0.11`)** | **C6** (10-minute future-timestamp limit + adaptive `5s`/`30s` miner margin) + **`TxBinaryV1`** binary block size accounting |
+| **Unified Block 20,000 Fork** | Block #20,000 (testnet) | **Active (`v1.0.7+` / `v1.0.11+`)** | **C6** (10-minute future-timestamp limit + adaptive `5s`/`30s` miner margin) + **`TxBinaryV1`** binary block size accounting |
 
 *Document compiled in strict accordance with Armaxcoin Security Audit Guidelines.*

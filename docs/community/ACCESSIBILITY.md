@@ -56,7 +56,7 @@ True decentralization requires accessibility across economic and physical hardwa
 
 We welcome feedback on the accessibility of Armaxcoin. If you encounter accessibility barriers, unexpected contrast issues, or screen-reader incompatibilities:
 
-1. **Submit a Bug Report:** Open an issue on GitHub using our [Bug Report Template](https://github.com/acxxcxx/armax-coin/issues/new?template=bug_report.md) with the label `accessibility`.
+1. **Submit a Bug Report:** Open an issue on GitHub using our [Bug Report Template](https://github.com/armaxcoincore/armax-coin/issues/new?template=bug_report.md) with the label `accessibility`.
 2. **Private Feedback:** You may also contact repository maintainers via GitHub discussions or private vulnerability advisories if related to security or assistive tools.
 
 We are committed to addressing reported accessibility issues in subsequent maintenance releases.

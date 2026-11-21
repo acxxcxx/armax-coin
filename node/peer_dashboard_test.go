@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestDNSSeedSingleIP verifies that a DNS seed resolving to a single IP is deduplicated
