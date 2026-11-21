@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestMinerHTTPFlowCompatibility replays the request sequence used by the armminer

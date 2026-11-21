@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 func generateEphemeralTestCert(commonName string) (tls.Certificate, error) {

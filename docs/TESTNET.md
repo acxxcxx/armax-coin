@@ -56,7 +56,7 @@ The Armaxcoin Public Testnet (`ARMX-TESTNET-1`) operates under isolated network 
 ### Step 1: Clone and Build
 
 ```bash
-git clone https://github.com/acxxcxx/armax-coin.git
+git clone https://github.com/armaxcoincore/armax-coin.git
 cd armax-coin
 
 # Verify Go version (requires Go 1.27+)

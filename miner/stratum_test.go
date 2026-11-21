@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 func TestParseStratumPoolAddresses(t *testing.T) {

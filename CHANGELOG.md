@@ -5,6 +5,14 @@ All notable changes to the **Armaxcoin** (`armax-coin`) project will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **BREAKING (Go Module Path) — GitHub Organization Migration (`go.mod`, `*.go`, `.github/`, `docs/`):** Migrated canonical repository URLs and Go module path from `github.com/acxxcxx/armax-coin` to `github.com/armaxcoincore/armax-coin` following the official GitHub ownership transfer. Historical tags (`v1.0.0`–`v1.0.12`), binary compatibility, consensus rules, and original creator attribution (`@acxxcxx`) remain completely preserved. External Go consumers upgrading past `v1.0.12` must update `go.mod` and import paths to `github.com/armaxcoincore/armax-coin`.
+
+### Fixed
+- **Documentation & CLI Usage Alignment:** Fixed broken relative links in `docs/architecture/WHITEPAPER.md` and `docs/governance/TREASURY_MIGRATION_PLAN.md`, updated Block `#20,000` fork labels from `Scheduled` to `Active` in `WHITEPAPER.md` and `docs/security/consensus-proposals.md`, corrected `docs/community/ANNOUNCEMENT_TESTNET.md` link to `docs/community/CONTRIBUTORS.md`, updated the Testnet RPC example port in `cli/armwallet` help text (`18340` -> `19333`), and replaced deprecated `-port`/`-p2p` flags with `-rpcport`/`-p2pport` in `main.go` self-test output.
+
 ## [v1.0.12] - 2026-11-20
 
 ### Added

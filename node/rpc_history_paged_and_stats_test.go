@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestRPCHistory_PagedTraversalAndBlockBoundary verifies that ?format=paged traverses all blocks

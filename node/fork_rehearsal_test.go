@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/wallet"
 )
 
 // Rehearsal of the future-timestamp fork: the activation height is lowered so a NAT node mines

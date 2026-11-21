@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/wallet"
 )
 
 // natAheadSetup builds a public node and a NAT node (no listener) sharing `common` blocks, then lets

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 func TestTransaction_BinaryRoundTrip_Standard(t *testing.T) {

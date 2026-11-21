@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/wallet"
 )
 
 // TestP2P_MempoolSync_BIP35 verifies that when a node comes online later or requests mempool sync,

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestP2_4_NodeInvariants verifies P2P packet size and GET_BLOCK_RANGE invariants [P2-4]

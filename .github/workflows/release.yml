@@ -241,7 +241,7 @@ jobs:
               -pkcs12 "${PFX_FILE}" \
               -readpass <(printf '%s' "${WINDOWS_PFX_PASSWORD}") \
               -n "Armaxcoin Core" \
-              -i "https://github.com/acxxcxx/armax-coin" \
+              -i "https://github.com/armaxcoincore/armax-coin" \
               -h sha256 \
               -ts "https://timestamp.digicert.com" \
               -in "${exe}" \
@@ -252,7 +252,7 @@ jobs:
                 -pkcs12 "${PFX_FILE}" \
                 -readpass <(printf '%s' "${WINDOWS_PFX_PASSWORD}") \
                 -n "Armaxcoin Core" \
-                -i "https://github.com/acxxcxx/armax-coin" \
+                -i "https://github.com/armaxcoincore/armax-coin" \
                 -h sha256 \
                 -ts "http://timestamp.sectigo.com" \
                 -in "${exe}" \

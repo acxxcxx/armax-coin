@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestV1011_BackwardCompatibilityAtBlock15967 verifies full backward compatibility between

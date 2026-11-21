@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestArmsendBalanceResponseJSON verifies BalanceResponse struct JSON marshaling and unmarshaling

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestF1_P2PTOFUPinning tests the Trust-On-First-Use (TOFU) TLS certificate fingerprint pinning mechanism [F1].

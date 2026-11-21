@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/armaxhash"
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/armaxhash"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 var (

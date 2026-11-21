@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 const (

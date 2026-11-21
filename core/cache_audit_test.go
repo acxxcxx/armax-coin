@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // TestTransactionCacheAllConstructionAndDeserializationPaths verifies cachedSize and Size()

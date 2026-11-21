@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 func newIsolatedBlockchain(t *testing.T) *core.Blockchain {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestT2_JunkBlocksDoNotTriggerStateCloneAndPenalize tests that incoming junk blocks

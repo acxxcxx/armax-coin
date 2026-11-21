@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/wallet"
 	"golang.org/x/term"
 )
 
@@ -277,7 +277,7 @@ Environment:
 
 Examples:
   armwallet -create -wallet my.json
-  armwallet -balance armx1... -daemon http://127.0.0.1:18340
+  armwallet -balance armx1... -daemon http://127.0.0.1:19333
 
 Flags:
 `)

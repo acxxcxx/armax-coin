@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestL1_1_NetworkLifecycle runs full lifecycle verification for both mainnet and testnet:

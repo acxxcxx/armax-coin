@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestBanDuration12Hours verifies that IP bans use a 12-hour expiration rather than 24 hours.

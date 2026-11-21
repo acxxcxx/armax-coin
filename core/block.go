@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/armaxhash"
+	"github.com/armaxcoincore/armax-coin/armaxhash"
 )
 
 const (

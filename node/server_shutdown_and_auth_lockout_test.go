@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestIPRateLimiterLifecycleCleanup verifies that Close() cleanly terminates

@@ -29,10 +29,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/armaxhash"
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/node"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/armaxhash"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/node"
+	"github.com/armaxcoincore/armax-coin/wallet"
 )
 
 var (

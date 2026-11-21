@@ -11,7 +11,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 	"golang.org/x/text/unicode/norm"
 )
 

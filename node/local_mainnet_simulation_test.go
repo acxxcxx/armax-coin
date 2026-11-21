@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // TestLocalMainnet_ThreeNodeFullSimulation executes an exhaustive, isolated 3-node

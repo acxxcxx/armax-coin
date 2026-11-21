@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/wallet"
 )
 
 // TestP2P_NATNode_OutboundSync verifies that a node behind NAT without a public IP

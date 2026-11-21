@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/wallet"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/wallet"
 )
 
 // FeeEstimateResponse exposes protocol-accurate fee tiers computed from core.MinRelayFee and tx size.

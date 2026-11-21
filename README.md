@@ -1,8 +1,8 @@
 # Armaxcoin (`armax-coin`)
 
-**Canonical Repository:** [github.com/acxxcxx/armax-coin](https://github.com/acxxcxx/armax-coin)  
+**Canonical Repository:** [github.com/armaxcoincore/armax-coin](https://github.com/armaxcoincore/armax-coin)  
 **Current Release:** `v1.0.12` (Desktop Wallet GUI v2 `"Waiting for Sync"`, Node Sync Gate `HTTP 503`, Multi-Thread CPU Miner Optimization, Stratum TLS, Go `1.27.4`; Rolling Compatible with `v1.0.11`)  
-**Go Module:** `github.com/acxxcxx/armax-coin`
+**Go Module:** `github.com/armaxcoincore/armax-coin`
 
 Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurrency engineered for post-quantum transaction security (NIST FIPS 204, ML-DSA-65), accessibility, and high performance across commodity personal computers and ARM-based devices (Armbian, Raspberry Pi 4/5, Orange Pi).
 
@@ -79,14 +79,14 @@ All binaries default to the active testnet profile (`ARMX-TESTNET-1`).
 
 ### 1. Download & Verify Release Artifacts
 
-Pre-compiled binaries and signatures are published on [GitHub Releases](https://github.com/acxxcxx/armax-coin/releases/tag/v1.0.12):
+Pre-compiled binaries and signatures are published on [GitHub Releases](https://github.com/armaxcoincore/armax-coin/releases/tag/v1.0.12):
 
 ```bash
 # On Linux / ARM64:
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.12/armax-v1.0.12-linux-amd64.tar.gz
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.12/SHA256SUMS
-curl -LO https://github.com/acxxcxx/armax-coin/releases/download/v1.0.12/SHA256SUMS.asc
-curl -LO https://raw.githubusercontent.com/acxxcxx/armax-coin/main/ARMAX-PGP-KEY.asc
+curl -LO https://github.com/armaxcoincore/armax-coin/releases/download/v1.0.12/armax-v1.0.12-linux-amd64.tar.gz
+curl -LO https://github.com/armaxcoincore/armax-coin/releases/download/v1.0.12/SHA256SUMS
+curl -LO https://github.com/armaxcoincore/armax-coin/releases/download/v1.0.12/SHA256SUMS.asc
+curl -LO https://raw.githubusercontent.com/armaxcoincore/armax-coin/main/ARMAX-PGP-KEY.asc
 
 # 1. Import official release key & verify fingerprint (C857E67F3FC63BE35125C3D32ACE863ED4BF1460):
 gpg --import ARMAX-PGP-KEY.asc

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 func waitForTxCondition(t *testing.T, timeout time.Duration, condition func() bool, message string) {

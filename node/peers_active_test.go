@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestInboundOnlyPeerCountsActive tests that a node that only receives incoming TCP connections

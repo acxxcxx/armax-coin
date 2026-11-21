@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestForkpointLocatorCap_ServerTruncatesOversizedLocators verifies that PeerServer's

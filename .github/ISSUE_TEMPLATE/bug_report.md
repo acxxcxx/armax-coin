@@ -7,7 +7,7 @@ assignees: ""
 ---
 
 > [!IMPORTANT]
-> **Security Notice:** If you have discovered a potential security vulnerability, consensus bypass, or remote denial-of-service vector, **DO NOT** file a public issue. Please follow our responsible disclosure procedure in [SECURITY.md](https://github.com/acxxcxx/armax-coin/blob/main/SECURITY.md) via [GitHub Private Vulnerability Reporting](https://github.com/acxxcxx/armax-coin/security/advisories/new).
+> **Security Notice:** If you have discovered a potential security vulnerability, consensus bypass, or remote denial-of-service vector, **DO NOT** file a public issue. Please follow our responsible disclosure procedure in [SECURITY.md](https://github.com/armaxcoincore/armax-coin/blob/main/SECURITY.md) via [GitHub Private Vulnerability Reporting](https://github.com/armaxcoincore/armax-coin/security/advisories/new).
 
 ### Describe the Bug
 A clear and concise description of what the bug is.

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acxxcxx/armax-coin/core"
-	"github.com/acxxcxx/armax-coin/core/pqsig"
+	"github.com/armaxcoincore/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core/pqsig"
 )
 
 // TestWallet_DeterministicMnemonicDerivation tests 24-word and 12-word BIP-39 mnemonic derivation

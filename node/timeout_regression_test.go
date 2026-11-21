@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 )
 
 // TestSlowClient_ReadTimeoutEnforced verifies that a slow client attempting to hold a connection

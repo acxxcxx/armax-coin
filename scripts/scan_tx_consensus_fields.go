@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acxxcxx/armax-coin/core"
+	"github.com/armaxcoincore/armax-coin/core"
 	bolt "go.etcd.io/bbolt"
 )
 

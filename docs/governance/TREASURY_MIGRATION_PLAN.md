@@ -85,7 +85,7 @@ The proposed ratio under evaluation is **10 tARMX : 1 ARMX**.
 
 ### 3.3 Testnet Baseline & Preliminary Reference Metrics
 - Total testnet coins generated at original drafting date (`November 12, 2026`): `~868,260 tARMX` *(and `967,320.00 tARMX` at Block `#16,121` during preliminary `v1.0.11` review)*.
-- Testnet planned operational window: **TBA / Undetermined** (open-ended until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](docs/MAINNET_READINESS.md) are completed).
+- Testnet planned operational window: **TBA / Undetermined** (open-ended until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md) are completed).
 - Primary developer testnet wallet *(Layer 1 Excluded — `0 ARMX` Zero Migration Entitlement)*: `armx1m0zc657c6an7zjtlqkd06qvlrkwzmh3c2vj302ge7u5dh2nuv59qyymq62` *(alongside internal test wallets and ordinary transfers; see Section 3.6)*.
 - Candidate conversion ratio: `10:1` *(preliminary, non-final)*.
 - Maximum migration budget cap: `300,000 ARMX` *(unchanged)*.
@@ -96,7 +96,7 @@ At the candidate `10:1` ratio, the `300,000 ARMX` budget mathematically accommod
 The `300,000 ARMX` allocation represents a strict maximum ceiling, not a mandatory spending quota. Unclaimed, unverified, or surplus funds remain in the treasury under formal governance. If eligible claims exceed `300,000 ARMX`, the ratio shall not be silently lowered nor funds seized from other sectors without formal public review.
 
 ### 3.5 Open-Ended Testnet Soak Window (Duration TBA — Non-Final Plan)
-Throughout the open-ended public testnet soak phase (duration **TBA / undetermined** until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](docs/MAINNET_READINESS.md) are satisfied):
+Throughout the open-ended public testnet soak phase (duration **TBA / undetermined** until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md) are satisfied):
 1. The testnet continues open operation for mining and consensus validation.
 2. Complete block history, coinbase records, pool payouts, and reorg history are immutably archived.
 3. No final conversion or snapshot occurs until the soak period, verification gates, and formal governance approval conclude.
