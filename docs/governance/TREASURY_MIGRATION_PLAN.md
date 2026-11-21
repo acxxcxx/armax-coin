@@ -8,7 +8,7 @@
 
 > [!IMPORTANT]
 > **CRITICAL DISCLAIMER (PRELIMINARY NON-FINAL PLAN):**  
-> This document is a **preliminary, non-final strategic plan** subject to revision, ongoing evaluation, and formal governance ratification. The public testnet operational timeline is **open-ended (`TBA` / undetermined)** and depends on the completion of all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md). Testnet coins (`tARMX`) possess **zero monetary value**, no market price, and no promise or guarantee of conversion, trading, or monetary worth. This document is **not an investment offer, not a promise of financial return, and not financial advice**. All figures, exclusion lists, conversion ratios, and execution schedules become effective only upon formal governance ratification and official public announcement.
+> This document is a **preliminary, non-final strategic plan** subject to revision, ongoing evaluation, and formal governance ratification. The public testnet operational timeline is **open-ended (`TBA` / undetermined)** and depends on the completion of all Mainnet readiness gates and open independent security reviews in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md). Testnet coins (`tARMX`) currently have **no market price or liquidity**; while eligible verified community mining rewards are intended for future Mainnet migration under this plan, the final conversion ratio and terms remain non-final (`TBA`) and subject to formal governance ratification. This document is **not an investment offer, not a promise of financial return, and not financial advice**. All figures, exclusion lists, conversion ratios, and execution schedules become effective only upon formal governance ratification and official public announcement.
 
 ---
 
@@ -69,7 +69,7 @@ This document establishes the preliminary framework for managing the planned **1
 ## 3. Testnet Miner Migration — 300,000 ARMX
 
 ### 3.1 Purpose
-This program honors miners who dedicated computational resources to testing, securing, and stabilizing the Armaxcoin testnet (`ARMX-TESTNET-1`). This program does not imply that `tARMX` has monetary value or represents an investment contract.
+This program honors miners who dedicated computational resources to testing, securing, and stabilizing the Armaxcoin testnet (`ARMX-TESTNET-1`). While verified mining rewards are planned to be convertible to Mainnet ARMX at a future non-final ratio (`TBA`), `tARMX` has no current market value and this plan does not constitute an investment contract.
 
 ### 3.2 Candidate Conversion Ratio
 The proposed ratio under evaluation is **10 tARMX : 1 ARMX**.
@@ -85,7 +85,7 @@ The proposed ratio under evaluation is **10 tARMX : 1 ARMX**.
 
 ### 3.3 Testnet Baseline & Preliminary Reference Metrics
 - Total testnet coins generated at original drafting date (`November 12, 2026`): `~868,260 tARMX` *(and `967,320.00 tARMX` at Block `#16,121` during preliminary `v1.0.11` review)*.
-- Testnet planned operational window: **TBA / Undetermined** (open-ended until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md) are completed).
+- Testnet planned operational window: **TBA / Undetermined** (open-ended until all Mainnet readiness gates and open independent security reviews in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md) are completed).
 - Primary developer testnet wallet *(Layer 1 Excluded — `0 ARMX` Zero Migration Entitlement)*: `armx1m0zc657c6an7zjtlqkd06qvlrkwzmh3c2vj302ge7u5dh2nuv59qyymq62` *(alongside internal test wallets and ordinary transfers; see Section 3.6)*.
 - Candidate conversion ratio: `10:1` *(preliminary, non-final)*.
 - Maximum migration budget cap: `300,000 ARMX` *(unchanged)*.
@@ -96,7 +96,7 @@ At the candidate `10:1` ratio, the `300,000 ARMX` budget mathematically accommod
 The `300,000 ARMX` allocation represents a strict maximum ceiling, not a mandatory spending quota. Unclaimed, unverified, or surplus funds remain in the treasury under formal governance. If eligible claims exceed `300,000 ARMX`, the ratio shall not be silently lowered nor funds seized from other sectors without formal public review.
 
 ### 3.5 Open-Ended Testnet Soak Window (Duration TBA — Non-Final Plan)
-Throughout the open-ended public testnet soak phase (duration **TBA / undetermined** until all Mainnet readiness gates and independent security audits in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md) are satisfied):
+Throughout the open-ended public testnet soak phase (duration **TBA / undetermined** until all Mainnet readiness gates and open independent security reviews in [`docs/MAINNET_READINESS.md`](../MAINNET_READINESS.md) are satisfied):
 1. The testnet continues open operation for mining and consensus validation.
 2. Complete block history, coinbase records, pool payouts, and reorg history are immutably archived.
 3. No final conversion or snapshot occurs until the soak period, verification gates, and formal governance approval conclude.
@@ -162,7 +162,7 @@ To guarantee fairness, prevent double-counting, and eliminate any possibility of
 
 ## 4. Liquidity Reserve — 200,000 ARMX
 
-**Objective:** Provision decentralized trading liquidity once Mainnet, the token bridge, and wrapped asset contracts are audited and operational.
+**Objective:** Provision decentralized trading liquidity once Mainnet, the token bridge, and wrapped asset contracts have completed open independent security review and are operational.
 
 | Allocation Segment | Budget | Purpose |
 |---|---:|---|
@@ -175,9 +175,9 @@ To guarantee fairness, prevent double-counting, and eliminate any possibility of
 - This budget represents the native ARMX component; paired assets (e.g. USDT) must be independently provisioned based on market pricing.
 - Initial liquidity is not deployed on Day 1 of Mainnet; deployment occurs incrementally based on market demand and network maturity.
 - If ARMX is represented on EVM networks (e.g., as Wrapped ARMX / `wARMX`):
-  - Native ARMX must be securely locked into audited custody before any wrapped token is minted.
+  - Native ARMX must be securely locked into openly reviewed custody before any wrapped token is minted.
   - Total circulating wrapped tokens must never exceed provable locked native reserves.
-  - Bridge contracts must complete independent third-party audits before handling production value.
+  - Any future bridge or contract will go through the same open independent security review and testing before holding real funds (formal commercial audits optional when funding is available).
   - The liquidity reserve is distinct from bridge backing collateral; LP tokens and bridge collateral must be accounted for separately.
 
 ---
@@ -189,7 +189,7 @@ To guarantee fairness, prevent double-counting, and eliminate any possibility of
 | **Bridge & Cross-Chain Integration** | 25,000 ARMX | EVM relayer, proof-of-lock contracts, and multisig bridge |
 | **Wallet & Client Applications** | 20,000 ARMX | Mobile wallets (Android/iOS), desktop GUI, and hardware support |
 | **Explorer & Developer APIs** | 15,000 ARMX | High-availability indexers, GraphQL APIs, and web explorers |
-| **Security Audits & Bounties** | 25,000 ARMX | Third-party cryptographic audits and vulnerability bounties |
+| **Security Audits & Bounties** | 25,000 ARMX | Optional third-party cryptographic audits, independent security reviews, and vulnerability bounties |
 | **Developer Grants** | 15,000 ARMX | Open-source ecosystem tooling and community integrations |
 | **Total** | **100,000 ARMX** | **Sustainable Development** |
 
@@ -280,11 +280,11 @@ flowchart LR
     P4 --> P5["Phase 5: Ecosystem Expansion"]
 ```
 
-- **Phase 0 — Testnet Soak (Current — Duration TBA):** Continue open-ended public testnet operation (duration **TBA / undetermined** until all Mainnet readiness gates and security audits conclude). Maintain immutable block and pool logs. Finalize Dual-Lock and event-based eligibility specifications under this preliminary plan. No mainnet distributions or consensus changes occur during this phase.
-- **Phase 1 — Mainnet Preparation:** Complete formal security audits of consensus, node, and wallet. Finalize treasury custody policies. Reconcile testnet mining records.
+- **Phase 0 — Testnet Soak (Current — Duration TBA):** Continue open-ended public testnet operation (duration **TBA / undetermined** until all Mainnet readiness gates and open independent security reviews conclude). Maintain immutable block and pool logs. Finalize Dual-Lock and event-based eligibility specifications under this preliminary plan. No mainnet distributions or consensus changes occur during this phase.
+- **Phase 1 — Mainnet Preparation:** Complete open independent security review and testing across consensus, ArmaxHash v2, Armax-ASERT-AW, `TxBinaryV1`, ML-DSA-65, node, and wallet, with findings tracked via responsible disclosure (private handling for exploitable vulnerabilities until remediation, public documentation for non-sensitive and resolved issues) and all known Critical/High issues resolved prior to activation (optional commercial audits as funding permits). Finalize treasury custody policies. Reconcile testnet mining records.
 - **Phase 2 — Mainnet Launch:** Mainnet launches under verified consensus rules. Treasury begins receiving legitimate mined rewards up to the policy cap.
 - **Phase 3 — Testnet Miner Migration:** Announce snapshot cutoff. Reconcile solo and pool rewards. Open Mainnet address registration. Disburse migration allocations from `treasury_migration`.
-- **Phase 4 — Liquidity Launch:** Audit bridge and token contracts. Provision initial AMM liquidity gradually.
+- **Phase 4 — Liquidity Launch:** Subject any bridge and token contracts to the same open independent security review before holding real funds. Provision initial AMM liquidity gradually.
 - **Phase 5 — Ecosystem Expansion:** Activate developer grants, explorer enhancements, and community programs.
 
 ---
@@ -298,7 +298,7 @@ flowchart LR
 | Reorganization or invalid block inclusion | Medium | Evaluate solely canonical longest chain after maturity finality |
 | Sybil / duplicate claims | Medium | Unique claim identifier, cryptographic signature challenge, and public registry |
 | Valid claims exceed 300,000 ARMX budget | Medium | Halt finalization; submit to governance review without retroactive ratio cuts |
-| Bridge security exploits | Critical | Independent third-party smart contract audits and strict rate limits |
+| Bridge security exploits | Critical | Open independent review before holding real funds, responsible-disclosure finding tracking, optional commercial audits as funding permits, and strict rate limits |
 | Impermanent loss or liquidity drain | High | Phased deployment with continuous depth and volatility monitoring |
 | Treasury mismanagement | Critical | Segregated sector wallets, cold storage, multi-party approvals, and public ledger |
 

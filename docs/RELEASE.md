@@ -167,7 +167,7 @@ This checklist defines the formal verification gates required before tagging, pa
 ### 6.4 Documentation & Public Information Verification
 - [x] **Canonical Module & Naming:** `go.mod` declares `module github.com/armaxcoincore/armax-coin` and documentation consistently refers to `armax-coin`.
 - [x] **Documentation Set Present & Synchronized:** `README.md`, `docs/architecture/WHITEPAPER.md`, `SECURITY.md`, `CHANGELOG.md`, `docs/releases/RELEASE_NOTES.md`, `docs/releases/v1.0.12.md`, `docs/governance/TREASURY_MIGRATION_PLAN.md`, `docs/TESTNET.md`, `docs/MINING_GUIDE.md`, `docs/NODE_OPERATIONS.md`, and `docs/CONSENSUS_AND_NETWORK.md`.
-- [x] **Experimental Disclaimers:** Visible notices that testnet coins (`tARMX`) have no economic value and mainnet remains locked.
+- [x] **Experimental Disclaimers:** Visible notices that testnet coins (`tARMX`) have no current market value (planned Mainnet migration ratio/terms remain non-final TBA) and mainnet remains locked.
 
 ### 6.5 Seed Infrastructure & Live P2P Connectivity
 - [ ] **Seed Nodes Active:** `testnet-seed1.armax-coin.cloud:19335`, `testnet-seed2.armax-coin.cloud:19335`, `testnet-seed3.armax-coin.cloud:19335` responsive to inbound TLS P2P handshakes.

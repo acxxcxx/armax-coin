@@ -57,7 +57,7 @@ func TestCLI_NetworkFlagSelection(t *testing.T) {
 			if err != nil {
 				t.Fatalf("[%s default -info] execution failed: %v\nOutput: %s", tc.name, err, out)
 			}
-			if !strings.Contains(out, "ARMAX ALPHA TESTNET - no economic value, unaudited") {
+			if !strings.Contains(out, "ARMAX ALPHA TESTNET - experimental testnet; no current market value (planned mainnet migration terms TBA)") {
 				t.Errorf("[%s default] expected alpha testnet banner in output, got:\n%s", tc.name, out)
 			}
 			if !strings.Contains(out, "TESTNET") {

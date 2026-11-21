@@ -4,7 +4,7 @@ Welcome to the public open testnet for **Armaxcoin** (`armax-coin`). This compre
 
 > [!WARNING]
 > **TESTNET WARNING:**
-> The Armaxcoin public testnet is an experimental environment for development, integration, and security testing. Testnet coins (`tARMX`) hold **no monetary value**, cannot be traded for fiat or real assets, and carry no guarantee of conversion to mainnet assets. Chain state may be reset if critical consensus issues are identified.
+> The Armaxcoin public testnet is an experimental environment for development, integration, and security testing. Testnet coins (`tARMX`) currently have **no market value**, cannot be redeemed for fiat, and carry no guaranteed financial return; however, verified external testnet mining rewards are planned for a future Mainnet migration program with non-final, TBA conversion terms (see [TREASURY_MIGRATION_PLAN.md](governance/TREASURY_MIGRATION_PLAN.md)). Chain state may be reset if critical consensus issues are identified.
 
 ---
 

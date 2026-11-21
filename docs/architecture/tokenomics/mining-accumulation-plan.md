@@ -22,7 +22,7 @@ Liquidity and bridge design are not finalized and will be announced, with full t
 
 - The developer early-mining phase is intended to accumulate base inventory for eventual network bootstrapping and ecosystem liquidity. For the proposed allocation framework, see [`TREASURY_MIGRATION_PLAN.md`](../../governance/TREASURY_MIGRATION_PLAN.md).
 - No commitments regarding specific decentralized exchanges, lockup structures, or bridging mechanisms are finalized at this time.
-- All bridge and liquidity architectures remain subject to code completion, testing, and independent security auditing prior to any mainnet deployment.
+- Any future cross-chain bridge or wrapped-asset contract will go through the same open independent review and testing before holding real funds (formal commercial audits remain optional as funding permits).
 
 ---
 

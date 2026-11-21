@@ -1,6 +1,6 @@
 # Mainnet PoW & Consensus Staging Profile (Provisional — Locked & Subject to Change)
 
-**Status: PROVISIONAL PRE-LAUNCH STAGING PROFILE (`core.MainnetLaunched = false`).** Mainnet remains strictly locked: invoking `-network mainnet` fails closed (`"Mainnet has not been launched; please use -network testnet"`) until all security, audit, and operational gates in [`../../MAINNET_READINESS.md`](../../MAINNET_READINESS.md) are completed and formally frozen.
+**Status: PROVISIONAL PRE-LAUNCH STAGING PROFILE (`core.MainnetLaunched = false`).** Mainnet remains strictly locked: invoking `-network mainnet` fails closed (`"Mainnet has not been launched; please use -network testnet"`) until all security, open independent review, and operational gates in [`../../MAINNET_READINESS.md`](../../MAINNET_READINESS.md) are completed and formally frozen.
 
 > [!IMPORTANT]
 > The parameter values documented below reflect the **current provisional staging profile** in `MainnetProfile` for isolated local dry-run testing (`-local-mainnet`) and code readiness verification. **`v1.0.12` is a Public Testnet (`ARMX-TESTNET-1`) software release and does NOT constitute a finalized or binding Mainnet launch specification.** All Mainnet consensus, PoW, difficulty, and launch parameters remain subject to revision prior to official Mainnet launch freeze.

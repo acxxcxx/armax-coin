@@ -16,7 +16,7 @@ This documentation directory contains official user guides, operator manuals, sp
 - [Consensus Improvement Proposals (C1–C6)](security/consensus-proposals.md): Design history, implementation status, and Block `#20,000` Proposal C6 specification.
 - [Architecture Overview](architecture/README.md): Engineering boundaries, consensus invariants, and repository taxonomy.
 - [Performance & Wire Size Benchmarks](PERF.md): Wire size metrics, `TxBinaryV1` binary block accounting (`375` user ML-DSA-65 txs / 2 MB block at `#20,000`), post-quantum signature size analysis, and mempool throughput.
-- [Security Disclosure Policy](../SECURITY.md): Vulnerability reporting channels, threat boundaries, and audit process.
+- [Security Disclosure Policy](../SECURITY.md): Vulnerability reporting channels, threat boundaries, and security review process.
 
 ## 3. Operations & Maintenance
 

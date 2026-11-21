@@ -27,5 +27,5 @@ func NetworkWarningLine() string {
 	if ActiveTicker() == MainnetTicker {
 		return "WARNING  ARMAXCOIN MAINNET - transactions use real economic value. Verify addresses and amounts."
 	}
-	return "WARNING  ARMAX ALPHA TESTNET - no economic value, unaudited"
+	return "WARNING  ARMAX ALPHA TESTNET - experimental testnet; no current market value (planned mainnet migration terms TBA)"
 }
