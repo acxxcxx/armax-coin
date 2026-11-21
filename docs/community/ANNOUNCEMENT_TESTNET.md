@@ -47,7 +47,7 @@ The Armaxcoin Public Testnet ([tt]ARMX-TESTNET-1[/tt]) is an open, decentralized
 
 [color=red][b]CRITICAL EXPERIMENTAL TESTNET DISCLAIMER:[/b][/color]
 [list]
-[*] [b]Zero Economic Value:[/b] Testnet coins ([tt]tARMX[/tt]) carry [b]NO monetary value[/b], no investment utility, and no guarantee of exchange listing or token conversion.
+[*] [b]Testnet Status & Planned Migration:[/b] Testnet coins ([tt]tARMX[/tt]) currently have [b]no market value[/b] and carry no guarantee of exchange listing or financial return; verified external testnet mining rewards are planned for a future Mainnet migration program (final conversion ratio and terms TBA).
 [*] [b]Experimental Testnet:[/b] The consensus engine, ArmaxHash implementation, and cryptographic integration are active testnet implementations focused on verification and protocol stabilization.
 [*] [b]State Reset Possibility:[/b] As an active development testnet, blockchain state may be reset if critical protocol flaws are discovered.
 [*] [b]Mainnet Status:[/b] Mainnet is [b]locked in source[/b] ([tt]core.MainnetLaunched = false[/tt]). Invoking [tt]-network mainnet[/tt] is strictly rejected by all binaries.
@@ -204,13 +204,13 @@ By default, [tt]armcoind[/tt] starts in testnet mode, discovers peers via DNS se
 [*] [b]RPC Isolation:[/b] RPC daemon binds strictly to [tt]127.0.0.1[/tt]. Mutating endpoints require local cookie authentication ([tt]armax.cookie[/tt]) or HTTP Basic Auth. Binding to external interfaces requires explicit TLS certificates and credentials.
 [*] [b]Low Bootstrap Hashrate & 51% Risk:[/b] During early testnet testing with few active miners, the network is susceptible to 51% hashrate spikes. Reorganizations are bounded by consensus to 720 blocks (~24 hours).
 [*] [b]ARM Single-Board Computers:[/b] ML-DSA-65 modular polynomial arithmetic introduces measurable verification latency on low-power ARM single-board computers (Raspberry Pi 3/4).
-[*] [b]No Economic Promises:[/b] Testnet coins (tARMX) have no economic value. The ARMX protocol is an experimental open-source protocol. There is no promise of future monetary value, exchange listing, airdrop, or financial return.
+[*] [b]No Investment Promises:[/b] The ARMX protocol is an experimental open-source protocol and [tt]tARMX[/tt] currently has no market value. While verified external testnet mining rewards are planned for a preliminary Mainnet migration framework (final ratio TBA), there is no promise of exchange listing, market price, or financial return.
 [/list]
 
 [hr]
 
 [b][size=14pt]Community & Contributions[/size][/b]
-We invite node operators, miners, developers, and security researchers to join and test the experimental testnet. Contributions are voluntary and credited in [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/community/CONTRIBUTORS.md]docs/community/CONTRIBUTORS.md[/url]. Testnet coins have no monetary value, and no airdrops or financial rewards are promised.
+We invite node operators, miners, developers, and security researchers to join and test the experimental testnet. Contributions are voluntary and credited in [url=https://github.com/armaxcoincore/armax-coin/blob/main/docs/community/CONTRIBUTORS.md]docs/community/CONTRIBUTORS.md[/url]. Verified external testnet mining rewards are planned under a non-final Mainnet migration framework (ratio TBA), while code contributions remain voluntary with no airdrops or guaranteed financial rewards.
 [list]
 [*] [b]Responsible Security Reporting:[/b] Please report security vulnerabilities responsibly via GitHub Private Vulnerability Reporting on the repository ([b]Security[/b] -> [b]Advisories[/b] -> [b]Report a vulnerability[/b]).
 [/list]

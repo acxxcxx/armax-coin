@@ -16,7 +16,7 @@ Armaxcoin is an open-source, experimental Layer-1 Proof-of-Work (PoW) cryptocurr
 
 > [!NOTE]
 > **PUBLIC TESTNET ENVIRONMENT & PROVISIONAL MAINNET LOCK:**
-> Armaxcoin is currently operating strictly as Public Testnet software (`ARMX-TESTNET-1`). Testnet coins (`tARMX`) have **no monetary value**, no market liquidity, no guarantee of conversion, and no investment utility.
+> Armaxcoin is currently operating strictly as Public Testnet software (`ARMX-TESTNET-1`). Testnet coins (`tARMX`) currently have **no market value or liquidity** and are **not an investment product**; however, verified community testnet mining rewards are planned for a future Mainnet migration program (preliminary ratio and eligibility terms are non-final and remain subject to governance ratification in [docs/governance/TREASURY_MIGRATION_PLAN.md](docs/governance/TREASURY_MIGRATION_PLAN.md)).
 > Mainnet (`ARMX-MAINNET-1`) remains strictly locked (`core.MainnetLaunched = false`); invoking `-network mainnet` is rejected across all binaries. Values currently present in `MainnetProfile` represent a **provisional pre-launch staging configuration** for isolated local testing (`-local-mainnet`) and are **not** a finalized Mainnet launch baseline — all Mainnet parameters remain subject to revision prior to official Mainnet launch freeze after satisfying [docs/MAINNET_READINESS.md](docs/MAINNET_READINESS.md).
 
 > [!WARNING]
