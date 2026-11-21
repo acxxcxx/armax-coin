@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math"
 	"math/big"
 )
 
@@ -174,7 +175,11 @@ func GetASERTScheduleDrift(chain []Block, tipIndex int) (int64, bool) {
 	if !IsASERTActive(tipIndex) || len(chain) == 0 {
 		return 0, false
 	}
-	actHeight := int(GetASERTActivationHeight())
+	rawAct := GetASERTActivationHeight()
+	if rawAct < 0 || rawAct > math.MaxInt32 {
+		return 0, false
+	}
+	actHeight := int(rawAct)
 	anchorBlock, _, err := ResolveASERTAnchor(chain, actHeight)
 	if err != nil {
 		return 0, false

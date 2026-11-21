@@ -728,8 +728,7 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 		clonedState = NewStateManager()
 	}
 
-	prefixChain := make([]Block, ancestorIndex+1, ancestorIndex+1+len(newBlocks))
-	copy(prefixChain, bc.Chain[:ancestorIndex+1])
+	prefixChain := append([]Block(nil), bc.Chain[:ancestorIndex+1]...)
 	bc.Lock.RUnlock()
 
 	// Rollback state from localLen-1 down to ancestorIndex+1 using undo records [C-24]
@@ -884,9 +883,8 @@ func (bc *Blockchain) ResolveFork(ancestorIndex int, newBlocks []Block) error {
 	}
 
 	// Replace active chain and state atomically using a fresh slice backing array
-	nextChain := make([]Block, ancestorIndex+1+len(newBlocks))
-	copy(nextChain, bc.Chain[:ancestorIndex+1])
-	copy(nextChain[ancestorIndex+1:], newBlocks)
+	nextChain := append([]Block(nil), bc.Chain[:ancestorIndex+1]...)
+	nextChain = append(nextChain, newBlocks...)
 	bc.Chain = nextChain
 	bc.State = clonedState
 	bc.cachedSupply = runningSupply

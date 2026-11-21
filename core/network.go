@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -326,7 +327,7 @@ func GetArmaxHashV2ActivationHeight() int64 {
 	// Rehearsal hook: strictly regtest only to protect production consensus [HIGH-02]
 	if ActiveNetwork.Name == "regtest" {
 		if val := os.Getenv("ARMX_ARMAXHASH_V2_HEIGHT"); val != "" {
-			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil && h >= -1 && h <= math.MaxInt32 {
 				return h
 			}
 		}
@@ -466,7 +467,7 @@ func GetASERTActivationHeight() int64 {
 	// Rehearsal hook: strictly regtest only to protect production consensus
 	if ActiveNetwork.Name == "regtest" {
 		if val := os.Getenv("ARMX_ASERT_HEIGHT"); val != "" {
-			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
+			if h, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil && h >= -1 && h <= math.MaxInt32 {
 				return h
 			}
 		}

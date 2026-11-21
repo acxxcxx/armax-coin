@@ -5903,6 +5903,10 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 		core.LogWarn(core.LogCategorySync, "Failed to unmarshal height response into struct peer=%s err=%v", peerAddress, err)
 		return
 	}
+	if hr.Height < 0 {
+		core.LogWarn(core.LogCategorySync, "Invalid negative height response peer=%s height=%d", peerAddress, hr.Height)
+		return
+	}
 
 	p.Blockchain.Lock.RLock()
 	localLatest := p.Blockchain.GetLatestBlockUnsafe()
@@ -6177,7 +6181,7 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 		return
 	} else {
 		p.markSyncCaughtUp(hr.Height, peerChainwork)
-		if hr.Height < localLatest.Index {
+		if hr.Height >= 0 && hr.Height < localLatest.Index {
 			// Remote peer is behind; stream missing blocks over a persistent connection [N-02]
 			fmt.Printf("[P2P] Remote peer %s is behind (Peer: #%d, Local: #%d). Streaming missing blocks...\n",
 				peerAddress, hr.Height, localLatest.Index)
@@ -6191,21 +6195,28 @@ func (p *PeerServer) RequestChainSync(peerAddress string) {
 				release()
 			}()
 
-			for from := hr.Height + 1; from <= localLatest.Index; from += SyncChunkSize {
-				to := from + SyncChunkSize - 1
-				if to > localLatest.Index {
-					to = localLatest.Index
+			for from := hr.Height + 1; from > 0 && from <= localLatest.Index; from += SyncChunkSize {
+				remaining := localLatest.Index - from
+				chunkMax := SyncChunkSize
+				if remaining < SyncChunkSize-1 {
+					chunkMax = remaining + 1
 				}
+				to := from + chunkMax - 1
 
 				p.Blockchain.Lock.RLock()
 				var chunk []core.Block
-				if from < len(p.Blockchain.Chain) {
+				if from >= 0 && from < len(p.Blockchain.Chain) {
 					end := to
 					if end >= len(p.Blockchain.Chain) {
 						end = len(p.Blockchain.Chain) - 1
 					}
-					chunk = make([]core.Block, end-from+1)
-					copy(chunk, p.Blockchain.Chain[from:end+1])
+					if end >= from {
+						count := end - from + 1
+						if count > 0 && count <= SyncChunkSize {
+							chunk = make([]core.Block, count)
+							copy(chunk, p.Blockchain.Chain[from:end+1])
+						}
+					}
 				}
 				p.Blockchain.Lock.RUnlock()
 

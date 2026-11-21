@@ -970,6 +970,7 @@ func launchSessionGuard(next http.Handler, sessionToken string, launchSecret str
 				Value:    sessionToken,
 				Path:     "/",
 				HttpOnly: true,
+				Secure:   r.TLS != nil,
 				SameSite: http.SameSiteStrictMode,
 			})
 			w.Header().Set("Location", "/")
@@ -2831,6 +2832,9 @@ func handleMineStart(w http.ResponseWriter, r *http.Request) {
 	if threads < 1 {
 		threads = optimalCPUThreads()
 	}
+	if maxThreads := core.MaxAllowedMiningThreads(); threads > maxThreads {
+		threads = maxThreads
+	}
 	delay := req.Delay
 	if delay < 100 {
 		delay = 1000
@@ -3048,6 +3052,7 @@ func handleWebUI(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteStrictMode,
 	})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
